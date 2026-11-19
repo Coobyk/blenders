@@ -117,6 +117,21 @@ pub const M_PI_2: f32 = FRAC_PI_2;
 /// √2.
 pub const M_SQRT2: f32 = std::f32::consts::SQRT_2;
 
+/// `FLT_EPSILON` from BLI_math_base_c.
+pub const FLT_EPSILON: f32 = f32::EPSILON;
+
+/// `min_ff`.
+#[inline]
+pub fn min_ff(a: f32, b: f32) -> f32 {
+    a.min(b)
+}
+
+/// `max_ff`.
+#[inline]
+pub fn max_ff(a: f32, b: f32) -> f32 {
+    a.max(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

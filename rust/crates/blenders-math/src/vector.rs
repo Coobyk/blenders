@@ -1,6 +1,8 @@
 //! Port of `BLI_math_vector.hh` / `math_vector.cc` (Vec2/Vec3/Vec4).
 
-use std::ops::{Add, AddAssign, Div, Index, IndexMut, Mul, Neg, Sub, SubAssign};
+use std::ops::{
+    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
+};
 
 use crate::base;
 
@@ -52,6 +54,18 @@ macro_rules! vec_ops {
             #[inline]
             fn mul(self, rhs: $VecN) -> $VecN {
                 rhs * self
+            }
+        }
+        impl MulAssign<f32> for $VecN {
+            #[inline]
+            fn mul_assign(&mut self, rhs: f32) {
+                $(self.$field *= rhs;)+
+            }
+        }
+        impl DivAssign<f32> for $VecN {
+            #[inline]
+            fn div_assign(&mut self, rhs: f32) {
+                $(self.$field /= rhs;)+
             }
         }
         /// Component-wise multiply (`mul_vn_vn`).
@@ -240,6 +254,11 @@ impl Vec2 {
     #[inline]
     pub fn orthogonal(self) -> Self {
         Self::new(-self.y, self.x)
+    }
+    /// `cross_v2v2` — 2D perp-dot `ax*by - ay*bx`.
+    #[inline]
+    pub fn cross(self, rhs: Self) -> f32 {
+        self.x * rhs.y - self.y * rhs.x
     }
 }
 

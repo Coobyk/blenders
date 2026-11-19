@@ -420,7 +420,7 @@ pub fn mat3_from_axis_angle(aa: AxisAngle) -> Mat3 {
 mod tests {
     use super::*;
     use crate::matrix::Mat3;
-    use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+    use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
     fn approx(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-5
