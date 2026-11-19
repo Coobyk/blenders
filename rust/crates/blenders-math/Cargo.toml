@@ -1,0 +1,9 @@
+[package]
+name = "blenders-math"
+description = "Port of Blender's BLI_math library (vectors, matrices, quaternions, eulers)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

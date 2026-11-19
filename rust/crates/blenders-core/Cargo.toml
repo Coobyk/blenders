@@ -1,0 +1,10 @@
+[package]
+name = "blenders-core"
+description = "Port of Blender's core data layer (DNA/Main/Object types)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+blenders-math = { path = "../blenders-math" }

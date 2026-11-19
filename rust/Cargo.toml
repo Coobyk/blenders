@@ -1,0 +1,28 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Coobyk/blenders"
+
+[package]
+name = "blenders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Blender rewritten in Rust and GPUI"
+
+[dependencies]
+gpui = "0.2.2"
+blenders-math = { path = "crates/blenders-math" }
+blenders-core = { path = "crates/blenders-core" }
+
+# xattr 0.2.3 (via zed-async-tar -> gpui_http_client) references the removed
+# `libc::ENOATTR`. Vendored copy maps it to `libc::ENODATA` (same value on
+# Linux where ENOATTR == ENODATA).
+[patch.crates-io]
+xattr = { path = "vendor/xattr" }
