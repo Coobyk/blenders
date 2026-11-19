@@ -770,6 +770,212 @@ pub fn dist_seg_seg_v2(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2) -> f32 {
     closest_seg_seg_v2(a1, a2, b1, b2).0.sqrt()
 }
 
+/// `isect_line_sphere_v2` — 2D variant of `isect_line_sphere`.
+pub fn isect_line_sphere_v2(l1: Vec2, l2: Vec2, sp: Vec2, r: f32) -> (i8, Vec2, Vec2) {
+    let ldir = l2 - l1;
+    let a = ldir.dot(ldir);
+    let b = 2.0 * (ldir.x * (l1.x - sp.x) + ldir.y * (l1.y - sp.y));
+    let c = sp.dot(sp) + l1.dot(l1) - 2.0 * sp.dot(l1) - r * r;
+    let i = b * b - 4.0 * a * c;
+    if i < 0.0 {
+        return (0, Vec2::ZERO, Vec2::ZERO);
+    }
+    if i == 0.0 {
+        let mu = -b / (2.0 * a);
+        return (1, l1 + ldir * mu, Vec2::ZERO);
+    }
+    let i_sqrt = i.sqrt();
+    let p1 = l1 + ldir * ((-b + i_sqrt) / (2.0 * a));
+    let p2 = l1 + ldir * ((-b - i_sqrt) / (2.0 * a));
+    (2, p1, p2)
+}
+
+/// `isect_point_poly_v2` — ray-casting point-in-polygon (2D).
+pub fn isect_point_poly_v2(pt: Vec2, verts: &[Vec2]) -> bool {
+    let nr = verts.len();
+    let mut isect = false;
+    let mut j = nr - 1;
+    for i in 0..nr {
+        let vi = verts[i];
+        let vj = verts[j];
+        if (vi.y > pt.y) != (vj.y > pt.y)
+            && (pt.x < (vj.x - vi.x) * (pt.y - vi.y) / (vj.y - vi.y) + vi.x)
+        {
+            isect = !isect;
+        }
+        j = i;
+    }
+    isect
+}
+
+/// `isect_point_poly_v2_int`.
+pub fn isect_point_poly_v2_int(pt: [i32; 2], verts: &[[i32; 2]]) -> bool {
+    let nr = verts.len();
+    let mut isect = false;
+    let mut j = nr - 1;
+    for i in 0..nr {
+        let vi = verts[i];
+        let vj = verts[j];
+        if (vi[1] > pt[1]) != (vj[1] > pt[1])
+            && (pt[0] < (vj[0] - vi[0]) * (pt[1] - vi[1]) / (vj[1] - vi[1]) + vi[0])
+        {
+            isect = !isect;
+        }
+        j = i;
+    }
+    isect
+}
+
+/// `line_point_side_v2` — side of `pt` relative to directed line `l1->l2`.
+#[inline]
+pub fn line_point_side_v2(l1: Vec2, l2: Vec2, pt: Vec2) -> f32 {
+    (l1.x - pt.x) * (l2.y - pt.y) - (l2.x - pt.x) * (l1.y - pt.y)
+}
+
+/// `isect_point_tri_v2_cw` — boolean point-in-triangle (any winding).
+pub fn isect_point_tri_v2_cw(pt: Vec2, v1: Vec2, v2: Vec2, v3: Vec2) -> bool {
+    line_point_side_v2(v1, v2, pt) >= 0.0
+        && line_point_side_v2(v2, v3, pt) >= 0.0
+        && line_point_side_v2(v3, v1, pt) >= 0.0
+}
+
+/// `isect_line_segment_tri_v3` — segment vs triangle, Möller–Trumbore;
+/// `(hit, lambda, u, v)` where lambda is the segment parameter.
+pub fn isect_line_segment_tri(
+    p1: Vec3,
+    p2: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, f32, f32)> {
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let d = p2 - p1;
+    let p = d.cross(e2);
+    let a = e1.dot(p);
+    if a == 0.0 {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = p1 - v0;
+    let u = f * s.dot(p);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = f * d.dot(q);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let lambda = f * e2.dot(q);
+    if !(0.0..=1.0).contains(&lambda) {
+        return None;
+    }
+    Some((lambda, u, v))
+}
+
+/// `isect_line_tri_v3` — infinite line vs triangle; no lambda bounds.
+pub fn isect_line_tri(
+    p1: Vec3,
+    p2: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, f32, f32)> {
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let d = p2 - p1;
+    let p = d.cross(e2);
+    let a = e1.dot(p);
+    if a == 0.0 {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = p1 - v0;
+    let u = f * s.dot(p);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = f * d.dot(q);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let lambda = f * e2.dot(q);
+    Some((lambda, u, v))
+}
+
+/// `isect_line_segment_tri_epsilon_v3`.
+pub fn isect_line_segment_tri_epsilon(
+    p1: Vec3,
+    p2: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+    epsilon: f32,
+) -> Option<(f32, f32, f32)> {
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let d = p2 - p1;
+    let p = d.cross(e2);
+    let a = e1.dot(p);
+    if a == 0.0 {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = p1 - v0;
+    let u = f * s.dot(p);
+    if u < -epsilon || u > 1.0 + epsilon {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = f * d.dot(q);
+    if v < -epsilon || u + v > 1.0 + epsilon {
+        return None;
+    }
+    let lambda = f * e2.dot(q);
+    if !(0.0..=1.0).contains(&lambda) {
+        return None;
+    }
+    Some((lambda, u, v))
+}
+
+/// `isect_ray_tri_v3` — Möller–Trumbore ray-triangle; lambda >= 0.
+pub fn isect_ray_tri(
+    ray_origin: Vec3,
+    ray_direction: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, f32, f32)> {
+    // NOTE(ideasman42): these values were 0.000001 in 2.4x but for projection
+    // snapping on a human head (1BU == 1m), subdivision level 2 gave errors.
+    const EPSILON: f32 = 0.00000001;
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let p = ray_direction.cross(e2);
+    let a = e1.dot(p);
+    if a > -EPSILON && a < EPSILON {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = ray_origin - v0;
+    let u = f * s.dot(p);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = f * ray_direction.dot(q);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let lambda = f * e2.dot(q);
+    if lambda < 0.0 {
+        return None;
+    }
+    Some((lambda, u, v))
+}
+
 /* -------------------------------------------------------------------- */
 /* Ray → AABB distance (`dist_squared_ray_to_aabb_v3*` family)            */
 /* -------------------------------------------------------------------- */
