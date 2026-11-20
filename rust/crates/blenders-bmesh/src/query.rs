@@ -1517,3 +1517,49 @@ pub fn bmesh_subd_falloff_calc(falloff: i32, val: f32) -> f32 {
         _ => 0.0,
     }
 }
+
+/// `BM_face_exists_subset_from_face` — face of `f_len` sharing verts between
+/// loops l_a..l_b of the same face. Returns face index or BM_NIL.
+pub fn bm_face_exists_subset_from_face(bm: &BMesh, l_a: usize, l_b: usize, f_len: i32) -> usize {
+    let e_exists = bm_edge_exists(bm, bm.loo(l_a).v, bm.loo(l_b).v);
+    if e_exists == BM_NIL || bm.edge(e_exists).l == BM_NIL {
+        return BM_NIL;
+    }
+    let mut l_radial = bm.edge(e_exists).l;
+    let first = l_radial;
+    loop {
+        if bm.face(bm.loo(l_radial).f).len == f_len {
+            let swap_winding = bm.loo(l_radial).v == bm.loo(l_a).v;
+            let (beg, end) = if swap_winding {
+                (l_radial, bm.loo(l_radial).next)
+            } else {
+                (bm.loo(l_radial).next, l_radial)
+            };
+            let hit = if swap_winding {
+                crate::core::bm_face_pair_overlap_check_subset_swap_winding(
+                    bm,
+                    bm.loo(l_a).next,
+                    bm.loo(l_b).prev,
+                    bm.loo(beg).prev,
+                    bm.loo(end).next,
+                )
+            } else {
+                crate::core::bm_face_pair_overlap_check_subset_same_winding(
+                    bm,
+                    bm.loo(l_a).next,
+                    bm.loo(l_b).prev,
+                    bm.loo(beg).next,
+                    bm.loo(end).prev,
+                )
+            };
+            if hit {
+                return bm.loo(l_radial).f;
+            }
+        }
+        l_radial = bm.loo(l_radial).radial_next;
+        if l_radial == first {
+            break;
+        }
+    }
+    BM_NIL
+}

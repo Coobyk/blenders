@@ -4,6 +4,8 @@
 //! and ID/remap bookkeeping are PORT_PENDING (CustomData unported).
 
 use crate::structure::*;
+use crate::{delete, query, construct};
+use crate::structure;
 use crate::{BMesh, BMEdge, BMFace, BMHeader, BMLoop, BMVert, BM_NIL};
 use crate::{BMCreateFlag, BM_CREATE_NO_DOUBLE, BM_EDGE, BM_FACE, BM_LOOP, BM_VERT};
 use blenders_math::vector::Vec3;
@@ -1160,4 +1162,693 @@ pub fn bm_faces_join(
         bm.act_face = f_new;
     }
     f_new
+}
+
+/* ---- remaining kernel ops: splice / separate / unglue ------------------ */
+
+/// `bmesh_edge_vert_swap` — swap v_src → v_dst on edge and all radial loops.
+pub fn bmesh_edge_vert_swap(bm: &mut BMesh, e: usize, v_dst: usize, v_src: usize) {
+    if bm.edge(e).l != BM_NIL {
+        let first = bm.edge(e).l;
+        let mut l = first;
+        loop {
+            let next = bm.loo(l).next;
+            if bm.loo(l).v == v_src {
+                bm.lpool[l].v = v_dst;
+            } else if bm.loo(next).v == v_src {
+                bm.lpool[next].v = v_dst;
+            } else {
+                debug_assert!(bm.loo(bm.loo(l).prev).v != v_src);
+            }
+            l = bm.loo(l).radial_next;
+            if l == first {
+                break;
+            }
+        }
+    }
+    structure::bmesh_disk_vert_replace(bm, e, v_dst, v_src);
+}
+
+fn bmesh_edge_vert_swap_recursive(bm: &mut BMesh, e: usize, v_dst: usize, v_src: usize) {
+    structure::bmesh_disk_vert_replace(bm, e, v_dst, v_src);
+    if bm.edge(e).l == BM_NIL {
+        return;
+    }
+    let first = bm.edge(e).l;
+    let mut l = first;
+    loop {
+        let (lv, ln, lp) = (bm.loo(l).v, bm.loo(l).next, bm.loo(l).prev);
+        let l_next = bm.loo(l).radial_next;
+        if lv == v_src {
+            bm.lpool[l].v = v_dst;
+            if query::bm_vert_in_edge(bm, bm.loo(lp).e, v_src) {
+                bmesh_edge_vert_swap_recursive(bm, bm.loo(lp).e, v_dst, v_src);
+            }
+        } else if bm.loo(ln).v == v_src {
+            bm.lpool[ln].v = v_dst;
+            if query::bm_vert_in_edge(bm, bm.loo(ln).e, v_src) {
+                bmesh_edge_vert_swap_recursive(bm, bm.loo(ln).e, v_dst, v_src);
+            }
+        }
+        l = l_next;
+        if l == first {
+            break;
+        }
+    }
+}
+
+/// `BM_vert_splice` — move all edges v_src → v_dst, kill v_src.
+pub fn bm_vert_splice(bm: &mut BMesh, v_dst: usize, v_src: usize) -> bool {
+    if v_src == v_dst {
+        return false;
+    }
+    while bm.vert(v_src).e != BM_NIL {
+        let e = bm.vert(v_src).e;
+        bmesh_edge_vert_swap(bm, e, v_dst, v_src);
+        debug_assert!(bm.edge(e).v1 != bm.edge(e).v2);
+    }
+    bm_vert_kill(bm, v_src);
+    true
+}
+
+/// `BM_vert_splice_check_double_edge` — would splicing create a double edge?
+pub fn bm_vert_splice_check_double_edge(bm: &mut BMesh, v_a: usize, v_b: usize) -> bool {
+    const VERT_VISIT: u8 = 2;
+    let mut is_double = false;
+    if bm.vert(v_a).e != BM_NIL && bm.vert(v_b).e != BM_NIL {
+        /* tag neighbors of v_a */
+        let first = bm.vert(v_a).e;
+        let mut e = first;
+        loop {
+            let v_other = other_vert(bm, e, v_a);
+            bm.vpool[v_other].head.api_flag |= 1 << VERT_VISIT;
+            e = structure::bmesh_disk_edge_next(bm, e, v_a);
+            if e == first {
+                break;
+            }
+        }
+        let first = bm.vert(v_b).e;
+        let mut e = first;
+        loop {
+            let v_other = other_vert(bm, e, v_b);
+            if bm.vert(v_other).head.api_flag & (1 << VERT_VISIT) != 0 {
+                is_double = true;
+                break;
+            }
+            e = structure::bmesh_disk_edge_next(bm, e, v_b);
+            if e == first {
+                break;
+            }
+        }
+        let first = bm.vert(v_a).e;
+        let mut e = first;
+        loop {
+            let v_other = other_vert(bm, e, v_a);
+            bm.vpool[v_other].head.api_flag &= !(1 << VERT_VISIT);
+            e = structure::bmesh_disk_edge_next(bm, e, v_a);
+            if e == first {
+                break;
+            }
+        }
+    }
+    is_double
+}
+
+/// `BM_vert_splice_check_double_face` — would splicing merge two faces?
+pub fn bm_vert_splice_check_double_face(bm: &BMesh, v_a: usize, v_b: usize) -> bool {
+    if bm.vert(v_a).e == BM_NIL || bm.vert(v_b).e == BM_NIL {
+        return false;
+    }
+    /* collect loops incident to each vert that point at it */
+    let mut loops_pair: [Vec<usize>; 2] = [Vec::new(), Vec::new()];
+    for side in 0..2 {
+        let v = [v_a, v_b][side];
+        let first = bm.vert(v).e;
+        let mut e_iter = first;
+        loop {
+            let mut l = bm.edge(e_iter).l;
+            if l != BM_NIL {
+                let lfirst = l;
+                loop {
+                    if bm.loo(l).v == v {
+                        loops_pair[side].push(l);
+                    }
+                    l = bm.loo(l).radial_next;
+                    if l == lfirst {
+                        break;
+                    }
+                }
+            }
+            e_iter = structure::bmesh_disk_edge_next(bm, e_iter, v);
+            if e_iter == first {
+                break;
+            }
+        }
+        if loops_pair[side].is_empty() {
+            return false;
+        }
+    }
+    for side in 0..2 {
+        loops_pair[side].sort_by_key(|&l| bm.face(bm.loo(l).f).len);
+    }
+    let (mut a_beg, mut b_beg) = (0usize, 0usize);
+    while a_beg < loops_pair[0].len() && b_beg < loops_pair[1].len() {
+        let a_len = bm.face(bm.loo(loops_pair[0][a_beg]).f).len;
+        let b_len = bm.face(bm.loo(loops_pair[1][b_beg]).f).len;
+        if a_len < b_len {
+            a_beg += 1;
+            continue;
+        }
+        if a_len > b_len {
+            b_beg += 1;
+            continue;
+        }
+        let mut a_end = a_beg + 1;
+        let mut b_end = b_beg + 1;
+        while a_end < loops_pair[0].len() && bm.face(bm.loo(loops_pair[0][a_end]).f).len == a_len {
+            a_end += 1;
+        }
+        while b_end < loops_pair[1].len() && bm.face(bm.loo(loops_pair[1][b_end]).f).len == a_len {
+            b_end += 1;
+        }
+        for ai in a_beg..a_end {
+            let l_a = loops_pair[0][ai];
+            for bi in b_beg..b_end {
+                let l_b = loops_pair[1][bi];
+                let (an, ap) = (bm.loo(bm.loo(l_a).next).v, bm.loo(bm.loo(l_a).prev).v);
+                let (bn, bp) = (bm.loo(bm.loo(l_b).next).v, bm.loo(bm.loo(l_b).prev).v);
+                if an == bn && ap == bp {
+                    if bm_face_pair_overlap_check_subset_same_winding(
+                        bm,
+                        bm.loo(bm.loo(l_a).next).next,
+                        bm.loo(bm.loo(l_a).prev).prev,
+                        bm.loo(bm.loo(l_b).next).next,
+                        bm.loo(bm.loo(l_b).prev).prev,
+                    ) {
+                        return true;
+                    }
+                } else if an == bp && ap == bn {
+                    if bm_face_pair_overlap_check_subset_swap_winding(
+                        bm,
+                        bm.loo(bm.loo(l_a).next).next,
+                        bm.loo(bm.loo(l_a).prev).prev,
+                        bm.loo(bm.loo(l_b).prev).prev,
+                        bm.loo(bm.loo(l_b).next).next,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+        }
+        a_beg = a_end;
+        b_beg = b_end;
+    }
+    false
+}
+
+/// `BM_vert_collapse_check_double_face` — collapse would double a face.
+pub fn bm_vert_collapse_check_double_face(bm: &BMesh, v_collapse: usize) -> bool {
+    debug_assert!(query::bm_vert_is_edge_pair(bm, v_collapse));
+    let l_first = bm.edge(bm.vert(v_collapse).e).l;
+    if l_first == BM_NIL {
+        return false;
+    }
+    let e_a = bm.vert(v_collapse).e;
+    let e_b = if bm.loo(l_first).v == v_collapse {
+        bm.loo(bm.loo(l_first).prev).e
+    } else {
+        bm.loo(bm.loo(l_first).next).e
+    };
+    let v_a = other_vert(bm, e_a, v_collapse);
+    let v_b = other_vert(bm, e_b, v_collapse);
+    let e_exists = query::bm_edge_exists(bm, v_a, v_b);
+    if e_exists == BM_NIL || bm.edge(e_exists).l == BM_NIL {
+        return false;
+    }
+    let mut l_a_iter = l_first;
+    loop {
+        let f_a = bm.loo(l_a_iter).f;
+        if bm.face(f_a).len > 3 {
+            let l_collapse = if bm.loo(l_a_iter).v == v_collapse {
+                l_a_iter
+            } else if bm.loo(bm.loo(l_a_iter).next).v == v_collapse {
+                bm.loo(l_a_iter).next
+            } else {
+                bm.loo(l_a_iter).prev
+            };
+            let mut l_exists = bm.edge(e_exists).l;
+            let ex_first = l_exists;
+            loop {
+                let f_ex = bm.loo(l_exists).f;
+                if bm.face(f_a).len - 1 == bm.face(f_ex).len {
+                    let l_cb = bm.loo(l_collapse).next;
+                    let l_ce = bm.loo(l_collapse).prev;
+                    let swap_winding = bm.loo(l_cb).v == bm.loo(l_exists).v;
+                    let hit = if swap_winding {
+                        bm_face_pair_overlap_check_subset_swap_winding(
+                            bm,
+                            bm.loo(l_cb).next,
+                            bm.loo(l_ce).prev,
+                            bm.loo(l_exists).prev,
+                            bm.loo(bm.loo(l_exists).next).next,
+                        )
+                    } else {
+                        bm_face_pair_overlap_check_subset_same_winding(
+                            bm,
+                            bm.loo(l_cb).next,
+                            bm.loo(l_ce).prev,
+                            bm.loo(bm.loo(l_exists).next).next,
+                            bm.loo(l_exists).prev,
+                        )
+                    };
+                    if hit {
+                        return true;
+                    }
+                }
+                l_exists = bm.loo(l_exists).radial_next;
+                if l_exists == ex_first {
+                    break;
+                }
+            }
+        }
+        l_a_iter = bm.loo(l_a_iter).radial_next;
+        if l_a_iter == l_first {
+            break;
+        }
+    }
+    false
+}
+
+/// `BM_face_split_check_double_face` — splitting l_a..l_b on face would
+/// create a duplicate of an existing face on either side.
+pub fn bm_face_split_check_double_face(bm: &BMesh, l_a: usize, l_b: usize, f_len: i32) -> bool {
+    let side_b_len = (bm.face(bm.loo(l_a).f).len - f_len) + 2;
+    query::bm_face_exists_subset_from_face(bm, l_a, l_b, f_len) != BM_NIL
+        || query::bm_face_exists_subset_from_face(bm, l_b, l_a, side_b_len) != BM_NIL
+}
+
+/// `bm_edge_supports_separate` — edge radial has >1 loop.
+#[inline]
+fn bm_edge_supports_separate(bm: &BMesh, e: usize) -> bool {
+    let l = bm.edge(e).l;
+    l != BM_NIL && bm.loo(l).radial_next != l
+}
+
+/// `bmesh_kernel_edge_separate` — split `l_sep` off edge `e` onto a new edge.
+pub fn bmesh_kernel_edge_separate(bm: &mut BMesh, e: usize, l_sep: usize, copy_select: bool) {
+    debug_assert!(bm.loo(l_sep).e == e && bm.edge(e).l != BM_NIL);
+    if bm.edge(e).l == BM_NIL || bm.loo(bm.edge(e).l).radial_next == bm.edge(e).l {
+        return; /* boundary: no cut required */
+    }
+    if l_sep == bm.edge(e).l {
+        bm.epool[e].l = bm.loo(l_sep).radial_next;
+    }
+    let src_flags = (bm.edge(e).head.hflag, bm.edge(e).head.api_flag);
+    let e_new = bm_edge_create(bm, bm.edge(e).v1, bm.edge(e).v2, Some(e), 0);
+    structure::bmesh_radial_loop_remove(bm, e, l_sep);
+    structure::bmesh_radial_loop_append(bm, e_new, l_sep);
+    bm.lpool[l_sep].e = e_new;
+    if copy_select {
+        construct::bm_elem_select_copy(bm, BM_EDGE, e_new, src_flags);
+    }
+}
+
+/// `bmesh_kernel_vert_separate` — split vertex fans; returns count.
+pub fn bmesh_kernel_vert_separate(
+    bm: &mut BMesh,
+    v: usize,
+    r_vout: Option<&mut Vec<usize>>,
+    copy_select: bool,
+) -> usize {
+    const EDGE_VISIT: u8 = 1;
+    let mut verts_new: Vec<usize> = Vec::new();
+    let mut edges: Vec<usize> = Vec::new();
+    let mut edges_search: Vec<usize> = Vec::new();
+    let mut verts_num = 1usize;
+    let mut edges_found = 0usize;
+    let mut v_edges_num = 0usize;
+    let mut vout = r_vout;
+    if bm.vert(v).e != BM_NIL {
+        /* count and tag */
+        let first = bm.vert(v).e;
+        let mut e_iter = first;
+        loop {
+            v_edges_num += 1;
+            bm.epool[e_iter].head.api_flag |= 1 << EDGE_VISIT;
+            e_iter = structure::bmesh_disk_edge_next(bm, e_iter, v);
+            if e_iter == first {
+                break;
+            }
+        }
+        loop {
+            /* walk one fan from v->e */
+            let mut e = bm.vert(v).e;
+            bm.epool[e].head.api_flag &= !(1 << EDGE_VISIT);
+            loop {
+                edges.push(e);
+                edges_found += 1;
+                let mut l = bm.edge(e).l;
+                if l != BM_NIL {
+                    let first = l;
+                    loop {
+                        let l_adjacent = if bm.loo(l).v == v {
+                            bm.loo(l).prev
+                        } else {
+                            bm.loo(l).next
+                        };
+                        let ea = bm.loo(l_adjacent).e;
+                        if bm.edge(ea).head.api_flag & (1 << EDGE_VISIT) != 0 {
+                            bm.epool[ea].head.api_flag &= !(1 << EDGE_VISIT);
+                            edges_search.push(ea);
+                        }
+                        l = bm.loo(l).radial_next;
+                        if l == first {
+                            break;
+                        }
+                    }
+                }
+                match edges_search.pop() {
+                    Some(next_e) => e = next_e,
+                    None => break,
+                }
+            }
+            if edges_found == v_edges_num {
+                break;
+            }
+            let src_flags = (bm.vert(v).head.hflag, bm.vert(v).head.api_flag);
+            let v_new = bm_vert_create(bm, bm.vert(v).co, Some(v), 0);
+            if copy_select {
+                construct::bm_elem_select_copy(bm, BM_VERT, v_new, src_flags);
+            }
+            while let Some(e) = edges.pop() {
+                bmesh_edge_vert_swap(bm, e, v_new, v);
+            }
+            if vout.is_some() {
+                verts_new.push(v_new);
+            }
+            verts_num += 1;
+        }
+    }
+    if let Some(out) = vout {
+        out.clear();
+        out.push(v);
+        out.extend(verts_new);
+    }
+    verts_num
+}
+
+/// `bmesh_kernel_vert_separate__cleanup` — merge duplicate edges created by
+/// `bmesh_kernel_edge_separate` per group (list-of-lists: [orig, splits...]).
+fn vert_separate_cleanup(bm: &mut BMesh, edges_separate: &[Vec<usize>]) {
+    for group in edges_separate {
+        for (gi, &e_orig) in group.iter().enumerate() {
+            for &e in &group[gi + 1..] {
+                if bm.edge(e).v1 == bm.edge(e_orig).v1
+                    && bm.edge(e).v2 == bm.edge(e_orig).v2
+                    && bm_edge_splice(bm, e_orig, e)
+                {
+                    /* merged; keep scanning rest of group */
+                }
+            }
+        }
+    }
+}
+
+/// `BM_vert_separate` — split `v`'s fans, splitting `e_in` edges first.
+pub fn bm_vert_separate(
+    bm: &mut BMesh,
+    v: usize,
+    e_in: &[usize],
+    copy_select: bool,
+    r_vout: Option<&mut Vec<usize>>,
+) -> usize {
+    let mut edges_separate: Vec<Vec<usize>> = Vec::new();
+    for &e in e_in {
+        if bm_edge_supports_separate(bm, e) {
+            let mut group = Vec::new();
+            loop {
+                let l_sep = bm.edge(e).l;
+                bmesh_kernel_edge_separate(bm, e, l_sep, copy_select);
+                group.push(bm.loo(l_sep).e);
+                if !bm_edge_supports_separate(bm, e) {
+                    break;
+                }
+            }
+            group.push(e);
+            edges_separate.push(group);
+        }
+    }
+    let n = bmesh_kernel_vert_separate(bm, v, r_vout, copy_select);
+    vert_separate_cleanup(bm, &edges_separate);
+    n
+}
+
+/// `BM_vert_separate_hflag` — split `v`'s fans; pre-split edges w/ hflag.
+pub fn bm_vert_separate_hflag(
+    bm: &mut BMesh,
+    v: usize,
+    hflag: u8,
+    copy_select: bool,
+    r_vout: Option<&mut Vec<usize>>,
+) -> usize {
+    let mut edges_separate: Vec<Vec<usize>> = Vec::new();
+    if bm.vert(v).e != BM_NIL {
+        let mut e_first = bm.vert(v).e;
+        let mut e_iter = e_first;
+        loop {
+            let next_e = structure::bmesh_disk_edge_next(bm, e_iter, v);
+            if bm.edge(e_iter).head.hflag & hflag != 0 {
+                let e = e_iter;
+                if bm_edge_supports_separate(bm, e) {
+                    let mut group = Vec::new();
+                    loop {
+                        let l_sep = bm.edge(e).l;
+                        bmesh_kernel_edge_separate(bm, e, l_sep, copy_select);
+                        if edges_separate.is_empty() && group.is_empty() {
+                            e_first = bm.loo(l_sep).e;
+                        }
+                        group.push(bm.loo(l_sep).e);
+                        if !bm_edge_supports_separate(bm, e) {
+                            break;
+                        }
+                    }
+                    group.push(e);
+                    edges_separate.push(group);
+                }
+            }
+            e_iter = next_e;
+            if e_iter == e_first {
+                break;
+            }
+        }
+    }
+    let n = bmesh_kernel_vert_separate(bm, v, r_vout, copy_select);
+    vert_separate_cleanup(bm, &edges_separate);
+    n
+}
+
+/// `BM_vert_separate_tested_edges` — move edges passing `test` from v_src to
+/// v_dst's disk cycle.
+pub fn bm_vert_separate_tested_edges(
+    bm: &mut BMesh,
+    v_dst: usize,
+    v_src: usize,
+    test: impl Fn(&BMesh, usize) -> bool,
+) {
+    if bm.vert(v_src).e == BM_NIL {
+        return;
+    }
+    let mut edges = Vec::new();
+    let first = bm.vert(v_src).e;
+    let mut e_iter = first;
+    loop {
+        if test(bm, e_iter) {
+            edges.push(e_iter);
+        }
+        e_iter = structure::bmesh_disk_edge_next(bm, e_iter, v_src);
+        if e_iter == first {
+            break;
+        }
+    }
+    for e in edges {
+        structure::bmesh_disk_vert_replace(bm, e, v_dst, v_src);
+    }
+}
+
+/// `bmesh_kernel_unglue_region_make_vert` — peel one loop's vert region.
+pub fn bmesh_kernel_unglue_region_make_vert(bm: &mut BMesh, l_sep: usize) -> usize {
+    let v_sep = bm.loo(l_sep).v;
+    if !delete::bm_edge_is_boundary(bm, bm.loo(l_sep).e) {
+        bmesh_kernel_edge_separate(bm, bm.loo(l_sep).e, l_sep, false);
+    }
+    let l_prev = bm.loo(l_sep).prev;
+    if !delete::bm_edge_is_boundary(bm, bm.loo(l_prev).e) {
+        bmesh_kernel_edge_separate(bm, bm.loo(l_prev).e, l_prev, false);
+    }
+    /* find an edge unattached to this loop */
+    let mut e_iter = bm.vert(v_sep).e;
+    while e_iter != bm.loo(l_sep).e && e_iter != bm.loo(l_prev).e {
+        e_iter = structure::bmesh_disk_edge_next(bm, e_iter, v_sep);
+        if e_iter == bm.vert(v_sep).e {
+            return v_sep; /* whole URMV was a no-op */
+        }
+    }
+    bm.vpool[v_sep].e = bm.loo(l_sep).e;
+    let v_new = bm_vert_create(bm, bm.vert(v_sep).co, Some(v_sep), 0);
+    for e in [bm.loo(l_sep).e, bm.loo(l_prev).e] {
+        bmesh_edge_vert_swap(bm, e, v_new, v_sep);
+    }
+    v_new
+}
+
+/// `bmesh_kernel_unglue_region_make_vert_multi` — peel several loops' region.
+pub fn bmesh_kernel_unglue_region_make_vert_multi(bm: &mut BMesh, larr: &[usize]) -> usize {
+    const LOOP_VISIT: u8 = 2;
+    const EDGE_VISIT: u8 = 1;
+    let v_sep = bm.loo(larr[0]).v;
+    let mut edges_len = 0usize;
+    let mut is_mixed_edge_any = false;
+    let mut is_mixed_loop_any = false;
+    for &l_sep in larr {
+        debug_assert!(v_sep == bm.loo(l_sep).v);
+        bm.lpool[l_sep].head.api_flag |= 1 << LOOP_VISIT;
+        let (ln, lp) = (bm.loo(l_sep).next, bm.loo(l_sep).prev);
+        bm.lpool[ln].head.api_flag |= 1 << LOOP_VISIT;
+        bm.lpool[lp].head.api_flag |= 1 << LOOP_VISIT;
+        for &le in &[bm.loo(l_sep).e, bm.loo(lp).e] {
+            if bm.edge(le).head.api_flag & (1 << EDGE_VISIT) == 0 {
+                bm.epool[le].head.api_flag |= 1 << EDGE_VISIT;
+                edges_len += 1;
+            }
+        }
+    }
+    let mut edges: Vec<usize> = Vec::with_capacity(edges_len);
+    if bm.vert(v_sep).e != BM_NIL {
+        let first = bm.vert(v_sep).e;
+        let mut e_iter = first;
+        loop {
+            if bm.edge(e_iter).head.api_flag & (1 << EDGE_VISIT) != 0 {
+                let mut is_mixed_loop = false;
+                let mut l = bm.edge(e_iter).l;
+                let lfirst = l;
+                loop {
+                    if bm.loo(l).head.api_flag & (1 << LOOP_VISIT) == 0 {
+                        is_mixed_loop = true;
+                        break;
+                    }
+                    l = bm.loo(l).radial_next;
+                    if l == lfirst {
+                        break;
+                    }
+                }
+                if is_mixed_loop {
+                    bm.epool[e_iter].l = l;
+                    is_mixed_loop_any = true;
+                }
+                edges.push(e_iter);
+            } else {
+                is_mixed_edge_any = true;
+            }
+            e_iter = structure::bmesh_disk_edge_next(bm, e_iter, v_sep);
+            if e_iter == first {
+                break;
+            }
+        }
+    }
+    let v_new;
+    if !is_mixed_loop_any && !is_mixed_edge_any {
+        v_new = v_sep;
+    } else {
+        v_new = bm_vert_create(bm, bm.vert(v_sep).co, Some(v_sep), 0);
+        for &e in &edges {
+            bm.epool[e].head.api_flag &= !(1 << EDGE_VISIT);
+            let el = bm.edge(e).l;
+            if bm.loo(el).head.api_flag & (1 << LOOP_VISIT) == 0 {
+                /* split off owned loops onto a new edge */
+                let (v1, v2) = if bm.edge(e).v1 == v_sep {
+                    (v_new, bm.edge(e).v2)
+                } else {
+                    (bm.edge(e).v1, v_new)
+                };
+                let e_new = bm_edge_create(bm, v1, v2, Some(e), 0);
+                let mut l = el;
+                let lfirst = l;
+                loop {
+                    let l_next = bm.loo(l).radial_next;
+                    if bm.loo(l).head.api_flag & (1 << LOOP_VISIT) != 0 {
+                        structure::bmesh_radial_loop_remove(bm, e, l);
+                        structure::bmesh_radial_loop_append(bm, e_new, l);
+                        bm.lpool[l].e = e_new;
+                    }
+                    l = l_next;
+                    if l == lfirst {
+                        break;
+                    }
+                }
+            } else {
+                structure::bmesh_disk_vert_replace(bm, e, v_new, v_sep);
+            }
+        }
+    }
+    for &l_sep in larr {
+        bm.lpool[l_sep].v = v_new;
+        let (ln, lp) = (bm.loo(l_sep).next, bm.loo(l_sep).prev);
+        bm.lpool[l_sep].head.api_flag &= !(1 << LOOP_VISIT);
+        bm.lpool[ln].head.api_flag &= !(1 << LOOP_VISIT);
+        bm.lpool[lp].head.api_flag &= !(1 << LOOP_VISIT);
+        let e_prev = bm.loo(lp).e;
+        let e_self = bm.loo(l_sep).e;
+        bm.epool[e_prev].head.api_flag &= !(1 << EDGE_VISIT);
+        bm.epool[e_self].head.api_flag &= !(1 << EDGE_VISIT);
+    }
+    v_new
+}
+
+/// `bmesh_kernel_unglue_region_make_vert_multi_isolated`.
+pub fn bmesh_kernel_unglue_region_make_vert_multi_isolated(bm: &mut BMesh, l_sep: usize) -> usize {
+    let v_src = bm.loo(l_sep).v;
+    let v_new = bm_vert_create(bm, bm.vert(v_src).co, Some(v_src), 0);
+    bmesh_edge_vert_swap_recursive(bm, bm.loo(l_sep).e, v_new, v_src);
+    v_new
+}
+
+/// `bmesh_face_swap_data` — swap loop ownership + face records, keep data.
+pub fn bmesh_face_swap_data(bm: &mut BMesh, f_a: usize, f_b: usize) {
+    debug_assert!(f_a != f_b);
+    let first = bm.face(f_a).l_first;
+    let mut l = first;
+    loop {
+        bm.lpool[l].f = f_b;
+        l = bm.loo(l).next;
+        if l == first {
+            break;
+        }
+    }
+    let first = bm.face(f_b).l_first;
+    let mut l = first;
+    loop {
+        bm.lpool[l].f = f_a;
+        l = bm.loo(l).next;
+        if l == first {
+            break;
+        }
+    }
+    bm.fpool.swap(f_a, f_b);
+    /* swap back data+index so pool indices stay coherent */
+    let (da, db) = (bm.fpool[f_a].head.data, bm.fpool[f_b].head.data);
+    let (ia, ib) = (bm.fpool[f_a].head.index, bm.fpool[f_b].head.index);
+    bm.fpool[f_a].head.data = db;
+    bm.fpool[f_b].head.data = da;
+    bm.fpool[f_a].head.index = ia;
+    bm.fpool[f_b].head.index = ib;
+}
+
+/// `BM_edge_other_vert` — the edge's vert that isn't `v`.
+#[inline]
+fn other_vert(bm: &BMesh, e: usize, v: usize) -> usize {
+    if bm.edge(e).v1 == v {
+        bm.edge(e).v2
+    } else {
+        bm.edge(e).v1
+    }
 }
