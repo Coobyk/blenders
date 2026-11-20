@@ -82,7 +82,7 @@ pub const OPDEF_PLANAR_FACES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_flatten::bmo_planar_faces_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -239,7 +239,7 @@ pub const OPDEF_FLATTEN: BMOpDefine = BMOpDefine {
         ("lock_z", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_flatten::bmo_flatten_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
