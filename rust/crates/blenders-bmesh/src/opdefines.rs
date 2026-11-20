@@ -896,7 +896,7 @@ pub const OPDEF_BISECT_PLANE: BMOpDefine = BMOpDefine {
         ("geom_cut.out", BMOSlotType::ElemBuf),
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_bisect_plane::bmo_bisect_plane_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
