@@ -113,3 +113,4 @@ pub mod generic_virtual_array;
 pub mod boxpack_2d;
 pub mod index_mask;
 pub mod convexhull_2d;
+pub mod polyfill_2d;
