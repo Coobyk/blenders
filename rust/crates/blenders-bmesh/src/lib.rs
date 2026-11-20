@@ -13,6 +13,7 @@ pub mod core;
 pub mod delete;
 pub mod iterators;
 pub mod marking;
+pub mod edgeloop;
 pub mod mesh;
 pub mod validate;
 pub mod mods;
