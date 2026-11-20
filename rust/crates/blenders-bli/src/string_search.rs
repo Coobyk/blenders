@@ -376,7 +376,7 @@ impl<T: Copy> StringSearchBase<T> {
         let main_group_length: usize = words
             .iter()
             .zip(&word_group_ids)
-            .filter(|(_, g)| *g == main_group_id)
+            .filter(|(_, g)| **g == main_group_id)
             .map(|(w, _)| w.len())
             .sum();
         let is_deprecated = s.contains("eprecated");
