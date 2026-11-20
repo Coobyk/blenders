@@ -127,6 +127,7 @@ pub mod structure_of_array_conversion;
 pub mod index_mask_expression;
 pub mod expr_pylike_eval;
 pub mod scanfill;
+pub mod smaa_textures;
 pub mod path_utils;
 pub mod array_store;
 pub mod noise_tables;
