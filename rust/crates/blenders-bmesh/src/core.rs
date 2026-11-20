@@ -1852,3 +1852,38 @@ fn other_vert(bm: &BMesh, e: usize, v: usize) -> usize {
         bm.edge(e).v1
     }
 }
+
+/// `BM_face_copy` — duplicate face (with new verts+edges when asked).
+/// Loop CustomData interp PORT_PENDING.
+pub fn bm_face_copy(bm: &mut BMesh, f: usize, copy_verts: bool, copy_edges: bool) -> usize {
+    let flen = bm.face(f).len as usize;
+    let mut verts: Vec<usize> = Vec::with_capacity(flen);
+    let mut edges: Vec<usize> = Vec::with_capacity(flen);
+    let mut emap: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let loops: Vec<usize> = crate::iterators::LoopsOfFace::new(bm, f).collect();
+    for &l in &loops {
+        let v = bm.loo(l).v;
+        let e = bm.loo(l).e;
+        let nv = if copy_verts {
+            crate::core::bm_vert_create(bm, bm.vert(v).co, Some(v), 0)
+        } else { v };
+        let ne = if copy_edges {
+            *emap.entry(e).or_insert_with(|| usize::MAX)
+        } else { e };
+        verts.push(nv);
+        edges.push(ne);
+    }
+    /* edges created after verts so they reference the new verts */
+    if copy_edges {
+        let mut ne_i = 0;
+        for &l in &loops {
+            if edges[ne_i] == usize::MAX {
+                let v1 = verts[ne_i];
+                let v2 = verts[(ne_i + 1) % flen];
+                edges[ne_i] = crate::core::bm_edge_create(bm, v1, v2, Some(bm.loo(l).e), 0);
+            }
+            ne_i += 1;
+        }
+    }
+    bm_face_create(bm, &verts, &edges, Some(f), 0)
+}

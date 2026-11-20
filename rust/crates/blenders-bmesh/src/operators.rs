@@ -567,6 +567,7 @@ pub enum CallfArg<'a> {
     Float(&'a str, f32),
     Vec(&'a str, Vec3),
     Mat(&'a str, Mat4),
+    OFlag(&'a str, u8, u8),
 }
 /// `BMO_op_callf` — init, fill input slots, exec, return the op
 /// (caller drops or reads slots_out).
@@ -592,6 +593,9 @@ pub fn bmo_op_callf(bm: &mut BMesh, flag: i32, opname: &str, args: &[CallfArg]) 
             CallfArg::Float(name, v) => bmo_slot_float_set(&mut op, false, name, *v),
             CallfArg::Vec(name, v) => bmo_slot_vec_set(&mut op, false, name, *v),
             CallfArg::Mat(name, m) => bmo_slot_mat_set(&mut op, false, name, *m),
+            CallfArg::OFlag(name, htype, oflag) => {
+                bmo_slot_buffer_from_enabled_flag(bm, &mut op, false, name, *htype, *oflag);
+            }
         }
     }
     if let Some(exec) = define.exec {

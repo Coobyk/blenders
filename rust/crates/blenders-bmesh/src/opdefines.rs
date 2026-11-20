@@ -617,7 +617,7 @@ pub const OPDEF_EXTRUDE_DISCRETE_FACES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_extrude::bmo_extrude_discrete_faces_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -632,7 +632,7 @@ pub const OPDEF_EXTRUDE_EDGE_ONLY: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_extrude::bmo_extrude_edge_only_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -647,7 +647,7 @@ pub const OPDEF_EXTRUDE_VERT_INDIV: BMOpDefine = BMOpDefine {
         ("edges.out", BMOSlotType::ElemBuf),
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_extrude::bmo_extrude_vert_indiv_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -726,7 +726,7 @@ pub const OPDEF_EXTRUDE_FACE_REGION: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_extrude::bmo_extrude_face_region_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
