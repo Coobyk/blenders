@@ -383,7 +383,7 @@ pub const OPDEF_CONTEXTUAL_CREATE: BMOpDefine = BMOpDefine {
         ("faces.out", BMOSlotType::ElemBuf),
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_create::bmo_contextual_create_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
