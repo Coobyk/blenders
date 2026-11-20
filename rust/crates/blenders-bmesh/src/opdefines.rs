@@ -42,7 +42,7 @@ pub const OPDEF_SMOOTH_LAPLACIAN_VERT: BMOpDefine = BMOpDefine {
         ("preserve_volume", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_smooth_laplacian::bmo_smooth_laplacian_vert_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

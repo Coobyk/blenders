@@ -27,3 +27,4 @@ pub mod bmo_offset_edgeloops;
 pub mod bmo_create;
 pub mod bmo_space;
 pub mod bmo_relax;
+pub mod bmo_smooth_laplacian;
