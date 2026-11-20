@@ -14,6 +14,7 @@ pub mod delete;
 pub mod iterators;
 pub mod marking;
 pub mod mesh;
+pub mod normals;
 pub mod query;
 pub mod structure;
 
