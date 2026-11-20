@@ -133,3 +133,5 @@ pub mod array_store;
 pub mod noise_tables;
 pub mod noise;
 pub mod noise_c;
+pub mod winstuff;
+pub mod system_win32;
