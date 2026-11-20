@@ -12,6 +12,7 @@ pub mod geom;
 pub mod matrix;
 pub mod quaternion;
 pub mod solvers;
+pub mod statistics;
 pub mod vector;
 
 pub use euler::{Euler3, EulerOrder, EulerXYZ};
