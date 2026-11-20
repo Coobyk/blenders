@@ -8,6 +8,7 @@
 //!
 //! Source: `source/blender/bmesh/` (`bmesh_class.hh`, `intern/*.cc`).
 
+pub mod construct;
 pub mod core;
 pub mod iterators;
 pub mod mesh;
@@ -114,6 +115,8 @@ pub struct BMFace {
     pub l_first: usize,
     /// Number of corners.
     pub len: i32,
+    /// Material index (`mat_nr` in C).
+    pub mat_nr: i16,
 }
 
 /// `eBMCreateFlag` (`bmesh_core.hh`).
