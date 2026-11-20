@@ -613,6 +613,7 @@ dependencies = [
  "blenders-math",
  "flate2",
  "libc",
+ "robust",
  "zstd",
 ]
 
