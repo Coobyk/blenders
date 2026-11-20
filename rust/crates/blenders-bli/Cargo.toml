@@ -1,0 +1,10 @@
+[package]
+name = "blenders-bli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "BLI (blenlib) utilities ported to Rust"
+
+[dependencies]
+blenders-math = { path = "../blenders-math" }

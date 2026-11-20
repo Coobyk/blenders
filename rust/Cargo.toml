@@ -20,6 +20,7 @@ description = "Blender rewritten in Rust and GPUI"
 gpui = "0.2.2"
 blenders-math = { path = "crates/blenders-math" }
 blenders-core = { path = "crates/blenders-core" }
+blenders-bli = { path = "crates/blenders-bli" }
 
 # xattr 0.2.3 (via zed-async-tar -> gpui_http_client) references the removed
 # `libc::ENOATTR`. Vendored copy maps it to `libc::ENODATA` (same value on

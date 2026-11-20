@@ -600,9 +600,17 @@ dependencies = [
 name = "blenders"
 version = "0.1.0"
 dependencies = [
+ "blenders-bli",
  "blenders-core",
  "blenders-math",
  "gpui",
+]
+
+[[package]]
+name = "blenders-bli"
+version = "0.1.0"
+dependencies = [
+ "blenders-math",
 ]
 
 [[package]]
