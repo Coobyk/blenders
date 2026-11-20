@@ -1245,7 +1245,7 @@ pub const OPDEF_SOLIDIFY: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_extrude::bmo_solidify_face_region_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

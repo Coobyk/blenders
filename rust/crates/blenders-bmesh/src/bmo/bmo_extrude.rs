@@ -349,3 +349,140 @@ pub fn bmo_extrude_face_region_exec(bm: &mut BMesh, op: &mut BMOperator) {
     }
     bmo_op_finish(bm, dupeop);
 }
+
+/* Solidify (same C file). */
+const VERT_MARK: u8 = 1;
+const FACE_MARK: u8 = 1;
+const EDGE_MARK: u8 = 1;
+const VERT_NONMAN: u8 = 2;
+const EDGE_NONMAN: u8 = 2;
+
+/// `calc_solidify_normals`.
+fn calc_solidify_normals(bm: &mut BMesh) {
+    for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        bm.vpool[v].head.hflag |= crate::BM_ELEM_TAG;
+    }
+    /* edge_face_count per edge slot index */
+    let mut edge_face_count = vec![0i32; bm.epool.len()];
+    for f in crate::iterators::FacesOfMesh::new(bm).collect::<Vec<_>>() {
+        if !bmo_elem_flag_test(bm, (BM_FACE, f), FACE_MARK) { continue; }
+        for e in crate::iterators::EdgesOfFace::new(bm, f).collect::<Vec<_>>() {
+            bmo_elem_flag_enable(bm, (BM_EDGE, e), EDGE_MARK);
+            let (v1, v2) = (bm.edge(e).v1, bm.edge(e).v2);
+            bmo_elem_flag_enable(bm, (BM_VERT, v1), VERT_MARK);
+            bmo_elem_flag_enable(bm, (BM_VERT, v2), VERT_MARK);
+            edge_face_count[e] += 1;
+        }
+    }
+    for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+        if !bmo_elem_flag_test(bm, (BM_EDGE, e), EDGE_MARK) { continue; }
+        let i = edge_face_count[e];
+        if i == 0 || i > 2 {
+            bmo_elem_flag_enable(bm, (BM_EDGE, e), EDGE_NONMAN);
+            let (v1, v2) = (bm.edge(e).v1, bm.edge(e).v2);
+            bmo_elem_flag_enable(bm, (BM_VERT, v1), VERT_NONMAN);
+            bmo_elem_flag_enable(bm, (BM_VERT, v2), VERT_NONMAN);
+        }
+    }
+    for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        if !crate::query::bm_vert_is_manifold(bm, v) {
+            bmo_elem_flag_enable(bm, (BM_VERT, v), VERT_NONMAN);
+            continue;
+        }
+        if bmo_elem_flag_test(bm, (BM_VERT, v), VERT_MARK) {
+            bm.vpool[v].no = Vec3::ZERO;
+        }
+    }
+    for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+        if !bmo_elem_flag_test(bm, (BM_EDGE, e), EDGE_MARK)
+            || bmo_elem_flag_test(bm, (BM_EDGE, e), EDGE_NONMAN)
+        { continue; }
+        let mut f1 = BM_NIL;
+        let mut f2 = BM_NIL;
+        for f in crate::iterators::FacesOfEdge::new(bm, e) {
+            if bmo_elem_flag_test(bm, (BM_FACE, f), FACE_MARK) {
+                if f1 == BM_NIL { f1 = f; } else { debug_assert_eq!(f2, BM_NIL); f2 = f; }
+            }
+        }
+        debug_assert_ne!(f1, BM_NIL);
+        let edge_normal;
+        if f2 != BM_NIL {
+            let angle = blenders_math::geom::angle_normalized_v3v3(bm.face(f1).no, bm.face(f2).no);
+            if angle > 0.0 {
+                edge_normal = (bm.face(f1).no + bm.face(f2).no).normalized() * angle;
+            } else {
+                let (v1, v2) = (bm.edge(e).v1, bm.edge(e).v2);
+                bm.vpool[v1].head.hflag &= !crate::BM_ELEM_TAG;
+                bm.vpool[v2].head.hflag &= !crate::BM_ELEM_TAG;
+                continue;
+            }
+        } else {
+            edge_normal = bm.face(f1).no * std::f32::consts::FRAC_PI_2;
+        }
+        let (v1, v2) = (bm.edge(e).v1, bm.edge(e).v2);
+        bm.vpool[v1].no = bm.vert(v1).no + edge_normal;
+        bm.vpool[v2].no = bm.vert(v2).no + edge_normal;
+    }
+    for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        if !bmo_elem_flag_test(bm, (BM_VERT, v), VERT_MARK) { continue; }
+        if bmo_elem_flag_test(bm, (BM_VERT, v), VERT_NONMAN) {
+            crate::normals::bm_vert_normal_update(bm, v);
+        } else if bm.vert(v).no.length() == 0.0
+            && bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0
+        {
+            let mut f_hit = BM_NIL;
+            for f in crate::iterators::FacesOfVert::new(bm, v) {
+                if bmo_elem_flag_test(bm, (BM_FACE, f), FACE_MARK) { f_hit = f; break; }
+            }
+            if f_hit != BM_NIL {
+                bm.vpool[v].no = bm.face(f_hit).no;
+            }
+        }
+    }
+}
+
+/// `solidify_add_thickness`.
+fn solidify_add_thickness(bm: &mut BMesh, dist: f32) {
+    let n = bm.vpool.len();
+    let mut vert_angles = vec![0.0f32; n];
+    let mut vert_accum = vec![0.0f32; n];
+    for f in crate::iterators::FacesOfMesh::new(bm).collect::<Vec<_>>() {
+        if !bmo_elem_flag_test(bm, (BM_FACE, f), FACE_MARK) { continue; }
+        let loops = crate::iterators::LoopsOfFace::new(bm, f).collect::<Vec<_>>();
+        let vcos: Vec<Vec3> = loops.iter().map(|&l| bm.vert(bm.loo(l).v).co).collect();
+        let face_angles = blenders_math::vector::angle_poly(&vcos);
+        for (i, &l) in loops.iter().enumerate() {
+            let v = bm.loo(l).v;
+            vert_accum[v] += face_angles[i];
+            vert_angles[v] += blenders_math::geom::shell_v3v3_normalized_to_dist(
+                bm.vert(v).no, bm.face(f).no) * face_angles[i];
+        }
+    }
+    for v in 0..n {
+        if vert_accum[v] != 0.0 {
+            bm.vpool[v].co = bm.vert(v).co + bm.vert(v).no * (dist * (vert_angles[v] / vert_accum[v]));
+        }
+    }
+}
+
+/// `bmo_solidify_face_region_exec`.
+pub fn bmo_solidify_face_region_exec(bm: &mut BMesh, op: &mut BMOperator) {
+    let thickness = bmo_slot_float_get(op, false, "thickness");
+    let mut reverseop = bmo_op_init(bm, &crate::opdefines::OPDEF_REVERSE_FACES, op.flag);
+    bmo_slot_bool_set(&mut reverseop, false, "flip_multires", true);
+    let geom: Vec<_> = bmo_slot_buffer(op, false, "geom").to_vec();
+    slot_get_mut(&mut reverseop.slots_in, "faces").buf = geom;
+    bmo_op_exec(bm, &mut reverseop, crate::bmo::bmo_removedoubles::bmo_reverse_faces_exec);
+    bmo_op_finish(bm, reverseop);
+    let mut extrudeop = bmo_op_init(bm, &crate::opdefines::OPDEF_EXTRUDE_FACE_REGION, op.flag);
+    bmo_slot_bool_set(&mut extrudeop, false, "use_keep_orig", true);
+    let geom: Vec<_> = bmo_slot_buffer(op, false, "geom").to_vec();
+    slot_get_mut(&mut extrudeop.slots_in, "geom").buf = geom;
+    bmo_op_exec(bm, &mut extrudeop, bmo_extrude_face_region_exec);
+    bmo_slot_buffer_flag_enable(bm, &mut extrudeop, true, "geom.out", FACE_MARK);
+    calc_solidify_normals(bm);
+    solidify_add_thickness(bm, thickness);
+    let geom_out: Vec<_> = bmo_slot_buffer(&extrudeop, true, "geom.out").to_vec();
+    slot_get_mut(&mut op.slots_out, "geom.out").buf = geom_out;
+    bmo_op_finish(bm, extrudeop);
+}
