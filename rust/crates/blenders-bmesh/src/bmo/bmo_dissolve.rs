@@ -252,3 +252,180 @@ pub fn bmo_dissolve_limit_exec(bm: &mut BMesh, op: &mut BMOperator) {
     bmo_slot_buffer_from_enabled_flag(
         bm, op, true, "region.out", 1 << BM_FACE, FACE_NEW);
 }
+
+const EDGE_TAG: u8 = 2;
+const EDGE_CHAIN: u8 = 16;
+
+/// `bmo_vert_calc_edge_angle_blended` — edge-pair angle blended with the
+/// normal-angled axis angle when the vert has a manifold edge.
+fn bmo_vert_calc_edge_angle_blended(bm: &BMesh, v: usize) -> f32 {
+    let Some((e0, e1)) = bm_vert_edge_pair(bm, v) else {
+        return std::f32::consts::PI;
+    };
+    let v_a = bm_edge_other_vert(bm, e0, v);
+    let v_b = bm_edge_other_vert(bm, e1, v);
+    let mut angle = std::f32::consts::PI
+        - blenders_math::vector::angle_v3v3v3(bm.vert(v_a).co, bm.vert(v).co, bm.vert(v_b).co);
+    if let Some((f_a, f_b)) = bm_edge_face_pair(bm, bm.vert(v).e) {
+        let no_a = bm.face(f_a).no;
+        let no_b = bm.face(f_b).no;
+        let raw_factor = (-no_a.dot(no_b)).clamp(0.0, 1.0);
+        let normal_angle = std::f32::consts::PI
+            - blenders_math::vector::angle_on_axis_v3v3v3(
+                bm.vert(v_a).co, bm.vert(v).co, bm.vert(v_b).co, bm.vert(v).no);
+        angle = normal_angle + (angle - normal_angle) * raw_factor;
+    }
+    angle
+}
+
+/// `bmo_find_end_of_chain` — walk edge-pair verts, tagging edges; returns
+/// the chain end, or BM_NIL on cycles/already-tagged.
+fn bmo_find_end_of_chain(bm: &mut BMesh, mut e: usize, mut v: usize, edge_oflag: u8) -> usize {
+    let v_init = v;
+    while bm_vert_is_edge_pair(bm, v) {
+        e = crate::structure::bmesh_disk_edge_next(bm, e, v);
+        v = bm_edge_other_vert(bm, e, v);
+        if bm.edge(e).head.api_flag & edge_oflag != 0 { return BM_NIL; }
+        bm.epool[e].head.api_flag |= edge_oflag;
+        debug_assert_ne!(v, v_init);
+        if v == v_init { return BM_NIL; }
+    }
+    v
+}
+
+/// `bmo_vert_touches_unselected_face`.
+fn bmo_vert_touches_unselected_face(bm: &BMesh, v: usize) -> bool {
+    if bm.vert(v).head.api_flag & VERT_MARK != 0 { return false; }
+    for l_a in crate::iterators::LoopsOfVert::new(bm, v) {
+        let l_b = bm_loop_other_edge_loop(bm, l_a, v);
+        if bm.edge(bm.loo(l_a).e).head.api_flag & EDGE_TAG == 0
+            && bm.edge(bm.loo(l_b).e).head.api_flag & EDGE_TAG == 0
+        { return true; }
+    }
+    false
+}
+
+/// `bmo_vert_tagged_edges_count_at_most`.
+fn bmo_vert_tagged_edges_count_at_most(bm: &BMesh, v: usize, edge_oflag: u8, max: i32) -> i32 {
+    let mut n = 0;
+    for e in crate::iterators::EdgesOfVert::new(bm, v) {
+        if bm.edge(e).head.api_flag & edge_oflag != 0 { n += 1; }
+        if n == max { return n; }
+    }
+    n
+}
+
+/// `bmo_dissolve_edges_init` — sets default angle_threshold = PI.
+pub fn bmo_dissolve_edges_init(op: &mut BMOperator) {
+    bmo_slot_float_set(op, false, "angle_threshold", std::f32::consts::PI);
+}
+
+/// `bmo_dissolve_edges_exec`.
+pub fn bmo_dissolve_edges_exec(bm: &mut BMesh, op: &mut BMOperator) {
+    let angle_epsilon = 0.0001f32.to_degrees();
+    let angle_threshold = bmo_slot_float_get(op, false, "angle_threshold");
+    let use_verts = bmo_slot_bool_get(op, false, "use_verts")
+        && angle_threshold > angle_epsilon;
+    let dissolve_all = angle_threshold > std::f32::consts::PI - angle_epsilon;
+    let use_face_split = bmo_slot_bool_get(op, false, "use_face_split");
+    let use_preserve_quads = bmo_slot_bool_get(op, false, "use_preserve_quads");
+    if use_face_split || use_verts {
+        bmo_slot_buffer_flag_enable(bm, op, false, "edges", EDGE_TAG);
+    }
+    let edges_in: Vec<usize> = op.slots_in.iter().find(|s| s.name == "edges")
+        .map(|s| s.buf.iter().filter(|(ht, _)| *ht == BM_EDGE).map(|(_, i)| *i).collect())
+        .unwrap_or_default();
+    for &e in &edges_in {
+        let (v1, v2) = (bm.edge(e).v1, bm.edge(e).v2);
+        if bm_vert_is_edge_pair(bm, v1) || bm_vert_is_edge_pair(bm, v2) {
+            bm.epool[e].head.api_flag |= EDGE_CHAIN;
+        }
+        if let Some((f0, f1)) = bm_edge_face_pair(bm, e) {
+            for f in [f0, f1] {
+                let l_first = bm.face(f).l_first;
+                let mut l_iter = l_first;
+                loop {
+                    let (lv, le) = (bm.loo(l_iter).v, bm.loo(l_iter).e);
+                    bm.vpool[lv].head.api_flag |= VERT_ISGC;
+                    bm.epool[le].head.api_flag |= EDGE_ISGC;
+                    l_iter = bm.loo(l_iter).next;
+                    if l_iter == l_first { break; }
+                }
+            }
+            if use_verts && bm.edge(e).head.api_flag & EDGE_CHAIN != 0 {
+                bmo_find_end_of_chain(bm, e, v1, EDGE_TAG);
+                bmo_find_end_of_chain(bm, e, v2, EDGE_TAG);
+            }
+        }
+    }
+    if use_verts {
+        for &e in &edges_in {
+            let Some((f0, f1)) = bm_edge_face_pair(bm, e) else { continue };
+            let (len0, len1) = (bm.face(f0).len, bm.face(f1).len);
+            for i in 0..2 {
+                let mut v_edge = if i == 0 { bm.edge(e).v1 } else { bm.edge(e).v2 };
+                if use_preserve_quads && len0 == 3 && len1 == 3
+                    && bmo_vert_tagged_edges_count_at_most(bm, v_edge, EDGE_TAG, 2) == 1
+                { continue; }
+                if bm_vert_is_edge_pair(bm, v_edge) {
+                    v_edge = bmo_find_end_of_chain(bm, e, v_edge, EDGE_CHAIN);
+                    if v_edge == BM_NIL { continue; }
+                }
+                if bmo_vert_touches_unselected_face(bm, v_edge)
+                    && bmo_vert_tagged_edges_count_at_most(bm, v_edge, EDGE_TAG, 2) != 1
+                { continue; }
+                bm.vpool[v_edge].head.api_flag |= VERT_MARK;
+            }
+        }
+    }
+    if use_face_split {
+        for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+            let mut untag_count = 0;
+            for e in crate::iterators::EdgesOfVert::new(bm, v) {
+                if bm.edge(e).head.api_flag & EDGE_TAG == 0 { untag_count += 1; }
+            }
+            if untag_count <= 2 {
+                bm.vpool[v].head.api_flag |= VERT_TAG;
+            }
+        }
+        bm_face_split_op(bm, VERT_TAG, false);
+    }
+    for &e in &edges_in {
+        if bm.edge(e).l != BM_NIL {
+            if let Some((l_a, l_b)) = bm_edge_loop_pair(bm, e) {
+                crate::mods::bm_faces_join_pair(bm, l_a, l_b, false, None);
+            }
+        }
+    }
+    for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.edge(e).l == BM_NIL && bm.edge(e).head.api_flag & EDGE_ISGC != 0 {
+            bm_edge_kill(bm, e);
+        }
+    }
+    for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.vert(v).e == BM_NIL && bm.vert(v).head.api_flag & VERT_ISGC != 0 {
+            bm_vert_kill(bm, v);
+        }
+    }
+    if use_verts {
+        for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+            if bm.vert(v).head.api_flag & VERT_MARK == 0 { continue; }
+            let Some((e0, e1)) = bm_vert_edge_pair(bm, v) else {
+                bm.vpool[v].head.api_flag &= !VERT_MARK;
+                continue;
+            };
+            if dissolve_all { continue; }
+            if bm.edge(e0).head.api_flag & EDGE_CHAIN != 0
+                || bm.edge(e1).head.api_flag & EDGE_CHAIN != 0
+            { continue; }
+            if bmo_vert_calc_edge_angle_blended(bm, v) > angle_threshold - angle_epsilon {
+                bm.vpool[v].head.api_flag &= !VERT_MARK;
+            }
+        }
+        for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+            if bm.vert(v).head.api_flag & VERT_MARK == 0 { continue; }
+            if !bm_vert_is_edge_pair(bm, v) { continue; }
+            bm_vert_collapse_edge_and_merge(bm, v, true);
+        }
+    }
+}

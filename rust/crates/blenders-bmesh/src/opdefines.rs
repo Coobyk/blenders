@@ -756,7 +756,7 @@ pub const OPDEF_DISSOLVE_EDGES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("region.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: Some(crate::bmo::bmo_dissolve::bmo_dissolve_edges_init), exec: Some(crate::bmo::bmo_dissolve::bmo_dissolve_edges_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
