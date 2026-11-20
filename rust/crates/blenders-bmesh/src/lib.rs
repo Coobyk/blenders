@@ -25,6 +25,7 @@ pub mod normals;
 pub mod tessellate;
 pub mod query;
 pub mod structure;
+pub mod walkers;
 
 /// `BM_ELEM_*` hflag bits (bmesh_class.hh).
 pub const BM_ELEM_SELECT: u8 = 1 << 0;
