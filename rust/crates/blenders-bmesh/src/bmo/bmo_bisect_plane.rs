@@ -24,7 +24,7 @@ pub fn bmo_bisect_plane_exec(bm: &mut BMesh, op: &mut BMOperator) {
     crate::marking::bm_mesh_elem_hflag_disable_all(
         bm, (1 << BM_VERT) | (1 << BM_EDGE) | (1 << BM_FACE), BM_ELEM_TAG);
     bmo_slot_buffer_hflag_enable(
-        bm, op, false, "geom", crate::htype_mask_all_noloop(), BM_ELEM_TAG, false);
+        bm, op, false, "geom", (1 << BM_VERT) | (1 << BM_EDGE) | (1 << BM_FACE), BM_ELEM_TAG, false);
     bmo_slot_buffer_flag_enable(bm, op, false, "geom", ELE_INPUT);
     crate::tools::bmesh_bisect_plane::bm_mesh_bisect_plane(
         bm, plane, use_snap_center, true, ELE_CUT as i8, ELE_NEW as i8, dist);
