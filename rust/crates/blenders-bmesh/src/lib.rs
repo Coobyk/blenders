@@ -10,6 +10,7 @@
 
 pub mod construct;
 pub mod core;
+pub mod delete;
 pub mod iterators;
 pub mod mesh;
 pub mod structure;
