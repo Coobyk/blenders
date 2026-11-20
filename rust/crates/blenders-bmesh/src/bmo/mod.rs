@@ -13,3 +13,4 @@ pub mod bmo_bisect_plane;
 pub mod bmo_removedoubles;
 pub mod bmo_dupe;
 pub mod bmo_mirror;
+pub mod bmo_utils;

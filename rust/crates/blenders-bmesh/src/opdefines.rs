@@ -324,7 +324,7 @@ pub const OPDEF_CREATE_VERT: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("vert.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_create_vert_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -506,7 +506,7 @@ pub const OPDEF_ROTATE: BMOpDefine = BMOpDefine {
         ("use_shapekey", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_rotate_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -520,7 +520,7 @@ pub const OPDEF_TRANSLATE: BMOpDefine = BMOpDefine {
         ("use_shapekey", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_translate_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -534,7 +534,7 @@ pub const OPDEF_SCALE: BMOpDefine = BMOpDefine {
         ("use_shapekey", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_scale_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -565,7 +565,7 @@ pub const OPDEF_TRANSFORM: BMOpDefine = BMOpDefine {
         ("use_shapekey", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_transform_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
