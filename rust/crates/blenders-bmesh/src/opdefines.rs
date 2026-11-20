@@ -817,7 +817,7 @@ pub const OPDEF_TRIANGULATE: BMOpDefine = BMOpDefine {
         ("face_map.out", BMOSlotType::Map),
         ("face_map_double.out", BMOSlotType::Map)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_triangulate::bmo_triangulate_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
