@@ -5,6 +5,7 @@ use std::ops::{
 };
 
 use crate::base;
+use crate::base::FLT_EPSILON;
 
 macro_rules! vec_ops {
     ($VecN:ident, $n:expr, $($field:ident),+) => {
@@ -534,4 +535,551 @@ mod tests {
         assert_eq!(v[0], 1.0);
         assert_eq!(v[2], 3.0);
     }
+}
+
+/* ---- math_vector.cc: interpolation ---- */
+
+/// `interp_dot_slerp` — slerp weights for dot `cosom` at `t`.
+pub fn interp_dot_slerp(t: f32, cosom: f32) -> (f32, f32) {
+    const EPS: f32 = 1e-4;
+    if cosom.abs() < 1.0 - EPS {
+        let omega = cosom.acos();
+        let sinom = omega.sin();
+        (((1.0 - t) * omega).sin() / sinom, (t * omega).sin() / sinom)
+    } else {
+        (1.0 - t, t)
+    }
+}
+
+/// `interp_v3_v3v3_slerp` — spherical interp of unit vecs; `None` on opposites.
+pub fn slerp_v3(a: Vec3, b: Vec3, t: f32) -> Option<Vec3> {
+    let cosom = a.dot(b);
+    if cosom < -1.0 + FLT_EPSILON {
+        return None;
+    }
+    let (w0, w1) = interp_dot_slerp(t, cosom);
+    Some(a * w0 + b * w1)
+}
+
+/// `interp_v3_v3v3_slerp_safe` — falls back through an orthogonal mid-vector.
+pub fn slerp_v3_safe(a: Vec3, b: Vec3, t: f32) -> Vec3 {
+    if let Some(r) = slerp_v3(a, b, t) {
+        return r;
+    }
+    let mut ab_ortho = ortho_v3(a);
+    ab_ortho.normalize();
+    if t < 0.5 {
+        slerp_v3(a, ab_ortho, t * 2.0).unwrap_or(a)
+    } else {
+        slerp_v3(ab_ortho, b, (t - 0.5) * 2.0).unwrap_or(b)
+    }
+}
+
+/// `interp_v2_v2v2v2v2_cubic` — cubic Bezier through 4 control points.
+pub fn interp_v2_cubic(v1: Vec2, v2: Vec2, v3: Vec2, v4: Vec2, u: f32) -> Vec2 {
+    let q0 = v1.lerp(v2, u);
+    let q1 = v2.lerp(v3, u);
+    let q2 = v3.lerp(v4, u);
+    let r0 = q0.lerp(q1, u);
+    let r1 = q1.lerp(q2, u);
+    r0.lerp(r1, u)
+}
+
+/// `interp_v3_v3v3v3` — weighted sum of 3 vectors.
+pub fn interp_v3_weighted3(v1: Vec3, v2: Vec3, v3: Vec3, w: Vec3) -> Vec3 {
+    v1 * w.x + v2 * w.y + v3 * w.z
+}
+
+/// `interp_v3_v3v3v3v3`.
+pub fn interp_v3_weighted4(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3, w: Vec4) -> Vec3 {
+    v1 * w.x + v2 * w.y + v3 * w.z + v4 * w.w
+}
+
+/// `interp_v4_v4v4v4`.
+pub fn interp_v4_weighted3(v1: Vec4, v2: Vec4, v3: Vec4, w: Vec3) -> Vec4 {
+    v1 * w.x + v2 * w.y + v3 * w.z
+}
+
+/// `interp_v4_v4v4v4v4`.
+pub fn interp_v4_weighted4(v1: Vec4, v2: Vec4, v3: Vec4, v4: Vec4, w: Vec4) -> Vec4 {
+    v1 * w.x + v2 * w.y + v3 * w.z + v4 * w.w
+}
+
+/// `interp_v3_v3v3v3_uv` — barycentric point on a triangle from uv.
+pub fn interp_v3_uv(v1: Vec3, v2: Vec3, v3: Vec3, uv: Vec2) -> Vec3 {
+    v1 + (v2 - v1) * uv.x + (v3 - v1) * uv.y
+}
+
+/// `interp_v3_v3v3_uchar` — lerp 8-bit channels (floor).
+pub fn interp_u8(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
+    let s = 1.0 - t;
+    [
+        (s * a[0] as f32 + t * b[0] as f32).floor() as u8,
+        (s * a[1] as f32 + t * b[1] as f32).floor() as u8,
+        (s * a[2] as f32 + t * b[2] as f32).floor() as u8,
+    ]
+}
+
+/// `mid_v3_v3v3v3` — centroid of 3 points.
+pub fn mid3(v1: Vec3, v2: Vec3, v3: Vec3) -> Vec3 {
+    (v1 + v2 + v3) / 3.0
+}
+
+/// `mid_v3_v3v3v3v3` — centroid of 4 points.
+pub fn mid4(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> Vec3 {
+    (v1 + v2 + v3 + v4) / 4.0
+}
+
+/// `mid_v3_v3_array` — mean of a slice.
+pub fn mid_slice(vec_arr: &[Vec3]) -> Vec3 {
+    let factor = 1.0 / vec_arr.len() as f32;
+    vec_arr.iter().fold(Vec3::ZERO, |r, v| r + *v * factor)
+}
+
+/// `mid_v3_v3v3_angle_weighted` — mid of 2 unit normals scaled by 0..1 angle.
+pub fn mid_angle_weighted(a: Vec3, b: Vec3) -> Vec3 {
+    let mut r = a + b;
+    let angle = (std::f32::consts::FRAC_2_PI * 2.0)
+        * (r.normalize_and_get_length() / 2.0).acos();
+    r * angle
+}
+
+/* ---- math_vector.cc: angles ---- */
+
+/// `angle_normalized_v2v2` — angle between two unit Vec2 (accurate form).
+pub fn angle_normalized_v2v2(a: Vec2, b: Vec2) -> f32 {
+    let safe_asin = |x: f32| x.clamp(-1.0, 1.0).asin();
+    if a.dot(b) >= 0.0 {
+        2.0 * safe_asin((a - b).length() / 2.0)
+    } else {
+        std::f32::consts::PI - 2.0 * safe_asin((a + b).length() / 2.0)
+    }
+}
+
+/// `angle_v3v3v3` — interior angle at `b`.
+pub fn angle_v3v3v3(a: Vec3, b: Vec3, c: Vec3) -> f32 {
+    let mut vec1 = b - a;
+    let mut vec2 = b - c;
+    vec1.normalize();
+    vec2.normalize();
+    vec1.angle_normalized(vec2)
+}
+
+/// `cos_v3v3v3`.
+pub fn cos_v3v3v3(p1: Vec3, p2: Vec3, p3: Vec3) -> f32 {
+    let mut vec1 = p2 - p1;
+    let mut vec2 = p2 - p3;
+    vec1.normalize();
+    vec2.normalize();
+    vec1.dot(vec2)
+}
+
+/// `angle_v2v2v2` — interior angle at `b` in 2D.
+pub fn angle_v2v2v2(a: Vec2, b: Vec2, c: Vec2) -> f32 {
+    let mut vec1 = b - a;
+    let mut vec2 = b - c;
+    vec1.normalize();
+    vec2.normalize();
+    angle_normalized_v2v2(vec1, vec2)
+}
+
+/// `cos_v2v2v2`.
+pub fn cos_v2v2v2(p1: Vec2, p2: Vec2, p3: Vec2) -> f32 {
+    let mut vec1 = p2 - p1;
+    let mut vec2 = p2 - p3;
+    vec1.normalize();
+    vec2.normalize();
+    vec1.dot(vec2)
+}
+
+/// `angle_v2v2` — angle between 2D vectors (normalizes copies).
+pub fn angle_v2v2(a: Vec2, b: Vec2) -> f32 {
+    angle_normalized_v2v2(a.normalized(), b.normalized())
+}
+
+/// `angle_signed_v2v2`.
+pub fn angle_signed_v2v2(v1: Vec2, v2: Vec2) -> f32 {
+    let perp_dot = v1.y * v2.x - v1.x * v2.y;
+    perp_dot.atan2(v1.dot(v2))
+}
+
+/// `angle_on_axis_v3v3_v3` — angle between v1,v2 projected onto plane of `axis`.
+pub fn angle_on_axis(v1: Vec3, v2: Vec3, axis: Vec3) -> f32 {
+    let v1p = project_plane_normalized(v1, axis);
+    let v2p = project_plane_normalized(v2, axis);
+    v1p.normalized().angle_normalized(v2p.normalized())
+}
+
+/// `angle_signed_on_axis_v3v3_v3`.
+pub fn angle_signed_on_axis(v1: Vec3, v2: Vec3, axis: Vec3) -> f32 {
+    let v1p = project_plane_normalized(v1, axis);
+    let v2p = project_plane_normalized(v2, axis);
+    let mut angle = v1p.normalized().angle_normalized(v2p.normalized());
+    let tproj = v2p.cross(v1p);
+    if tproj.dot(axis) < 0.0 {
+        angle = std::f32::consts::PI * 2.0 - angle;
+    }
+    angle
+}
+
+/// `angle_on_axis_v3v3v3_v3`.
+pub fn angle_on_axis_v3v3v3(v1: Vec3, v2: Vec3, v3: Vec3, axis: Vec3) -> f32 {
+    angle_on_axis(v1 - v2, v3 - v2, axis)
+}
+
+/// `angle_signed_on_axis_v3v3v3_v3`.
+pub fn angle_signed_on_axis_v3v3v3(v1: Vec3, v2: Vec3, v3: Vec3, axis: Vec3) -> f32 {
+    angle_signed_on_axis(v1 - v2, v3 - v2, axis)
+}
+
+/// `angle_tri_v3` — the 3 interior angles of a triangle.
+pub fn angle_tri(v1: Vec3, v2: Vec3, v3: Vec3) -> [f32; 3] {
+    let mut ed1 = v3 - v1;
+    let mut ed2 = v1 - v2;
+    let mut ed3 = v2 - v3;
+    ed1.normalize();
+    ed2.normalize();
+    ed3.normalize();
+    let a0 = std::f32::consts::PI - ed1.angle_normalized(ed2);
+    let a1 = std::f32::consts::PI - ed2.angle_normalized(ed3);
+    [a0, a1, std::f32::consts::PI - (a0 + a1)]
+}
+
+/// `angle_quad_v3` — the 4 interior angles of a quad.
+pub fn angle_quad(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> [f32; 4] {
+    let mut ed = [v4 - v1, v1 - v2, v2 - v3, v3 - v4];
+    for e in ed.iter_mut() {
+        e.normalize();
+    }
+    [
+        std::f32::consts::PI - ed[0].angle_normalized(ed[1]),
+        std::f32::consts::PI - ed[1].angle_normalized(ed[2]),
+        std::f32::consts::PI - ed[2].angle_normalized(ed[3]),
+        std::f32::consts::PI - ed[3].angle_normalized(ed[0]),
+    ]
+}
+
+/// `angle_poly_v3` — interior angles of an ngon.
+pub fn angle_poly(verts: &[Vec3]) -> Vec<f32> {
+    let len = verts.len();
+    let mut angles = Vec::with_capacity(len);
+    let mut vec = [Vec3::ZERO; 3];
+    vec[2] = verts[len - 1] - verts[0];
+    vec[2].normalize();
+    for i in 0..len {
+        vec[i % 3] = verts[(i + 1) % len] - verts[i % len];
+        vec[i % 3].normalize();
+        angles.push(std::f32::consts::PI - vec[(i + 2) % 3].angle_normalized(vec[i % 3]));
+    }
+    angles
+}
+
+/* ---- math_vector.cc: geometry ---- */
+
+/// `project_v2_v2v2` — project `p` onto `v_proj` (zero-safe).
+pub fn project_v2(p: Vec2, v_proj: Vec2) -> Vec2 {
+    if v_proj.is_zero() {
+        return Vec2::ZERO;
+    }
+    v_proj * (p.dot(v_proj) / v_proj.dot(v_proj))
+}
+
+/// `project_v3_v3v3` — project `p` onto `v_proj` (zero-safe).
+pub fn project_v3(p: Vec3, v_proj: Vec3) -> Vec3 {
+    if v_proj.is_zero() {
+        return Vec3::ZERO;
+    }
+    v_proj * (p.dot(v_proj) / v_proj.dot(v_proj))
+}
+
+/// `project_plane_v3_v3v3` — project `p` onto plane through origin, unnormalized normal.
+pub fn project_plane_v3(p: Vec3, v_plane: Vec3) -> Vec3 {
+    let mul = p.dot(v_plane) / v_plane.dot(v_plane);
+    p + v_plane * (-mul)
+}
+
+/// `project_plane_normalized_v3_v3v3` — unit normal variant.
+pub fn project_plane_normalized(p: Vec3, v_plane: Vec3) -> Vec3 {
+    let mul = p.dot(v_plane);
+    p + v_plane * (-mul)
+}
+
+/// `project_v3_plane` — project `out` onto the plane (normal, point).
+pub fn project_point_to_plane(out: Vec3, plane_no: Vec3, plane_co: Vec3) -> Vec3 {
+    let vector = out - plane_co;
+    let mul = vector.dot(plane_no) / plane_no.length_squared();
+    out + plane_no * (-mul)
+}
+
+/// `bisect_v3_v3v3v3` — bisector direction at `b` between `a` and `c`.
+pub fn bisect_v3(a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+    let mut d_12 = b - a;
+    let mut d_23 = c - b;
+    d_12.normalize();
+    d_23.normalize();
+    let mut r = d_12 + d_23;
+    r.normalize();
+    r
+}
+
+/// `ortho_v3_v3` — any vector perpendicular to `v` (axis-switched variant).
+pub fn ortho_v3(v: Vec3) -> Vec3 {
+    match v.abs_max_axis() {
+        0 => Vec3::new(-v.y - v.z, v.x, v.x),
+        1 => Vec3::new(v.y, -v.x - v.z, v.y),
+        _ => Vec3::new(v.z, v.z, -v.x - v.y),
+    }
+}
+
+/// `ortho_v2_v2` — 2D perpendicular.
+pub fn ortho_v2(v: Vec2) -> Vec2 {
+    Vec2::new(-v.y, v.x)
+}
+
+/// `rotate_v2_v2fl` — rotate 2D point by `angle`.
+pub fn rotate_v2(p: Vec2, angle: f32) -> Vec2 {
+    let (si, co) = angle.sin_cos();
+    Vec2::new(co * p.x - si * p.y, si * p.x + co * p.y)
+}
+
+/* ---- math_vector.cc: other ---- */
+
+/// `print_v2` — debug print.
+pub fn print_v2(s: &str, v: Vec2) {
+    println!("{}: {:.8} {:.8}", s, v.x, v.y);
+}
+
+/// `print_v3` — debug print.
+pub fn print_v3(s: &str, v: Vec3) {
+    println!("{}: {:.8} {:.8} {:.8}", s, v.x, v.y, v.z);
+}
+
+/// `print_v4` — debug print.
+pub fn print_v4(s: &str, v: Vec4) {
+    println!("{}: {:.8} {:.8} {:.8} {:.8}", s, v.x, v.y, v.z, v.w);
+}
+
+/// `minmax_v4v4_v4` — grow `(min, max)` to include `vec`.
+pub fn minmax_v4(min: &mut Vec4, max: &mut Vec4, vec: Vec4) {
+    *min = min.min(vec);
+    *max = max.max(vec);
+}
+
+/// `minmax_v3v3_v3`.
+pub fn minmax_v3(min: &mut Vec3, max: &mut Vec3, vec: Vec3) {
+    *min = min.min(vec);
+    *max = max.max(vec);
+}
+
+/// `minmax_v2v2_v2`.
+pub fn minmax_v2(min: &mut Vec2, max: &mut Vec2, vec: Vec2) {
+    *min = min.min(vec);
+    *max = max.max(vec);
+}
+
+/// `dist_ensure_v3_v3fl` — move `v1` to exactly `dist` from `v2`.
+pub fn dist_ensure_v3(v1: &mut Vec3, v2: Vec3, dist: f32) {
+    if v2 != *v1 {
+        let mut nor = *v1 - v2;
+        nor.normalize();
+        *v1 = v2 + nor * dist;
+    }
+}
+
+/// `dist_ensure_v2_v2fl`.
+pub fn dist_ensure_v2(v1: &mut Vec2, v2: Vec2, dist: f32) {
+    if v2 != *v1 {
+        let mut nor = *v1 - v2;
+        nor.normalize();
+        *v1 = v2 + nor * dist;
+    }
+}
+
+/// `axis_sort_v3` — return axis indices sorted by descending value.
+pub fn axis_sort_v3(axis_values: Vec3) -> [usize; 3] {
+    let mut v = [axis_values.x, axis_values.y, axis_values.z];
+    let mut order = [0usize, 1, 2];
+    macro_rules! swap_axis {
+        ($a:expr, $b:expr) => {
+            v.swap($a, $b);
+            order.swap($a, $b);
+        };
+    }
+    if v[0] < v[1] {
+        if v[2] < v[0] {
+            swap_axis!(0, 2);
+        }
+    } else if v[1] < v[2] {
+        swap_axis!(0, 1);
+    } else {
+        swap_axis!(0, 2);
+    }
+    if v[2] < v[1] {
+        swap_axis!(1, 2);
+    }
+    order
+}
+
+/* ---- math_vector.cc: array (vn) functions ---- */
+
+/// `dot_vn_vn` — f64 dot product of two slices.
+pub fn dot_vn(a: &[f32], b: &[f32]) -> f64 {
+    a.iter().zip(b.iter()).map(|(x, y)| *x as f64 * *y as f64).sum()
+}
+
+/// `len_squared_vn`.
+pub fn len_squared_vn(a: &[f32]) -> f64 {
+    a.iter().map(|x| (*x as f64) * (*x as f64)).sum()
+}
+
+/// `normalize_vn_vn` — normalize into `tar`, returns magnitude (0 for tiny).
+pub fn normalize_vn_vn(tar: &mut [f32], src: &[f32]) -> f32 {
+    let d = len_squared_vn(src);
+    if d > 1.0e-35 {
+        let d_sqrt = d.sqrt() as f32;
+        for (t, s) in tar.iter_mut().zip(src.iter()) {
+            *t = *s * (1.0 / d_sqrt);
+        }
+        d_sqrt
+    } else {
+        tar.fill(0.0);
+        0.0
+    }
+}
+
+/// `normalize_vn` — in-place.
+pub fn normalize_vn(array: &mut [f32]) -> f32 {
+    let d = len_squared_vn(array);
+    if d > 1.0e-35 {
+        let d_sqrt = d.sqrt() as f32;
+        for t in array.iter_mut() {
+            *t *= 1.0 / d_sqrt;
+        }
+        d_sqrt
+    } else {
+        array.fill(0.0);
+        0.0
+    }
+}
+
+/// `range_vn_fl` — `start + step*i` for each element.
+pub fn range_vn_fl(tar: &mut [f32], start: f32, step: f32) {
+    for (i, t) in tar.iter_mut().enumerate() {
+        *t = start + step * i as f32;
+    }
+}
+
+/// `negate_vn`.
+pub fn negate_vn(tar: &mut [f32]) {
+    for t in tar.iter_mut() {
+        *t *= -1.0;
+    }
+}
+
+/// `negate_vn_vn`.
+pub fn negate_vn_vn(tar: &mut [f32], src: &[f32]) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t = -*s;
+    }
+}
+
+/// `mul_vn_vn` — `tar *= src` elementwise.
+pub fn mul_vn_vn(tar: &mut [f32], src: &[f32]) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t *= *s;
+    }
+}
+
+/// `mul_vn_vnvn` — `tar = a * b` elementwise.
+pub fn mul_vn_vnvn(tar: &mut [f32], a: &[f32], b: &[f32]) {
+    for ((t, x), y) in tar.iter_mut().zip(a.iter()).zip(b.iter()) {
+        *t = *x * *y;
+    }
+}
+
+/// `mul_vn_fl` — `tar *= f`.
+pub fn mul_vn_fl(tar: &mut [f32], f: f32) {
+    for t in tar.iter_mut() {
+        *t *= f;
+    }
+}
+
+/// `mul_vn_vn_fl` — `tar = src * f`.
+pub fn mul_vn_vn_fl(tar: &mut [f32], src: &[f32], f: f32) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t = *s * f;
+    }
+}
+
+/// `add_vn_vn` — `tar += src`.
+pub fn add_vn_vn(tar: &mut [f32], src: &[f32]) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t += *s;
+    }
+}
+
+/// `add_vn_vnvn` — `tar = a + b`.
+pub fn add_vn_vnvn(tar: &mut [f32], a: &[f32], b: &[f32]) {
+    for ((t, x), y) in tar.iter_mut().zip(a.iter()).zip(b.iter()) {
+        *t = *x + *y;
+    }
+}
+
+/// `sub_vn_vn` — `tar -= src`.
+pub fn sub_vn_vn(tar: &mut [f32], src: &[f32]) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t -= *s;
+    }
+}
+
+/// `sub_vn_vnvn` — `tar = a - b`.
+pub fn sub_vn_vnvn(tar: &mut [f32], a: &[f32], b: &[f32]) {
+    for ((t, x), y) in tar.iter_mut().zip(a.iter()).zip(b.iter()) {
+        *t = *x - *y;
+    }
+}
+
+/// `interp_vn_vn` — `tar = s*tar + t*src`.
+pub fn interp_vn_vn(tar: &mut [f32], src: &[f32], t: f32) {
+    let s = 1.0 - t;
+    for (x, y) in tar.iter_mut().zip(src.iter()) {
+        *x = s * *x + t * *y;
+    }
+}
+
+/// `add_vn_vn_d` — f64 `tar += src`.
+pub fn add_vn_vn_d(tar: &mut [f64], src: &[f64]) {
+    for (t, s) in tar.iter_mut().zip(src.iter()) {
+        *t += *s;
+    }
+}
+
+/// `add_vn_vnvn_d` — f64 `tar = a + b`.
+pub fn add_vn_vnvn_d(tar: &mut [f64], a: &[f64], b: &[f64]) {
+    for ((t, x), y) in tar.iter_mut().zip(a.iter()).zip(b.iter()) {
+        *t = *x + *y;
+    }
+}
+
+/// `mul_vn_db` — f64 `tar *= f`.
+pub fn mul_vn_db(tar: &mut [f64], f: f64) {
+    for t in tar.iter_mut() {
+        *t *= f;
+    }
+}
+
+/// `interp_v3_v3v3_db` — f64 lerp of `[f64;3]`.
+pub fn interp_v3_db(a: [f64; 3], b: [f64; 3], t: f64) -> [f64; 3] {
+    let s = 1.0 - t;
+    [
+        s * a[0] + t * b[0],
+        s * a[1] + t * b[1],
+        s * a[2] + t * b[2],
+    ]
+}
+
+/// `interp_v2_v2v2_db`.
+pub fn interp_v2_db(a: [f64; 2], b: [f64; 2], t: f64) -> [f64; 2] {
+    let s = 1.0 - t;
+    [s * a[0] + t * b[0], s * a[1] + t * b[1]]
 }
