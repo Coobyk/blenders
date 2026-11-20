@@ -739,7 +739,7 @@ pub const OPDEF_DISSOLVE_VERTS: BMOpDefine = BMOpDefine {
         ("use_boundary_tear", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dissolve::bmo_dissolve_verts_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -770,7 +770,7 @@ pub const OPDEF_DISSOLVE_FACES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("region.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dissolve::bmo_dissolve_faces_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -787,7 +787,7 @@ pub const OPDEF_DISSOLVE_LIMIT: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("region.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dissolve::bmo_dissolve_limit_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
