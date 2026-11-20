@@ -45,3 +45,6 @@ pub mod quadric;
 pub mod jitter_2d;
 pub mod string_cursor_utf8;
 pub mod offset_indices;
+pub mod bitmap;
+pub mod basis_types;
+pub mod sort_utils;
