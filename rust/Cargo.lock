@@ -612,6 +612,7 @@ version = "0.1.0"
 dependencies = [
  "blenders-math",
  "flate2",
+ "libc",
  "zstd",
 ]
 

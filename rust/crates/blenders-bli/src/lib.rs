@@ -85,6 +85,7 @@ pub mod linklist_lockfree;
 pub mod filereader_file;
 pub mod color;
 pub mod fileops;
+pub mod fileops_c;
 pub mod varray_print;
 pub mod colorspace;
 pub mod array_store_utils;
