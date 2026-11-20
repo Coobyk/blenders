@@ -125,3 +125,50 @@ impl MutableBitSpan<'_> {
         }
     }
 }
+
+/// `BitSpan` — read-only contiguous bit range (bit_span.cc ostream targets).
+pub struct BitSpan<'a> {
+    pub data: &'a [u64],
+    pub start: usize,
+    pub size: usize,
+}
+
+impl<'a> From<&'a MutableBitSpan<'a>> for BitSpan<'a> {
+    fn from(s: &'a MutableBitSpan<'a>) -> Self {
+        BitSpan {
+            data: s.data,
+            start: s.start,
+            size: s.size,
+        }
+    }
+}
+
+impl BitSpan<'_> {
+    pub fn bit(&self, i: usize) -> bool {
+        let idx = self.start + i;
+        (self.data[idx / BITS_PER_INT] >> (idx % BITS_PER_INT)) & 1 != 0
+    }
+}
+
+impl std::fmt::Display for BitSpan<'_> {
+    /// `operator<<(std::ostream &, const BitSpan &)`.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "(Size: {}, ", self.size)?;
+        for i in 0..self.size {
+            f.write_str(if self.bit(i) { "1" } else { "0" })?;
+        }
+        f.write_str(")")
+    }
+}
+
+impl std::fmt::Display for MutableBitSpan<'_> {
+    /// `operator<<(std::ostream &, const MutableBitSpan &)` delegates to BitSpan.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        BitSpan {
+            data: self.data,
+            start: self.start,
+            size: self.size,
+        }
+        .fmt(f)
+    }
+}
