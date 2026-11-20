@@ -43,3 +43,5 @@ pub mod ustring;
 pub mod lasso_2d;
 pub mod quadric;
 pub mod jitter_2d;
+pub mod string_cursor_utf8;
+pub mod offset_indices;

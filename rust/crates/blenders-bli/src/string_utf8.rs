@@ -490,3 +490,30 @@ pub fn str_utf8_offset_from_column_with_tabs(s: &str, column_target: usize, tab_
 pub fn str_utf8_column_count(s: &str) -> usize {
     s.chars().map(|c| wcwidth_safe(c).max(0) as usize).sum()
 }
+
+/// `BLI_str_find_prev_char_utf8` — index of previous codepoint start.
+pub fn str_find_prev_char_utf8(s: &[u8], p: usize) -> usize {
+    // p is a byte index into s; walk back past continuation bytes.
+    let mut i = p;
+    if i > 0 {
+        i -= 1;
+        while i > 0 && (s[i] & 0xC0) == 0x80 {
+            i -= 1;
+        }
+    }
+    i
+}
+
+/// `BLI_str_find_next_char_utf8` — index of next codepoint start.
+/// `str_end` = s.len(); s may contain a trailing NUL sentinel: we follow the
+/// C semantics where a NUL byte stops the walk.
+pub fn str_find_next_char_utf8(s: &[u8], p: usize) -> usize {
+    let mut i = p;
+    if i < s.len() && s[i] != 0 {
+        i += 1;
+        while i < s.len() && (s[i] & 0xC0) == 0x80 {
+            i += 1;
+        }
+    }
+    i
+}
