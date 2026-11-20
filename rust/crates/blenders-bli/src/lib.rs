@@ -123,6 +123,7 @@ pub mod math_interp;
 pub mod array_store_rle;
 pub mod bitmap_draw_2d;
 pub mod kdopbvh;
+pub mod mesh_boolean;
 pub mod mesh_intersect;
 pub mod kdtree;
 pub mod structure_of_array_conversion;

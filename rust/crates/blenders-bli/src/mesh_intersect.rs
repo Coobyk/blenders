@@ -569,7 +569,7 @@ impl BoundingBox {
 }
 
 /// `bbs_might_intersect` = `isect_aabb_aabb_v3`.
-fn bbs_might_intersect(a: &BoundingBox, b: &BoundingBox) -> bool {
+pub fn bbs_might_intersect(a: &BoundingBox, b: &BoundingBox) -> bool {
     blenders_math::geom::isect_aabb_aabb(
         blenders_math::vector::Vec3::new(a.min[0] as f32, a.min[1] as f32, a.min[2] as f32),
         blenders_math::vector::Vec3::new(a.max[0] as f32, a.max[1] as f32, a.max[2] as f32),
