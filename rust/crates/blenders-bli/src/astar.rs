@@ -11,7 +11,7 @@ pub struct AStarGNLink<T> {
 }
 
 /// `BLI_AStarGNode`.
-pub struct AStarGNode<N, T> {
+pub struct AStarGNode<N> {
     pub neighbor_links: Vec<usize>, /* link indices into graph.links */
     pub custom_data: N,
 }
@@ -19,7 +19,7 @@ pub struct AStarGNode<N, T> {
 /// `BLI_AStarGraph`.
 pub struct AStarGraph<N, T> {
     pub node_num: usize,
-    pub nodes: Vec<AStarGNode<N, T>>,
+    pub nodes: Vec<AStarGNode<N>>,
     pub links: Vec<AStarGNLink<T>>,
     pub custom_data: Option<usize>, /* opaque */
 }
