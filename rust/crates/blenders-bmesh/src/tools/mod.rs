@@ -2,3 +2,4 @@
 pub mod bmesh_edgesplit;
 pub mod bmesh_decimate_unsubdivide;
 pub mod bmesh_beautify;
+pub mod bmesh_wireframe;

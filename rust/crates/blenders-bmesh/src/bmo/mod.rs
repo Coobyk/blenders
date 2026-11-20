@@ -8,3 +8,4 @@ pub mod bmo_mesh_convert;
 pub mod bmo_normals;
 pub mod bmo_split_edges;
 pub mod bmo_unsubdivide;
+pub mod bmo_wireframe;
