@@ -149,3 +149,120 @@ mod tests {
         assert!((wrap(-10.0, 0.0, 360.0) - 350.0).abs() < 1e-6);
     }
 }
+
+/* ---- math_base.cc ---- */
+
+/// `pow_i` — integer power by squaring.
+pub fn pow_i(mut base: i32, mut exp: i32) -> i32 {
+    debug_assert!(exp >= 0);
+    let mut result = 1;
+    while exp != 0 {
+        if exp & 1 != 0 {
+            result *= base;
+        }
+        exp >>= 1;
+        base *= base;
+    }
+    result
+}
+
+/// `double_round` — round to `ndigits` decimal places, half-even.
+pub fn double_round(x: f64, ndigits: i32) -> f64 {
+    let (pow1, y);
+    if ndigits >= 0 {
+        pow1 = 10f64.powi(ndigits);
+        y = x * pow1;
+        if !y.is_finite() {
+            return x;
+        }
+    } else {
+        pow1 = 10f64.powi(-ndigits);
+        y = x / pow1;
+    }
+    let mut z = y.round();
+    if (y - z).abs() == 0.5 {
+        z = 2.0 * (y / 2.0).round();
+    }
+    if ndigits >= 0 {
+        z / pow1
+    } else {
+        z * pow1
+    }
+}
+
+/// `floor_power_of_10`.
+pub fn floor_power_of_10(f: f32) -> f32 {
+    debug_assert!(f >= 0.0);
+    if f != 0.0 {
+        1.0 / 10f32.powf((1.0 / f).log10().ceil())
+    } else {
+        0.0
+    }
+}
+
+/// `ceil_power_of_10`.
+pub fn ceil_power_of_10(f: f32) -> f32 {
+    debug_assert!(f >= 0.0);
+    if f != 0.0 {
+        1.0 / 10f32.powf((1.0 / f).log10().floor())
+    } else {
+        0.0
+    }
+}
+
+/* ---- math_time.cc ---- */
+
+pub const SECONDS_IN_DAY: f64 = 86400.0;
+pub const SECONDS_IN_HOUR: f64 = 3600.0;
+pub const SECONDS_IN_MINUTE: f64 = 60.0;
+pub const SECONDS_IN_MILLISECONDS: f64 = 1.0e-3;
+
+/// `BLI_math_time_seconds_decompose` — decompose seconds into requested
+/// components. Pass `Some(&mut f)` for each part wanted; remainder rolls into
+/// the last requested component.
+pub fn math_time_seconds_decompose(
+    mut seconds: f64,
+    r_days: Option<&mut f64>,
+    r_hours: Option<&mut f64>,
+    r_minutes: Option<&mut f64>,
+    r_seconds: Option<&mut f64>,
+    r_milliseconds: Option<&mut f64>,
+) {
+    let mut r_days = r_days;
+    let mut r_hours = r_hours;
+    let mut r_minutes = r_minutes;
+    let mut r_seconds = r_seconds;
+    if let Some(d) = r_days.as_deref_mut() {
+        let (frac, whole) = {
+            let v = seconds / SECONDS_IN_DAY;
+            (v.fract(), v.trunc())
+        };
+        *d = whole;
+        seconds = frac * SECONDS_IN_DAY;
+    }
+    if let Some(h) = r_hours.as_deref_mut() {
+        let v = seconds / SECONDS_IN_HOUR;
+        *h = v.trunc();
+        seconds = v.fract() * SECONDS_IN_HOUR;
+    }
+    if let Some(m) = r_minutes.as_deref_mut() {
+        let v = seconds / SECONDS_IN_MINUTE;
+        *m = v.trunc();
+        seconds = v.fract() * SECONDS_IN_MINUTE;
+    }
+    if let Some(s) = r_seconds.as_deref_mut() {
+        *s = seconds.trunc();
+        seconds = seconds.fract();
+    }
+    if let Some(ms) = r_milliseconds {
+        *ms = seconds / SECONDS_IN_MILLISECONDS;
+    } else if let Some(s) = r_seconds.as_deref_mut() {
+        *s += seconds;
+    } else if let Some(m) = r_minutes.as_deref_mut() {
+        *m += seconds / SECONDS_IN_MINUTE;
+    } else if let Some(h) = r_hours.as_deref_mut() {
+        *h += seconds / SECONDS_IN_HOUR;
+    } else if let Some(d) = r_days {
+        *d = seconds / SECONDS_IN_DAY;
+    }
+}
