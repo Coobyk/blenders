@@ -65,14 +65,14 @@ pub fn bmo_edgeloop_fill_exec(bm: &mut BMesh, op: &mut BMOperator) {
                     f_verts[i] = v;
                     bmo_elem_flag_disable(bm, (BM_VERT, v), VERT_USED);
                     totv_used += 1;
-                    v = crate::query::bm_edge_other_vert(bm, e_next, v);
+                    v = crate::structure::bm_edge_other_vert(bm, e_next, v);
                     e_prev = e_next;
                     i += 1;
                     if v == f_verts[0] { break; }
                 }
                 if crate::query::bm_face_exists(bm, &f_verts[..i]) == BM_NIL {
-                    let f = crate::core::bm_face_create_ngon_verts(
-                        bm, &f_verts[..i], None, 0, true, false);
+                    let f = crate::construct::bm_face_create_ngon_verts(
+                        bm, &f_verts[..i], None, 0);
                     bmo_elem_flag_enable(bm, (BM_FACE, f), ELE_OUT);
                     bm.fpool[f].mat_nr = mat_nr;
                     if use_smooth {
