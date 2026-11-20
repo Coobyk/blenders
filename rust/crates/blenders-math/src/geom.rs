@@ -4118,3 +4118,136 @@ pub fn geodesic_distance_propagate_across_triangle(
     }
     min_ff(dist1 + v10.length(), dist2 + (v0 - v2).length())
 }
+
+/* ---- math_geom_inline.cc ---- */
+
+/// `axis_dominant_v3` — two axes orthogonal to the dominant one.
+pub fn axis_dominant_v3(axis: Vec3) -> (usize, usize) {
+    let (xn, yn, zn) = (axis.x.abs(), axis.y.abs(), axis.z.abs());
+    if zn >= xn && zn >= yn {
+        (0, 1)
+    } else if yn >= xn && yn >= zn {
+        (0, 2)
+    } else {
+        (1, 2)
+    }
+}
+
+/// `axis_dominant_v3_max` — (axis_a, axis_b, dominant |value|).
+pub fn axis_dominant_v3_max(axis: Vec3) -> (usize, usize, f32) {
+    let (xn, yn, zn) = (axis.x.abs(), axis.y.abs(), axis.z.abs());
+    if zn >= xn && zn >= yn {
+        (0, 1, zn)
+    } else if yn >= xn && yn >= zn {
+        (0, 2, yn)
+    } else {
+        (1, 2, xn)
+    }
+}
+
+/// `axis_dominant_v3_ortho_single` — index of the SMALLEST |component|.
+pub fn axis_dominant_v3_ortho_single(vec: Vec3) -> usize {
+    let (x, y, z) = (vec.x.abs(), vec.y.abs(), vec.z.abs());
+    if x < y {
+        if x < z {
+            0
+        } else {
+            2
+        }
+    } else if y < z {
+        1
+    } else {
+        2
+    }
+}
+
+/// `max_axis_v3` — index of largest component (signed).
+pub fn max_axis_v3(vec: Vec3) -> usize {
+    if vec.x > vec.y {
+        if vec.x > vec.z {
+            0
+        } else {
+            2
+        }
+    } else if vec.y > vec.z {
+        1
+    } else {
+        2
+    }
+}
+
+/// `min_axis_v3` — index of smallest component (signed).
+pub fn min_axis_v3(vec: Vec3) -> usize {
+    if vec.x < vec.y {
+        if vec.x < vec.z {
+            0
+        } else {
+            2
+        }
+    } else if vec.y < vec.z {
+        1
+    } else {
+        2
+    }
+}
+
+const SMALL_NUMBER: f32 = 1e-8;
+
+/// `shell_angle_to_dist`.
+pub fn shell_angle_to_dist(angle: f32) -> f32 {
+    if angle < SMALL_NUMBER {
+        1.0
+    } else {
+        (1.0 / angle.cos()).abs()
+    }
+}
+
+/// `shell_v3v3_normalized_to_dist`.
+pub fn shell_v3v3_normalized_to_dist(a: Vec3, b: Vec3) -> f32 {
+    let angle_cos = a.dot(b).abs();
+    if angle_cos < SMALL_NUMBER {
+        1.0
+    } else {
+        1.0 / angle_cos
+    }
+}
+
+/// `shell_v2v2_normalized_to_dist`.
+pub fn shell_v2v2_normalized_to_dist(a: Vec2, b: Vec2) -> f32 {
+    let angle_cos = a.dot(b).abs();
+    if angle_cos < SMALL_NUMBER {
+        1.0
+    } else {
+        1.0 / angle_cos
+    }
+}
+
+/// `shell_v3v3_mid_normalized_to_dist` — distance to the normalized midpoint.
+pub fn shell_v3v3_mid_normalized_to_dist(a: Vec3, b: Vec3) -> f32 {
+    let mut ab = a + b;
+    let angle_cos = if ab.normalize_and_get_length() != 0.0 {
+        a.dot(ab).abs()
+    } else {
+        0.0
+    };
+    if angle_cos < SMALL_NUMBER {
+        1.0
+    } else {
+        1.0 / angle_cos
+    }
+}
+
+/// `shell_v2v2_mid_normalized_to_dist`.
+pub fn shell_v2v2_mid_normalized_to_dist(a: Vec2, b: Vec2) -> f32 {
+    let mut ab = a + b;
+    let angle_cos = if ab.normalize_and_get_length() != 0.0 {
+        a.dot(ab).abs()
+    } else {
+        0.0
+    };
+    if angle_cos < SMALL_NUMBER {
+        1.0
+    } else {
+        1.0 / angle_cos
+    }
+}
