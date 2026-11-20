@@ -13,6 +13,7 @@ mod tests {
     }
 }
 pub mod endian;
+pub mod ghash;
 pub mod ghash_utils;
 pub mod gsqueue;
 pub mod hash_tables;
