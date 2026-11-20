@@ -1199,7 +1199,7 @@ pub const OPDEF_BEVEL: BMOpDefine = BMOpDefine {
         ("edges.out", BMOSlotType::ElemBuf),
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_bevel::bmo_bevel_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

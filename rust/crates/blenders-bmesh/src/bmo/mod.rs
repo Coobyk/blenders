@@ -22,3 +22,4 @@ pub mod bmo_rotate_edges;
 pub mod bmo_triangulate;
 pub mod bmo_connect_ex;
 pub mod bmo_fill_edgeloop;
+pub mod bmo_bevel;
