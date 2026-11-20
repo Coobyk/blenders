@@ -1299,7 +1299,7 @@ pub const OPDEF_OFFSET_EDGELOOPS: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_offset_edgeloops::bmo_offset_edgeloops_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
