@@ -10,6 +10,7 @@
 
 pub mod bmo;
 pub mod construct;
+pub mod convert;
 pub mod core;
 pub mod delete;
 pub mod interp;

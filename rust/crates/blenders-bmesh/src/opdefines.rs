@@ -577,7 +577,7 @@ pub const OPDEF_OBJECT_LOAD_BMESH: BMOpDefine = BMOpDefine {
         ("object", BMOSlotType::Ptr)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_mesh_convert::bmo_object_load_bmesh_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -589,7 +589,7 @@ pub const OPDEF_BMESH_TO_MESH: BMOpDefine = BMOpDefine {
         ("object", BMOSlotType::Ptr)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_mesh_convert::bmo_bmesh_to_mesh_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -602,7 +602,7 @@ pub const OPDEF_MESH_TO_BMESH: BMOpDefine = BMOpDefine {
         ("use_shapekey", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_mesh_convert::bmo_mesh_to_bmesh_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
