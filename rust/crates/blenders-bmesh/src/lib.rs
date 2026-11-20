@@ -13,11 +13,14 @@ pub mod core;
 pub mod delete;
 pub mod iterators;
 pub mod marking;
+pub mod partial_update;
+pub mod duplicate;
 pub mod edgeloop;
 pub mod mesh;
 pub mod validate;
 pub mod mods;
 pub mod normals;
+pub mod tessellate;
 pub mod query;
 pub mod structure;
 
@@ -327,4 +330,33 @@ mod kernel_tests {
         assert_eq!(bm.totloop, 4);
         assert_eq!(bm.face(0).len, 4);
     }
+}
+
+/// Port of `bmesh_callback_generic.cc` — common element-callback predicates
+/// (returned as plain fns taking the elem index).
+pub mod callbacks {
+    use crate::{BMesh, BMVert, BMEdge, BMLoop, BMFace};
+
+    /// `BM_elem_cb_check_hflag_ex` — hflag bits set AND other bits clear.
+    /// `hflag_pair` = (hflag_p, hflag_n) packed as u16 (lo = required, hi = banned).
+    pub fn elem_cb_check_hflag_ex(hflag: u8, hflag_pair: u16) -> bool {
+        let hp = (hflag_pair & 0xff) as u8;
+        let hn = (hflag_pair >> 8) as u8;
+        (hflag & hp) != 0 && (hflag & hn) == 0
+    }
+    /// `BM_elem_cb_check_hflag_enabled`.
+    pub fn elem_cb_check_hflag_enabled(hflag: u8, test: u8) -> bool {
+        (hflag & test) != 0
+    }
+    /// `BM_elem_cb_check_hflag_disabled`.
+    pub fn elem_cb_check_hflag_disabled(hflag: u8, test: u8) -> bool {
+        (hflag & test) == 0
+    }
+    /// `BM_elem_cb_check_elem_not_equal`.
+    pub fn elem_cb_check_elem_not_equal(ele: usize, other: usize) -> bool {
+        ele != other
+    }
+
+    /* type refs to satisfy the generic-callback signature parity */
+    const _: Option<fn(&BMesh, &BMVert, &BMEdge, &BMLoop, &BMFace)> = None;
 }
