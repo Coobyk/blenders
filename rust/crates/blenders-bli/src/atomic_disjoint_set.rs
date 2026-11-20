@@ -64,7 +64,7 @@ impl AtomicDisjointSet {
                 std::mem::swap(&mut x, &mut y);
             }
             if self.items[x as usize]
-                .compare_exchange_strong(
+                .compare_exchange(
                     pack(x, x_rank),
                     pack(y, x_rank),
                     RELAXED,
