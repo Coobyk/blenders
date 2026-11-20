@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod validate;
 pub mod mods;
 pub mod normals;
+pub mod operators;
 pub mod tessellate;
 pub mod query;
 pub mod structure;
