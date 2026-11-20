@@ -20,3 +20,6 @@ pub mod ghash_utils;
 pub mod gsqueue;
 pub mod hash_tables;
 pub mod time;
+pub mod dial_2d;
+pub mod dynstr;
+pub mod session_uid;
