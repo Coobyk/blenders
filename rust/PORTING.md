@@ -18,3 +18,16 @@ Rules:
   `fileops_c` module, etc.).
 - Every module must build clean (`cargo build -p <crate>`); add a small unit test for
   algorithmic ports. Commit + push to `coobyk/rust-work` after each file.
+
+## bmesh (source/blender/bmesh) — in progress
+
+Crate: `crates/blenders-bmesh`. Index-arena model: pools are `Vec`, links are `usize` indices, `BM_NIL = usize::MAX`; killed elements have `head.htype == 0` (tombstones, no compaction). BMO oflags ride on `head.api_flag`. CustomData/flag layers/toolflags: PORT_PENDING.
+
+- bmesh_class.hh → `lib.rs` (BMHeader, BMVert, BMEdge, BMLoop, BMFace, BMesh)
+- bmesh_structure.cc → `structure.rs` (disk/radial/cycle ops)
+- bmesh_core.cc → `core.rs` (create/kill; kernel split/join/splice PORT_PENDING)
+- bmesh_mesh.cc → `mesh.rs` (index ensure, at_index_find, coords apply; remap/toolflags PORT_PENDING)
+- bmesh_iterators.cc → `iterators.rs` (iterator structs)
+- bmesh_construct.cc → `construct.rs` (quad_tri/ngon/ensure/copy; CustomData PORT_PENDING)
+- bmesh_delete.cc → `delete.rs` (hflag + oflag contexts)
+- Remaining: query, marking, interp, mesh_convert, mesh_normals, operators/opdefines, walkers, uvselect, polygon(+edgenet), log, mods, edgeloop, callback_generic, kernel splits/joins in core.
