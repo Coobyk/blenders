@@ -476,3 +476,48 @@ mod tests {
         assert!((v - expected).length() < 1e-5, "{v:?} vs {expected:?}");
     }
 }
+
+impl Quaternion {
+    /// `mat3_to_quat` / `normalized_to_quat_with_checks` — rotation matrix to
+    /// unit quaternion (trace-based branch selection, result normalized).
+    pub fn from_mat3(mat: crate::matrix::Mat3) -> Self {
+        let m = |c: usize, r: usize| mat[c][r];
+        let tr = 0.25 * (1.0 + m(0, 0) + m(1, 1) + m(2, 2));
+        let mut q = if tr > f32::EPSILON {
+            let s = tr.sqrt();
+            let inv = 1.0 / (4.0 * s);
+            Quaternion {
+                w: s,
+                x: (m(1, 2) - m(2, 1)) * inv,
+                y: (m(2, 0) - m(0, 2)) * inv,
+                z: (m(0, 1) - m(1, 0)) * inv,
+            }
+        } else {
+            let (mut i, mut j, mut k) = (0usize, 1usize, 2usize);
+            if m(1, 1) > m(0, 0) {
+                i = 1;
+                j = 2;
+                k = 0;
+            }
+            if m(2, 2) > m(i, i) {
+                i = 2;
+                j = 0;
+                k = 1;
+            }
+            let tr = ((m(i, i) - (m(j, j) + m(k, k))) + 1.0).max(0.0).sqrt();
+            let inv = 0.5 / tr;
+            let mut qv = [0.0f32; 3];
+            qv[i] = 0.5 * tr;
+            qv[j] = (m(i, j) + m(j, i)) * inv;
+            qv[k] = (m(i, k) + m(k, i)) * inv;
+            Quaternion {
+                w: (m(j, k) - m(k, j)) * inv,
+                x: qv[0],
+                y: qv[1],
+                z: qv[2],
+            }
+        };
+        q = q.normalized();
+        q
+    }
+}

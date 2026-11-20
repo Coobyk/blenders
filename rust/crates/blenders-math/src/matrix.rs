@@ -676,3 +676,381 @@ mod tests {
         assert!(approx((r.inverted().unwrap() * r)[0].x, 1.0));
     }
 }
+
+/* ---- math_matrix.cc (Eigen-backed parts, ported natively) ---- */
+
+/// Jacobi eigen-decomposition of a symmetric 3x3. Returns (eigenvectors-as-cols, eigenvalues).
+fn jacobi_eigen3(a: Mat3) -> (Mat3, [f32; 3]) {
+    // a is indexed [col][row]; symmetric so m[i][j] == m[j][i].
+    let mut m = [[0.0f32; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            m[i][j] = a[j][i];
+        }
+    }
+    let mut v = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]; // v[col][row]
+    for _ in 0..50 {
+        // largest off-diagonal
+        let (mut p, mut q, mut max) = (0usize, 1usize, m[0][1].abs());
+        for (i, j) in [(0, 2), (1, 2)] {
+            if m[i][j].abs() > max {
+                max = m[i][j].abs();
+                p = i;
+                q = j;
+            }
+        }
+        if max < 1e-10 {
+            break;
+        }
+        // Jacobi rotation angle
+        let app = m[p][p];
+        let aqq = m[q][q];
+        let apq = m[p][q];
+        let theta = 0.5 * (aqq - app).atan2(2.0 * apq);
+        let c = theta.cos();
+        let s = theta.sin();
+        for i in 0..3 {
+            let mip = m[i][p];
+            let miq = m[i][q];
+            m[i][p] = c * mip - s * miq;
+            m[i][q] = s * mip + c * miq;
+        }
+        for j in 0..3 {
+            let mpj = m[p][j];
+            let mqj = m[q][j];
+            m[p][j] = c * mpj - s * mqj;
+            m[q][j] = s * mpj + c * mqj;
+        }
+        for i in 0..3 {
+            let vip = v[i][p];
+            let viq = v[i][q];
+            v[i][p] = c * vip - s * viq;
+            v[i][q] = s * vip + c * viq;
+        }
+    }
+    let evals = [m[0][0], m[1][1], m[2][2]];
+    let vecs = Mat3::from_cols(
+        Vec3::new(v[0][0], v[0][1], v[0][2]),
+        Vec3::new(v[1][0], v[1][1], v[1][2]),
+        Vec3::new(v[2][0], v[2][1], v[2][2]),
+    );
+    (vecs, evals)
+}
+
+/// One-sided 3x3 SVD: `m = U * diag(s) * V^T`. `s` sorted descending.
+fn svd3(m: Mat3) -> (Mat3, Vec3, Mat3) {
+    let ata = m.transposed() * m;
+    let (mut v, evals) = jacobi_eigen3(ata);
+    let mut s = Vec3::new(
+        evals[0].max(0.0).sqrt(),
+        evals[1].max(0.0).sqrt(),
+        evals[2].max(0.0).sqrt(),
+    );
+    // sort descending via axis index order
+    let mut order = [0usize, 1, 2];
+    order.sort_by(|&i, &j| s[j].partial_cmp(&s[i]).unwrap_or(std::cmp::Ordering::Equal));
+    let sorted_cols = [v[order[0]], v[order[1]], v[order[2]]];
+    v = Mat3::from_cols(sorted_cols[0], sorted_cols[1], sorted_cols[2]);
+    s = Vec3::new(s[order[0]], s[order[1]], s[order[2]]);
+
+    // U = M*V*S^-1 with degenerate columns repaired via cross products.
+    let mut cols = [Vec3::ZERO; 3];
+    for i in 0..3 {
+        if s[i] > 1e-12 {
+            cols[i] = m * v[i] / s[i];
+        }
+    }
+    for i in 0..3 {
+        if s[i] <= 1e-12 {
+            let a = cols[(i + 1) % 3];
+            let b = cols[(i + 2) % 3];
+            let mut c = a.cross(b);
+            if c.length_squared() < 1e-20 {
+                // fully degenerate: pick an arbitrary orthogonal unit vector
+                c = if a.length_squared() > 1e-20 {
+                    a.orthogonal()
+                } else {
+                    Vec3::X
+                };
+            }
+            cols[i] = c.normalized();
+        }
+    }
+    let mut u = Mat3::from_cols(cols[0], cols[1], cols[2]);
+    // keep U right-handed
+    if u.determinant() < 0.0 {
+        u = Mat3::from_cols(u[0], u[1], -u[2]);
+        s.z = -s.z;
+    }
+    (u, s, v)
+}
+
+impl Mat3 {
+    /// `adjoint` — adjugate (transpose of cofactor matrix).
+    pub fn adjoint(self) -> Self {
+        let m = self;
+        Mat3::from_cols(
+            Vec3::new(
+                m[1][1] * m[2][2] - m[1][2] * m[2][1],
+                -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
+                m[1][0] * m[2][1] - m[1][1] * m[2][0],
+            ),
+            Vec3::new(
+                -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
+                m[0][0] * m[2][2] - m[0][2] * m[2][0],
+                -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
+            ),
+            Vec3::new(
+                m[0][1] * m[1][2] - m[0][2] * m[1][1],
+                -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
+                m[0][0] * m[1][1] - m[0][1] * m[1][0],
+            ),
+        )
+    }
+
+    /// `pseudo_invert` — normal inverse, else Moore-Penrose via Jacobi SVD.
+    pub fn pseudo_invert(self, epsilon: f32) -> Self {
+        if let Some(inv) = self.inverted() {
+            return inv;
+        }
+        let (u, s, v) = svd3(self);
+        let w = Mat3::from_scale(Vec3::new(
+            if s.x < epsilon { 0.0 } else { 1.0 / s.x },
+            if s.y < epsilon { 0.0 } else { 1.0 / s.y },
+            if s.z < epsilon { 0.0 } else { 1.0 / s.z },
+        ));
+        (v * w) * u.transposed()
+    }
+
+    /// `polar_decompose` — M = U*P; U orthonormal (rotation-like), P symmetric.
+    pub fn polar_decompose(self) -> (Mat3, Mat3) {
+        let (w, s, v) = svd3(self);
+        let s_mat = Mat3::from_scale(s);
+        let vt = v.transposed();
+        (w * vt, (v * s_mat) * vt)
+    }
+
+    /// `is_similarity_transform` — no shear, uniform scale.
+    pub fn is_similarity_transform(self, epsilon: f32) -> bool {
+        if self[0].dot(self[1]).abs() > epsilon
+            || self[0].dot(self[2]).abs() > epsilon
+            || self[1].dot(self[2]).abs() > epsilon
+        {
+            return false;
+        }
+        let l0 = self[0].length_squared();
+        let l1 = self[1].length_squared();
+        let l2 = self[2].length_squared();
+        (l0 - l1).abs() <= epsilon && (l0 - l2).abs() <= epsilon && (l1 - l2).abs() <= epsilon
+    }
+
+    /// `to_rot_scale<true>` — decompose into unit-quaternion + (possibly negative) scale.
+    pub fn to_quat_scale(self) -> (crate::quaternion::Quaternion, Vec3) {
+        let mut m = self;
+        let scale = m.normalize_and_get_size();
+        if m.is_negative() {
+            m = -m;
+            return (crate::quaternion::Quaternion::from_mat3(m), -scale);
+        }
+        (crate::quaternion::Quaternion::from_mat3(m), scale)
+    }
+
+    /// `interpolate` — polar-decomposed matrix interpolation (rot slerp, scale lerp).
+    pub fn interpolate(a: Mat3, b: Mat3, t: f32) -> Mat3 {
+        let (mut u_a, mut p_a) = a.polar_decompose();
+        let (mut u_b, mut p_b) = b.polar_decompose();
+        if u_a.is_negative() {
+            u_a = -u_a;
+            p_a = -p_a;
+        }
+        if u_b.is_negative() {
+            u_b = -u_b;
+            p_b = -p_b;
+        }
+        let quat_a = crate::quaternion::Quaternion::from_mat3(u_a.normalized());
+        let quat_b = crate::quaternion::Quaternion::from_mat3(u_b.normalized());
+        let quat = quat_a.slerp(quat_b, t);
+        let u = quat.to_mat3();
+        let p = p_a + (p_b - p_a) * t;
+        u * p
+    }
+
+    /// `interpolate_fast` — normalize-column decompose, then slerp/lerp.
+    pub fn interpolate_fast(a: Mat3, b: Mat3, t: f32) -> Mat3 {
+        let (a_quat, a_scale) = a.to_quat_scale();
+        let (b_quat, b_scale) = b.to_quat_scale();
+        let scale = a_scale + (b_scale - a_scale) * t;
+        let rotation = a_quat.slerp(b_quat, t);
+        rotation.to_mat3() * Mat3::from_scale(scale)
+    }
+}
+
+impl Mat4 {
+    /// `interpolate` — 3x3 part via polar decompose, location lerped.
+    pub fn interpolate(a: Mat4, b: Mat4, t: f32) -> Mat4 {
+        let a3 = Mat3::from_cols(a[0].xyz(), a[1].xyz(), a[2].xyz());
+        let b3 = Mat3::from_cols(b[0].xyz(), b[1].xyz(), b[2].xyz());
+        let m3 = Mat3::interpolate(a3, b3, t);
+        let loc = a.location() + (b.location() - a.location()) * t;
+        let mut result = Mat4::from_cols(
+            Vec4::new(m3[0].x, m3[0].y, m3[0].z, 0.0),
+            Vec4::new(m3[1].x, m3[1].y, m3[1].z, 0.0),
+            Vec4::new(m3[2].x, m3[2].y, m3[2].z, 0.0),
+            Vec4::new(loc.x, loc.y, loc.z, 1.0),
+        );
+        result[3][3] = 1.0;
+        result
+    }
+
+    /// `interpolate_fast` — loc/rot/scale decompose, slerp + lerp.
+    pub fn interpolate_fast(a: Mat4, b: Mat4, t: f32) -> Mat4 {
+        let a3 = Mat3::from_cols(a[0].xyz(), a[1].xyz(), a[2].xyz());
+        let b3 = Mat3::from_cols(b[0].xyz(), b[1].xyz(), b[2].xyz());
+        let (a_quat, a_scale) = a3.to_quat_scale();
+        let (b_quat, b_scale) = b3.to_quat_scale();
+        let loc = a.location() + (b.location() - a.location()) * t;
+        let scale = a_scale + (b_scale - a_scale) * t;
+        let rotation = a_quat.slerp(b_quat, t);
+        Mat4::from_loc_rot_scale(loc, rotation.to_mat3(), scale)
+    }
+
+    /// `projection::perspective_infinite` — Lengyel "Projection Matrix Tricks".
+    pub fn perspective_infinite(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near_clip: f32,
+    ) -> Self {
+        let x_delta = right - left;
+        let y_delta = top - bottom;
+        let mut mat = Mat4::IDENTITY;
+        if x_delta != 0.0 && y_delta != 0.0 {
+            const EPS: f32 = 2.4e-7;
+            mat[0][0] = near_clip * 2.0 / x_delta;
+            mat[1][1] = near_clip * 2.0 / y_delta;
+            mat[2][0] = (right + left) / x_delta;
+            mat[2][1] = (top + bottom) / y_delta;
+            mat[2][2] = -1.0;
+            mat[2][3] = EPS - 1.0;
+            mat[3][2] = (EPS - 2.0) * near_clip;
+            mat[3][3] = 0.0;
+        }
+        mat
+    }
+}
+
+/// `to_quaternion_legacy` — rotate z-axis then align x-axis.
+pub fn to_quaternion_legacy(mat: Mat3) -> crate::quaternion::Quaternion {
+    use crate::quaternion::Quaternion;
+    let n_mat = mat.normalized();
+    let z_axis = n_mat.z_axis();
+    let nor = Vec3::new(z_axis.y, -z_axis.x, 0.0).normalized();
+    let ha = 0.5 * z_axis.z.clamp(-1.0, 1.0).acos();
+    let q1 = { let v = -nor * ha.sin(); Quaternion { w: ha.cos(), x: v.x, y: v.y, z: v.z } };
+    let x_axis = q1.conjugated().rotate_vec3(n_mat.x_axis());
+    let ha2 = 0.5 * x_axis.y.atan2(x_axis.x);
+    let q2 = Quaternion { w: ha2.cos(), x: 0.0, y: 0.0, z: ha2.sin() };
+    q1 * q2
+}
+
+fn is_identity_eps(m: &Mat3, eps: f32) -> bool {
+    for c in 0..3 {
+        for r in 0..3 {
+            let target = if c == r { 1.0 } else { 0.0 };
+            if (m[c][r] - target).abs() > eps {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn is_identity4_eps(m: &Mat4, eps: f32) -> bool {
+    for c in 0..4 {
+        for r in 0..4 {
+            let target = if c == r { 1.0 } else { 0.0 };
+            if (m[c][r] - target).abs() > eps {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `transform_normals` — apply inverse-transpose rotation to `normals` in place.
+pub fn transform_normals(transform: Mat3, normals: &mut [Vec3]) {
+    if is_identity_eps(&transform, 1e-6) {
+        return;
+    }
+    let normal_transform = transform.inverted().unwrap_or(transform).transposed();
+    if normal_transform.is_similarity_transform(1e-6) {
+        let nt = normal_transform.normalized();
+        let (x, y, z) = (nt.x_axis(), nt.y_axis(), nt.z_axis());
+        for n in normals.iter_mut() {
+            let n0 = *n;
+            *n = n0.x * x + n0.y * y + n0.z * z;
+        }
+    } else {
+        let (x, y, z) = (
+            normal_transform.x_axis(),
+            normal_transform.y_axis(),
+            normal_transform.z_axis(),
+        );
+        for n in normals.iter_mut() {
+            let n0 = *n;
+            *n = (n0.x * x + n0.y * y + n0.z * z).normalized();
+        }
+    }
+}
+
+/// `transform_normals(src, transform, dst)` — non-in-place variant.
+pub fn transform_normals_to(src: &[Vec3], transform: Mat3, dst: &mut [Vec3]) {
+    if is_identity_eps(&transform, 1e-6) {
+        dst.copy_from_slice(src);
+        return;
+    }
+    let normal_transform = transform.inverted().unwrap_or(transform).transposed();
+    if normal_transform.is_similarity_transform(1e-6) {
+        let nt = normal_transform.normalized();
+        let (x, y, z) = (nt.x_axis(), nt.y_axis(), nt.z_axis());
+        for (d, n) in dst.iter_mut().zip(src.iter()) {
+            *d = n.x * x + n.y * y + n.z * z;
+        }
+    } else {
+        let (x, y, z) = (
+            normal_transform.x_axis(),
+            normal_transform.y_axis(),
+            normal_transform.z_axis(),
+        );
+        for (d, n) in dst.iter_mut().zip(src.iter()) {
+            *d = (n.x * x + n.y * y + n.z * z).normalized();
+        }
+    }
+}
+
+/// `transform_points(src, transform, dst)`.
+pub fn transform_points_to(src: &[Vec3], transform: Mat4, dst: &mut [Vec3]) {
+    if is_identity4_eps(&transform, 1e-6) {
+        dst.copy_from_slice(src);
+        return;
+    }
+    let (x, y, z) = (transform[0].xyz(), transform[1].xyz(), transform[2].xyz());
+    let loc = transform.location();
+    for (d, p) in dst.iter_mut().zip(src.iter()) {
+        *d = p.x * x + p.y * y + p.z * z + loc;
+    }
+}
+
+/// `transform_points(transform, points)` — in-place variant.
+pub fn transform_points(transform: Mat4, points: &mut [Vec3]) {
+    if is_identity4_eps(&transform, 1e-6) {
+        return;
+    }
+    let (x, y, z) = (transform[0].xyz(), transform[1].xyz(), transform[2].xyz());
+    let loc = transform.location();
+    for p in points.iter_mut() {
+        let p0 = *p;
+        *p = p0.x * x + p0.y * y + p0.z * z + loc;
+    }
+}
