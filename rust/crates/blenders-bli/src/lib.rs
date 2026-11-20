@@ -23,3 +23,5 @@ pub mod time;
 pub mod dial_2d;
 pub mod dynstr;
 pub mod session_uid;
+pub mod heap_simple;
+pub mod linklist;
