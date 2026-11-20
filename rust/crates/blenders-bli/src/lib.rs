@@ -100,3 +100,4 @@ pub mod generic_vector_array;
 pub mod filereader_memory;
 pub mod memory_cache_file_load;
 pub mod math_solvers;
+pub mod math_half;
