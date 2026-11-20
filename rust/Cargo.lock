@@ -628,6 +628,9 @@ dependencies = [
 name = "blenders-math"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
+ "num-rational",
+ "num-traits",
  "robust",
 ]
 

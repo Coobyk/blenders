@@ -18,6 +18,7 @@ pub mod half;
 pub mod interp;
 pub mod matrix;
 pub mod matrix_c;
+pub mod mpq;
 pub mod quaternion;
 pub mod solvers;
 pub mod statistics;
