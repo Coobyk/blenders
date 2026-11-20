@@ -222,7 +222,7 @@ pub const OPDEF_CIRCULARIZE: BMOpDefine = BMOpDefine {
         ("mirror_z", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_circularize::bmo_circularize_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

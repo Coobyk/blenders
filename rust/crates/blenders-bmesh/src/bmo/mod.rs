@@ -28,3 +28,4 @@ pub mod bmo_create;
 pub mod bmo_space;
 pub mod bmo_relax;
 pub mod bmo_smooth_laplacian;
+pub mod bmo_circularize;
