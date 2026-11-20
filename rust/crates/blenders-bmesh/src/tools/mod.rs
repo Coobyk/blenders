@@ -1,3 +1,4 @@
 //! Port of `bmesh/tools/*.cc` — mesh-editing tool algorithms called by ops.
 pub mod bmesh_edgesplit;
 pub mod bmesh_decimate_unsubdivide;
+pub mod bmesh_beautify;

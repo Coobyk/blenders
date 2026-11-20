@@ -399,9 +399,14 @@ pub fn bm_edge_rotate_check_beauty(bm: &BMesh, _e: usize, l1: usize, l2: usize) 
 }
 
 /// `BMEdgeRotate_CheckFlag`.
+/// `BM_EDGEROT_CHECK_*` — C values from bmesh.hh.
+pub const BM_EDGEROT_CHECK_EXISTS: i16 = 1 << 0;
+pub const BM_EDGEROT_CHECK_SPLICE: i16 = 1 << 1;
+pub const BM_EDGEROT_CHECK_DEGENERATE: i16 = 1 << 2;
+pub const BM_EDGEROT_CHECK_BEAUTY: i16 = 1 << 3;
 pub const BM_EDGE_ROTATE_CHECK_NONE: i16 = 0;
-pub const BM_EDGE_ROTATE_CHECK_DEGENERATE: i16 = 1 << 0;
-pub const BM_EDGE_ROTATE_CHECK_BEAUTY: i16 = 1 << 1;
+pub const BM_EDGE_ROTATE_CHECK_DEGENERATE: i16 = BM_EDGEROT_CHECK_DEGENERATE;
+pub const BM_EDGE_ROTATE_CHECK_BEAUTY: i16 = BM_EDGEROT_CHECK_BEAUTY;
 
 /// `BM_edge_rotate` — rotate edge's face loops between its two faces.
 pub fn bm_edge_rotate(bm: &mut BMesh, e: usize, ccw: bool, check_flag: i16) -> usize {
@@ -418,6 +423,13 @@ pub fn bm_edge_rotate(bm: &mut BMesh, e: usize, ccw: bool, check_flag: i16) -> u
         && !bm_edge_rotate_check_beauty(bm, e, l1, l2)
     {
         return BM_NIL;
+    }
+    if check_flag & BM_EDGEROT_CHECK_EXISTS != 0 {
+        let va = bm.loo(bm.loo(l1).prev).v;
+        let vb = bm.loo(bm.loo(l2).prev).v;
+        if crate::query::bm_edge_exists(bm, va, vb) != BM_NIL {
+            return BM_NIL;
+        }
     }
 
     let f1 = bm.loo(l1).f;

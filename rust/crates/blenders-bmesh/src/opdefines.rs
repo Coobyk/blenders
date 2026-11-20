@@ -1215,7 +1215,7 @@ pub const OPDEF_BEAUTIFY_FILL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_beautify::bmo_beautify_fill_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

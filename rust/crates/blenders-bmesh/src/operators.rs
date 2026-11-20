@@ -508,25 +508,44 @@ pub fn bmo_slot_buffer_hflag_enable(bm: &mut BMesh, op: &mut BMOperator, out: bo
     }
 }
 /// `BMO_slot_buffer_from_enabled_flag` — fill slot with elems having api_flag `oflag`.
+/// `htype` may be a single type or `|`-combined mask (as `from_hflag` accepts).
 pub fn bmo_slot_buffer_from_enabled_flag(bm: &BMesh, op: &mut BMOperator, out: bool, name: &str, htype: u8, oflag: u8) {
-    let pool = match htype {
-        BM_VERT => bm.totvert,
-        BM_EDGE => bm.totedge,
-        BM_LOOP => bm.totloop,
-        _ => bm.totface,
-    } as usize;
-    for i in 0..pool {
-        let f = match htype {
-            BM_VERT => bm.vert(i).head.api_flag,
-            BM_EDGE => bm.edge(i).head.api_flag,
-            BM_LOOP => bm.loo(i).head.api_flag,
-            _ => bm.face(i).head.api_flag,
-        };
-        if f & (1 << oflag) != 0 {
-            let slot_i = bmo_slot_buffer_grow(op, out, name, 1);
-            bmo_slot_buffer_mut(op, out, name)[slot_i] = (htype, i);
+    let mut buf = Vec::new();
+    let push = |buf: &mut Vec<BMElemRef>, ht: u8, i: usize, flag: u8| {
+        if flag & (1 << oflag) != 0 {
+            buf.push((ht, i));
+        }
+    };
+    if (htype & (1 << BM_VERT)) != 0 || htype == BM_VERT {
+        for i in 0..bm.vpool.len() {
+            if bm.vert(i).head.htype == BM_VERT {
+                push(&mut buf, BM_VERT, i, bm.vert(i).head.api_flag);
+            }
         }
     }
+    if (htype & (1 << BM_EDGE)) != 0 || htype == BM_EDGE {
+        for i in 0..bm.epool.len() {
+            if bm.edge(i).head.htype == BM_EDGE {
+                push(&mut buf, BM_EDGE, i, bm.edge(i).head.api_flag);
+            }
+        }
+    }
+    if (htype & (1 << BM_LOOP)) != 0 || htype == BM_LOOP {
+        for i in 0..bm.lpool.len() {
+            if bm.loo(i).head.htype == BM_LOOP {
+                push(&mut buf, BM_LOOP, i, bm.loo(i).head.api_flag);
+            }
+        }
+    }
+    if (htype & (1 << BM_FACE)) != 0 || htype == BM_FACE {
+        for i in 0..bm.fpool.len() {
+            if bm.face(i).head.htype == BM_FACE {
+                push(&mut buf, BM_FACE, i, bm.face(i).head.api_flag);
+            }
+        }
+    }
+    let slots = if out { &mut op.slots_out } else { &mut op.slots_in };
+    slot_get_mut(slots, name).buf = buf;
 }
 
 
