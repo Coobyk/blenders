@@ -676,7 +676,7 @@ pub const OPDEF_CONNECT_VERTS_CONCAVE: BMOpDefine = BMOpDefine {
         ("edges.out", BMOSlotType::ElemBuf),
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_connect_ex::bmo_connect_verts_concave_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -691,7 +691,7 @@ pub const OPDEF_CONNECT_VERTS_NONPLANAR: BMOpDefine = BMOpDefine {
         ("edges.out", BMOSlotType::ElemBuf),
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_connect_ex::bmo_connect_verts_nonplanar_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

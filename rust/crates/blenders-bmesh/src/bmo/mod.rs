@@ -20,3 +20,4 @@ pub mod bmo_extrude;
 pub mod bmo_flatten;
 pub mod bmo_rotate_edges;
 pub mod bmo_triangulate;
+pub mod bmo_connect_ex;

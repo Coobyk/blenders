@@ -966,3 +966,25 @@ pub fn bm_face_triangulate(
     bm.elem_index_dirty = true;
     (faces_new, edges_new, faces_double)
 }
+
+/// `bm_face_subset_calc_planar` (bmo_connect_nonplanar.cc) — summed |Δz|
+/// of the chain `l_first..=l_last` against the plane `no`.
+pub fn bm_face_subset_calc_planar(
+    bm: &BMesh, l_first: usize, l_last: usize, no: Vec3) -> f32
+{
+    let axis_mat = blenders_math::geom::axis_dominant_to_m3(no);
+    let mut delta_z = 0.0;
+    let mut l_iter = l_first;
+    let l_term = bm.loo(l_last).next;
+    let z = |co: Vec3| axis_mat.cols[0].z * co.x + axis_mat.cols[1].z * co.y
+        + axis_mat.cols[2].z * co.z;
+    let mut z_prev = z(bm.vert(bm.loo(l_last).v).co);
+    loop {
+        let z_curr = z(bm.vert(bm.loo(l_iter).v).co);
+        delta_z += (z_curr - z_prev).abs();
+        z_prev = z_curr;
+        l_iter = bm.loo(l_iter).next;
+        if l_iter == l_term { break; }
+    }
+    delta_z
+}

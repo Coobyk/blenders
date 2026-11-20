@@ -1574,3 +1574,11 @@ pub fn bm_face_exists_multi_edge(bm: &BMesh, earr: &[usize]) -> bool {
     }
     false
 }
+
+/// `BM_edge_is_contiguous` — exactly 2 face users with opposite winding.
+pub fn bm_edge_is_contiguous(bm: &BMesh, e: usize) -> bool {
+    let l = bm.edge(e).l;
+    if l == BM_NIL { return false; }
+    let l_other = bm.loo(l).radial_next;
+    l_other != l && bm.loo(l_other).radial_next == l && bm.loo(l_other).v != bm.loo(l).v
+}
