@@ -263,6 +263,94 @@ impl Vec2 {
 }
 
 impl Vec3 {
+    /// `axis_dominant_v3` — indices of the two non-dominant axes `(a, b)`.
+    #[inline]
+    pub fn axis_dominant(self) -> (usize, usize) {
+        let (xn, yn, zn) = (self.x.abs(), self.y.abs(), self.z.abs());
+        if zn >= xn && zn >= yn {
+            (0, 1)
+        } else if yn >= xn && yn >= zn {
+            (0, 2)
+        } else {
+            (1, 2)
+        }
+    }
+    /// `axis_dominant_v3_max` — same axes plus the dominant magnitude.
+    #[inline]
+    pub fn axis_dominant_max(self) -> (usize, usize, f32) {
+        let (xn, yn, zn) = (self.x.abs(), self.y.abs(), self.z.abs());
+        if zn >= xn && zn >= yn {
+            (0, 1, zn)
+        } else if yn >= xn && yn >= zn {
+            (0, 2, yn)
+        } else {
+            (1, 2, xn)
+        }
+    }
+    /// `axis_dominant_v3_single` — index of the largest |component|.
+    #[inline]
+    pub fn abs_max_axis(self) -> usize {
+        let (x, y, z) = (self.x.abs(), self.y.abs(), self.z.abs());
+        if x > y {
+            if x > z {
+                0
+            } else {
+                2
+            }
+        } else if y > z {
+            1
+        } else {
+            2
+        }
+    }
+    /// `axis_dominant_v3_ortho_single` — index of the smallest |component|.
+    #[inline]
+    pub fn abs_min_axis(self) -> usize {
+        let (x, y, z) = (self.x.abs(), self.y.abs(), self.z.abs());
+        if x < y {
+            if x < z {
+                0
+            } else {
+                2
+            }
+        } else if y < z {
+            1
+        } else {
+            2
+        }
+    }
+    /// `max_axis_v3`.
+    #[inline]
+    pub fn max_axis(self) -> usize {
+        if self.x > self.y {
+            if self.x > self.z {
+                0
+            } else {
+                2
+            }
+        } else if self.y > self.z {
+            1
+        } else {
+            2
+        }
+    }
+    /// `min_axis_v3`.
+    #[inline]
+    pub fn min_axis(self) -> usize {
+        if self.x < self.y {
+            if self.x < self.z {
+                0
+            } else {
+                2
+            }
+        } else if self.y < self.z {
+            1
+        } else {
+            2
+        }
+    }
+
+
     pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
     pub const X: Self = Self { x: 1.0, y: 0.0, z: 0.0 };
     pub const Y: Self = Self { x: 0.0, y: 1.0, z: 0.0 };

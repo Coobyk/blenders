@@ -976,6 +976,184 @@ pub fn isect_ray_tri(
     Some((lambda, u, v))
 }
 
+/// `isect_ray_tri_epsilon_v3`.
+pub fn isect_ray_tri_epsilon(
+    ray_origin: Vec3,
+    ray_direction: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+    epsilon: f32,
+) -> Option<(f32, f32, f32)> {
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let p = ray_direction.cross(e2);
+    let a = e1.dot(p);
+    if a == 0.0 {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = ray_origin - v0;
+    let u = f * s.dot(p);
+    if u < -epsilon || u > 1.0 + epsilon {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = f * ray_direction.dot(q);
+    if v < -epsilon || u + v > 1.0 + epsilon {
+        return None;
+    }
+    let lambda = f * e2.dot(q);
+    if lambda < 0.0 {
+        return None;
+    }
+    Some((lambda, u, v))
+}
+
+/// `IsectRayPrecalc` — watertight ray-tri precalc (Cycles algorithm).
+#[derive(Debug, Clone, Copy)]
+pub struct IsectRayPrecalc {
+    pub kx: usize,
+    pub ky: usize,
+    pub kz: usize,
+    pub sx: f32,
+    pub sy: f32,
+    pub sz: f32,
+}
+
+/// `isect_ray_tri_watertight_v3_precalc`.
+pub fn isect_ray_tri_watertight_precalc(ray_direction: Vec3) -> IsectRayPrecalc {
+    // dimension where the ray direction is maximal
+    let kz = ray_direction.abs_max_axis();
+    let mut kx = if kz != 2 { kz + 1 } else { 0 };
+    let mut ky = if kx != 2 { kx + 1 } else { 0 };
+    // swap to preserve winding
+    if ray_direction[kz] < 0.0 {
+        std::mem::swap(&mut kx, &mut ky);
+    }
+    let inv_dir_z = 1.0 / ray_direction[kz];
+    IsectRayPrecalc {
+        sx: ray_direction[kx] * inv_dir_z,
+        sy: ray_direction[ky] * inv_dir_z,
+        sz: inv_dir_z,
+        kx,
+        ky,
+        kz,
+    }
+}
+
+/// `isect_ray_tri_watertight_v3` — Woop watertight ray-triangle.
+pub fn isect_ray_tri_watertight(
+    ray_origin: Vec3,
+    pre: &IsectRayPrecalc,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, f32, f32)> {
+    let (kx, ky, kz) = (pre.kx, pre.ky, pre.kz);
+    let (sx, sy, sz) = (pre.sx, pre.sy, pre.sz);
+
+    let a = v0 - ray_origin;
+    let b = v1 - ray_origin;
+    let c = v2 - ray_origin;
+
+    let (a_kx, a_ky, a_kz) = (a[kx], a[ky], a[kz]);
+    let (b_kx, b_ky, b_kz) = (b[kx], b[ky], b[kz]);
+    let (c_kx, c_ky, c_kz) = (c[kx], c[ky], c[kz]);
+
+    let ax = a_kx - sx * a_kz;
+    let ay = a_ky - sy * a_kz;
+    let bx = b_kx - sx * b_kz;
+    let by = b_ky - sy * b_kz;
+    let cx = c_kx - sx * c_kz;
+    let cy = c_ky - sy * c_kz;
+
+    let u = cx * by - cy * bx;
+    let v = ax * cy - ay * cx;
+    let w = bx * ay - by * ax;
+
+    if (u < 0.0 || v < 0.0 || w < 0.0) && (u > 0.0 || v > 0.0 || w > 0.0) {
+        return None;
+    }
+
+    let det = u + v + w;
+    if det == 0.0 || !det.is_finite() {
+        return None;
+    }
+
+    // xor float sign bits with det's sign
+    let sign_det = det.to_bits() & 0x8000_0000;
+    let t = (u * a_kz + v * b_kz + w * c_kz) * sz;
+    let sign_t = f32::from_bits(t.to_bits() ^ sign_det);
+    if sign_t < 0.0 {
+        return None;
+    }
+
+    let inv_det = 1.0 / det;
+    Some((t * inv_det, u * inv_det, v * inv_det))
+}
+
+/// `isect_ray_tri_watertight_v3_simple`.
+pub fn isect_ray_tri_watertight_simple(
+    ray_origin: Vec3,
+    ray_direction: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, f32, f32)> {
+    let pre = isect_ray_tri_watertight_precalc(ray_direction);
+    isect_ray_tri_watertight(ray_origin, &pre, v0, v1, v2)
+}
+
+/// `isect_ray_seg_v2` — 2D ray vs segment, `(t, u)` on hit.
+pub fn isect_ray_seg_v2(
+    ray_origin: Vec2,
+    ray_direction: Vec2,
+    v0: Vec2,
+    v1: Vec2,
+) -> Option<(f32, f32)> {
+    let v0_local = v0 - ray_origin;
+    let v1_local = v1 - ray_origin;
+    let s10 = v1_local - v0_local;
+    let det = ray_direction.cross(s10);
+    if det == 0.0 {
+        return None;
+    }
+    let v = v0_local.cross(v1_local);
+    let p = ray_direction * (v / det);
+    let t = p.dot(ray_direction) / ray_direction.dot(ray_direction);
+    if t < 0.0 {
+        return None;
+    }
+    let h = v1_local - p;
+    let u = s10.dot(h) / s10.dot(s10);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    Some((t, u))
+}
+
+/// `isect_point_planes_v3_negated` — `p` inside all planes (inside = strict side > 0).
+pub fn isect_point_planes_negated(planes: &[Vec4], p: Vec3) -> bool {
+    planes.iter().all(|pl| plane_point_side(*pl, p) > 0.0)
+}
+
+/// `isect_plane_plane_plane_v3` — common point of three planes.
+pub fn isect_plane_plane_plane(plane_a: Vec4, plane_b: Vec4, plane_c: Vec4) -> Option<Vec3> {
+    let (a, b, c) = (plane_a.xyz(), plane_b.xyz(), plane_c.xyz());
+    // determinant_m3(a, b, c) == a . (b x c)
+    let det = a.dot(b.cross(c));
+    if det != 0.0 {
+        let mut r = c.cross(b) * plane_a.w;
+        r += a.cross(c) * plane_b.w;
+        r += b.cross(a) * plane_c.w;
+        r *= 1.0 / det;
+        Some(r)
+    } else {
+        None
+    }
+}
+
 /* -------------------------------------------------------------------- */
 /* Ray → AABB distance (`dist_squared_ray_to_aabb_v3*` family)            */
 /* -------------------------------------------------------------------- */
