@@ -6,7 +6,7 @@ use std::ops::{Add, Index, IndexMut, Mul, Neg};
 use crate::base::FLT_EPSILON;
 
 use crate::base;
-use crate::matrix::Mat3;
+use crate::matrix::{Mat3, Mat4};
 use crate::vector::{Vec3, Vec4};
 
 /// `QuaternionBase<float>` — (w, x, y, z).
@@ -1054,4 +1054,224 @@ pub fn mat3_from_axis_conversion_single(src_axis: i32, dst_axis: i32) -> Option<
         dst_axis_next += 3;
     }
     mat3_from_axis_conversion(src_axis, src_axis_next, dst_axis, dst_axis_next)
+}
+
+/* ---- math_rotation_c.cc: DualQuat ---- */
+
+/// `DualQuat` — dual quaternion with optional scale for skinning.
+#[derive(Debug, Clone, Copy)]
+pub struct DualQuat {
+    pub quat: Quaternion,
+    pub trans: Quaternion,
+    pub scale: Mat4,
+    pub scale_weight: f32,
+}
+
+fn mat4_to_size(m: Mat4) -> Vec3 {
+    Vec3::new(
+        m[0].xyz().length(),
+        m[1].xyz().length(),
+        m[2].xyz().length(),
+    )
+}
+
+fn is_orthonormal_m3(m: Mat3) -> bool {
+    const EPS: f32 = 0.01;
+    (m[0].length() - 1.0).abs() < EPS
+        && (m[1].length() - 1.0).abs() < EPS
+        && (m[2].length() - 1.0).abs() < EPS
+        && m[0].dot(m[1]).abs() < EPS
+        && m[0].dot(m[2]).abs() < EPS
+        && m[1].dot(m[2]).abs() < EPS
+}
+
+/// `mat4_to_dquat` — convert transform to dual quaternion given `basemat`.
+pub fn mat4_to_dquat(basemat: Mat4, mat: Mat4) -> DualQuat {
+    let base_rs = mat * basemat;
+    let scale = mat4_to_size(base_rs);
+    let dscale = scale - Vec3::splat(1.0);
+
+    let mat3 = Mat3::from_cols(mat[0].xyz(), mat[1].xyz(), mat[2].xyz());
+    let mut scale_mat = Mat4::IDENTITY;
+    let mut scale_weight = 0.0;
+    let r;
+
+    if !is_orthonormal_m3(mat3)
+        || mat.determinant() < 0.0
+        || dscale.length_squared() > 1e-4f32 * 1e-4
+    {
+        // extra orthogonalize, avoid flipping with stretched bones
+        let mut tmp3 = Mat3::from_cols(base_rs[0].xyz(), base_rs[1].xyz(), base_rs[2].xyz());
+        tmp3 = tmp3.orthogonalized();
+        let basequat = Quaternion::from_mat3(tmp3);
+        let mut base_r = basequat.to_mat4();
+        base_r[3] = base_rs[3];
+
+        let baseinv = basemat.inverted().unwrap_or(basemat);
+        let r_mat = base_r * baseinv;
+        let base_rinv = base_r.inverted().unwrap_or(base_r);
+        let s = base_rinv * base_rs;
+
+        scale_mat = basemat * s * baseinv;
+        scale_weight = 1.0;
+        r = r_mat;
+    } else {
+        r = mat;
+    }
+
+    let quat = Quaternion::from_mat3(Mat3::from_cols(
+        r[0].xyz(),
+        r[1].xyz(),
+        r[2].xyz(),
+    ));
+    let t = r[3];
+    let q = quat;
+    let trans = Quaternion {
+        w: -0.5 * (t.x * q.x + t.y * q.y + t.z * q.z),
+        x: 0.5 * (t.x * q.w + t.y * q.z - t.z * q.y),
+        y: 0.5 * (-t.x * q.z + t.y * q.w + t.z * q.x),
+        z: 0.5 * (t.x * q.y - t.y * q.x + t.z * q.w),
+    };
+    DualQuat {
+        quat,
+        trans,
+        scale: scale_mat,
+        scale_weight,
+    }
+}
+
+/// `dquat_to_mat4`.
+pub fn dquat_to_mat4(dq: &DualQuat) -> Mat4 {
+    let mut q0 = dq.quat;
+    let mut len = q0.dot(q0).sqrt();
+    if len != 0.0 {
+        len = 1.0 / len;
+    }
+    q0 = q0 * len;
+    let mut r = q0.to_mat4();
+    let t = dq.trans;
+    r[3].x = 2.0 * (-t.w * q0.x + t.x * q0.w - t.y * q0.z + t.z * q0.y) * len;
+    r[3].y = 2.0 * (-t.w * q0.y + t.x * q0.z + t.y * q0.w - t.z * q0.x) * len;
+    r[3].z = 2.0 * (-t.w * q0.z - t.x * q0.y + t.y * q0.x + t.z * q0.w) * len;
+    if dq.scale_weight != 0.0 {
+        r = r * dq.scale;
+    }
+    r
+}
+
+/// `add_weighted_dq_dq` — accumulate `dq * weight` into `dq_sum`.
+pub fn add_weighted_dq_dq(dq_sum: &mut DualQuat, dq: &DualQuat, weight: f32) {
+    let mut weight = weight;
+    let flipped = dq.quat.dot(dq_sum.quat) < 0.0;
+    if flipped {
+        weight = -weight;
+    }
+    dq_sum.quat = dq_sum.quat + dq.quat * weight;
+    dq_sum.trans = dq_sum.trans + dq.trans * weight;
+    if dq.scale_weight != 0.0 {
+        if flipped {
+            weight = -weight;
+        }
+        dq_sum.scale = dq_sum.scale + dq.scale * weight;
+        dq_sum.scale_weight += weight;
+    }
+}
+
+/// `add_weighted_dq_dq_pivot` — accumulate with scale correction at `pivot`.
+pub fn add_weighted_dq_dq_pivot(
+    dq_sum: &mut DualQuat,
+    dq: &DualQuat,
+    pivot: Vec3,
+    weight: f32,
+    compute_scale_matrix: bool,
+) {
+    if dq.scale_weight != 0.0 {
+        let mut mdq = *dq;
+        // translation induced by scale at the pivot point
+        let dst = dq.scale * pivot - pivot;
+        let q = mdq.quat;
+        mdq.trans.w -= 0.5 * (q.x * dst.x + q.y * dst.y + q.z * dst.z);
+        mdq.trans.x += 0.5 * (q.w * dst.x + q.y * dst.z - q.z * dst.y);
+        mdq.trans.y += 0.5 * (q.w * dst.y + q.z * dst.x - q.x * dst.z);
+        mdq.trans.z += 0.5 * (q.w * dst.z + q.x * dst.y - q.y * dst.x);
+        if compute_scale_matrix {
+            mdq.scale[3].x -= dst.x;
+            mdq.scale[3].y -= dst.y;
+            mdq.scale[3].z -= dst.z;
+        } else {
+            mdq.scale_weight = 0.0;
+        }
+        add_weighted_dq_dq(dq_sum, &mdq, weight);
+    } else {
+        add_weighted_dq_dq(dq_sum, dq, weight);
+    }
+}
+
+/// `normalize_dq` — normalize by total weight.
+pub fn normalize_dq(dq: &mut DualQuat, totweight: f32) {
+    let scale = 1.0 / totweight;
+    dq.quat = dq.quat * scale;
+    dq.trans = dq.trans * scale;
+    if dq.scale_weight != 0.0 {
+        let addweight = totweight - dq.scale_weight;
+        if addweight != 0.0 {
+            dq.scale[0][0] += addweight;
+            dq.scale[1][1] += addweight;
+            dq.scale[2][2] += addweight;
+            dq.scale[3][3] += addweight;
+        }
+        dq.scale = dq.scale * scale;
+        dq.scale_weight = 1.0;
+    }
+}
+
+/// `mul_v3m3_dq` — transform `r` by the dual quaternion; also returns the
+/// crazy-space correction Mat3.
+pub fn mul_v3m3_dq(r_in: Vec3, dq: &DualQuat) -> (Vec3, Mat3) {
+    let (w, x, y, z) = (dq.quat.w, dq.quat.x, dq.quat.y, dq.quat.z);
+    let (t0, t1, t2, t3) = (dq.trans.w, dq.trans.x, dq.trans.y, dq.trans.z);
+    let m = Mat3::from_cols(
+        Vec3::new(
+            w * w + x * x - y * y - z * z,
+            2.0 * (x * y + w * z),
+            2.0 * (x * z - w * y),
+        ),
+        Vec3::new(
+            2.0 * (x * y - w * z),
+            w * w + y * y - x * x - z * z,
+            2.0 * (y * z + w * x),
+        ),
+        Vec3::new(
+            2.0 * (x * z + w * y),
+            2.0 * (y * z - w * x),
+            w * w + z * z - x * x - y * y,
+        ),
+    );
+    let mut len2 = dq.quat.dot(dq.quat);
+    if len2 > 0.0 {
+        len2 = 1.0 / len2;
+    }
+    let t = Vec3::new(
+        2.0 * (-t0 * x + w * t1 - t2 * z + y * t3),
+        2.0 * (-t0 * y + t1 * z - x * t3 + w * t2),
+        2.0 * (-t0 * z + x * t2 + w * t3 - t1 * y),
+    );
+    let mut r = r_in;
+    if dq.scale_weight != 0.0 {
+        r = dq.scale * r;
+    }
+    r = m * r;
+    r = (r + t) * len2;
+
+    let r_mat = if dq.scale_weight != 0.0 {
+        let scalemat = Mat3::from_cols(
+            dq.scale[0].xyz(),
+            dq.scale[1].xyz(),
+            dq.scale[2].xyz(),
+        );
+        (m * scalemat) * len2
+    } else {
+        m * len2
+    };
+    (r, r_mat)
 }

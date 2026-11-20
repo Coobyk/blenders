@@ -538,6 +538,22 @@ impl Mul<Mat4> for Mat4 {
     }
 }
 
+impl Add for Mat4 {
+    type Output = Mat4;
+    #[inline]
+    fn add(self, rhs: Mat4) -> Mat4 {
+        Mat4::from_cols(self[0] + rhs[0], self[1] + rhs[1], self[2] + rhs[2], self[3] + rhs[3])
+    }
+}
+
+impl Sub for Mat4 {
+    type Output = Mat4;
+    #[inline]
+    fn sub(self, rhs: Mat4) -> Mat4 {
+        Mat4::from_cols(self[0] - rhs[0], self[1] - rhs[1], self[2] - rhs[2], self[3] - rhs[3])
+    }
+}
+
 impl Mul<f32> for Mat4 {
     type Output = Mat4;
     #[inline]
