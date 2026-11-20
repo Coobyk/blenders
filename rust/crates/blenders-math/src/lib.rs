@@ -10,6 +10,7 @@ pub mod base;
 pub mod boolean;
 pub mod blend;
 pub mod color;
+pub mod easing;
 pub mod euler;
 pub mod filter;
 pub mod geom;
