@@ -1338,7 +1338,7 @@ pub const OPDEF_POKE: BMOpDefine = BMOpDefine {
         ("verts.out", BMOSlotType::ElemBuf),
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_poke::bmo_poke_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
