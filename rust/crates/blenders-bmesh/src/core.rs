@@ -815,3 +815,349 @@ pub fn bmesh_kernel_join_face_kill_edge(
     bm.elem_index_dirty = true;
     f1
 }
+
+/// `bmesh_kernel_join_vert_kill_edge` — collapse `e_kill` merging `v_kill`
+/// into the vert at the other end. Returns `v_target` or NIL.
+pub fn bmesh_kernel_join_vert_kill_edge(
+    bm: &mut BMesh,
+    e_kill: usize,
+    v_kill: usize,
+    do_del: bool,
+    check_edge_exists: bool,
+    kill_degenerate_faces: bool,
+) -> usize {
+    if !bm_vert_in_edge(bm, e_kill, v_kill) {
+        return BM_NIL;
+    }
+    let v_target = if bm.edge(e_kill).v1 == v_kill {
+        bm.edge(e_kill).v2
+    } else {
+        bm.edge(e_kill).v1
+    };
+    let mut faces_degenerate: Vec<usize> = Vec::new();
+
+    if bm.edge(e_kill).l != BM_NIL {
+        let l_first = bm.edge(e_kill).l;
+        let mut l_kill = l_first;
+        loop {
+            let ln = bm.loo(l_kill).next;
+            let lp = bm.loo(l_kill).prev;
+            if bm.loo(ln).v == v_kill {
+                bm.lpool[ln].v = v_target;
+            }
+            bm.lpool[ln].prev = lp;
+            bm.lpool[lp].next = ln;
+            let lf = bm.loo(l_kill).f;
+            if bm.face(lf).l_first == l_kill {
+                bm.fpool[lf].l_first = ln;
+            }
+            bm.fpool[lf].len -= 1;
+            if kill_degenerate_faces && bm.face(lf).len < 3 {
+                faces_degenerate.push(lf);
+            }
+            let l_kill_next = bm.loo(l_kill).radial_next;
+            bm_kill_only_loop(bm, l_kill);
+            l_kill = l_kill_next;
+            if l_kill == l_first {
+                break;
+            }
+        }
+        bm.epool[e_kill].l = BM_NIL;
+    }
+
+    /* BM_edge_kill: kill remaining faces on edge then the edge itself */
+    while bm.edge(e_kill).l != BM_NIL {
+        let f = bm.loo(bm.edge(e_kill).l).f;
+        bm_face_kill(bm, f);
+    }
+    bm_kill_only_edge(bm, e_kill);
+
+    /* inline BM_vert_splice: move v_kill's remaining edges onto v_target */
+    if bm.vert(v_target).e != BM_NIL && bm.vert(v_kill).e != BM_NIL {
+        loop {
+            let e = bm.vert(v_kill).e;
+            if e == BM_NIL {
+                break;
+            }
+            let e_other_v = if bm.edge(e).v1 == v_kill {
+                bm.edge(e).v2
+            } else {
+                bm.edge(e).v1
+            };
+            let e_target = if check_edge_exists {
+                bmesh_disk_edge_exists(bm, v_target, e_other_v)
+            } else {
+                BM_NIL
+            };
+            bmesh_disk_vert_replace(bm, e, v_target, v_kill);
+            debug_assert_ne!(bm.edge(e).v1, bm.edge(e).v2);
+            if e_target != BM_NIL && e_target != e {
+                bm_edge_splice(bm, e_target, e);
+            }
+        }
+    }
+
+    for f in faces_degenerate {
+        if bm.face(f).head.htype == BM_FACE {
+            bm_face_kill(bm, f);
+        }
+    }
+    if do_del {
+        debug_assert_eq!(bm.vert(v_kill).e, BM_NIL);
+        bm_kill_only_vert(bm, v_kill);
+    }
+    v_target
+}
+
+/// `BM_edge_splice` — move `e_src`'s radial loops onto `e_dst`, kill `e_src`.
+pub fn bm_edge_splice(bm: &mut BMesh, e_dst: usize, e_src: usize) -> bool {
+    let (d1, d2) = (bm.edge(e_dst).v1, bm.edge(e_dst).v2);
+    if !(crate::query::bm_vert_in_edge(bm, e_src, d1) && bm_vert_in_edge(bm, e_src, d2)) {
+        debug_assert!(false);
+        return false;
+    }
+    while bm.edge(e_src).l != BM_NIL {
+        let l = bm.edge(e_src).l;
+        bmesh_radial_loop_remove(bm, e_src, l);
+        bm.lpool[l].e = e_dst;
+        bmesh_radial_loop_append(bm, e_dst, l);
+    }
+    while bm.edge(e_src).l != BM_NIL {
+        let f = bm.loo(bm.edge(e_src).l).f;
+        bm_face_kill(bm, f);
+    }
+    bm_kill_only_edge(bm, e_src);
+    true
+}
+
+const FLAG_JF: u8 = 1 << 6;
+const FLAG_OVERLAP: u8 = 1 << 7;
+
+fn bm_loop_systag_count_radial(bm: &BMesh, l: usize) -> i32 {
+    let mut count = 0;
+    let l_first = bm.loo(l).e;
+    let l0 = bm.edge(l_first).l;
+    if l0 == BM_NIL {
+        return 0;
+    }
+    let mut l_iter = l0;
+    loop {
+        if (bm.face(bm.loo(l_iter).f).head.api_flag & FLAG_JF) != 0 {
+            count += 1;
+        }
+        l_iter = bm.loo(l_iter).radial_next;
+        if l_iter == l0 {
+            break;
+        }
+    }
+    count
+}
+
+/// `bm_vert_is_manifold_flagged` — is the vert manifold counting only
+/// JF-flagged faces? (region check restricted to flagged fans; PORT_PENDING
+/// fidelity — approximation via manifold test on tagged edges.)
+fn bm_vert_is_manifold_flagged(bm: &mut BMesh, v: usize) -> bool {
+    /* count disk edges having a loop on a JF face; if every such edge is
+     * manifold within JF faces, the vert is manifold-flagged. */
+    let e_first = bm.vert(v).e;
+    if e_first == BM_NIL {
+        return false;
+    }
+    let mut e_iter = e_first;
+    loop {
+        /* does this edge participate in a JF face? */
+        let l = bm.edge(e_iter).l;
+        let mut jf = false;
+        if l != BM_NIL {
+            let mut li = l;
+            loop {
+                if (bm.face(bm.loo(li).f).head.api_flag & FLAG_JF) != 0 {
+                    jf = true;
+                }
+                li = bm.loo(li).radial_next;
+                if li == l {
+                    break;
+                }
+            }
+        }
+        if jf {
+            /* edge must be manifold among JF faces: exactly 2 JF loops */
+            let mut l_iter = l;
+            let mut jf_count = 0;
+            loop {
+                if (bm.face(bm.loo(l_iter).f).head.api_flag & FLAG_JF) != 0 {
+                    jf_count += 1;
+                }
+                l_iter = bm.loo(l_iter).radial_next;
+                if l_iter == l {
+                    break;
+                }
+            }
+            if jf_count != 2 {
+                return false;
+            }
+        }
+        e_iter = bmesh_disk_edge_next(bm, e_iter, v);
+        if e_iter == e_first || e_iter == BM_NIL {
+            break;
+        }
+    }
+    true
+}
+
+/// `BM_faces_join` — join `faces` into one n-gon face (or fail → NIL).
+/// `r_double` receives an existing identical face when the result doubles one.
+pub fn bm_faces_join(
+    bm: &mut BMesh,
+    faces: &[usize],
+    do_del: bool,
+    r_double: Option<&mut usize>,
+) -> usize {
+    let mut r_double = r_double;
+    let _ = &mut r_double;
+    if faces.is_empty() {
+        return BM_NIL;
+    }
+    if faces.len() == 1 {
+        return faces[0];
+    }
+    let had_active = bm.act_face != BM_NIL;
+
+    /* tag the faces */
+    for &f in faces {
+        bm.fpool[f].head.api_flag |= FLAG_JF;
+    }
+
+    let mut edges: Vec<usize> = Vec::new();
+    let mut deledges: Vec<usize> = Vec::new();
+    let mut delverts: Vec<usize> = Vec::new();
+    let mut v1 = BM_NIL;
+    let mut v2 = BM_NIL;
+    let mut fail = false;
+
+    for &f in faces {
+        let l_first = bm.face(f).l_first;
+        let mut l_iter = l_first;
+        loop {
+            let rlen = bm_loop_systag_count_radial(bm, l_iter);
+            if rlen > 2 {
+                fail = true;
+                break;
+            }
+            if rlen == 1 {
+                let le = bm.loo(l_iter).e;
+                edges.push(le);
+                if v1 == BM_NIL {
+                    v1 = bm.loo(l_iter).v;
+                    v2 = if bm.edge(le).v1 == bm.loo(l_iter).v {
+                        bm.edge(le).v2
+                    } else {
+                        bm.edge(le).v1
+                    };
+                }
+            } else if rlen == 2 {
+                let le = bm.loo(l_iter).e;
+                let (ev1, ev2) = (bm.edge(le).v1, bm.edge(le).v2);
+                let d1 = bm_vert_is_manifold_flagged(bm, ev1);
+                let d2 = bm_vert_is_manifold_flagged(bm, ev2);
+                if !d1 && !d2 && (bm.edge(le).head.api_flag & FLAG_JF) == 0 {
+                    if crate::query::bm_edge_face_count_at_most(bm, le, 3) <= 2 {
+                        if do_del {
+                            deledges.push(le);
+                        }
+                        bm.epool[le].head.api_flag |= FLAG_JF;
+                    }
+                } else {
+                    if d1 && (bm.vert(ev1).head.api_flag & FLAG_JF) == 0 {
+                        if do_del {
+                            delverts.push(ev1);
+                        }
+                        bm.vpool[ev1].head.api_flag |= FLAG_JF;
+                    }
+                    if d2 && (bm.vert(ev2).head.api_flag & FLAG_JF) == 0 {
+                        if do_del {
+                            delverts.push(ev2);
+                        }
+                        bm.vpool[ev2].head.api_flag |= FLAG_JF;
+                    }
+                }
+            }
+            l_iter = bm.loo(l_iter).next;
+            if l_iter == l_first {
+                break;
+            }
+        }
+        if fail {
+            break;
+        }
+    }
+
+    if fail {
+        for &f in faces {
+            bm.fpool[f].head.api_flag &= !FLAG_JF;
+        }
+        return BM_NIL;
+    }
+
+    /* create region face */
+    let f_new = if !edges.is_empty() {
+        crate::construct::bm_face_create_ngon(bm, v1, v2, &edges, Some(faces[0]), 0)
+    } else {
+        BM_NIL
+    };
+    if f_new == BM_NIL {
+        for &f in faces {
+            bm.fpool[f].head.api_flag &= !FLAG_JF;
+        }
+        return BM_NIL;
+    }
+
+    /* check for a duplicate face */
+    let f_existing = crate::query::bm_face_find_double(bm, f_new);
+    if f_existing != BM_NIL {
+        if let Some(r) = r_double {
+            *r = f_existing;
+        }
+        /* kill the ngon so the double remains */
+        bm_face_kill(bm, f_new);
+        for &f in faces {
+            bm.fpool[f].head.api_flag &= !FLAG_JF;
+        }
+        return BM_NIL;
+    }
+
+    for &f in faces {
+        bm.fpool[f].head.api_flag &= !FLAG_JF;
+    }
+    bm.fpool[f_new].head.api_flag &= !FLAG_JF;
+
+    if do_del {
+        for e in deledges {
+            if bm.edge(e).head.htype == BM_EDGE {
+                bm_edge_kill(bm, e);
+            }
+        }
+        for v in delverts {
+            if bm.vert(v).head.htype == BM_VERT {
+                bm_vert_kill(bm, v);
+            }
+        }
+        /* also kill the original faces */
+        for &f in faces {
+            if bm.face(f).head.htype == BM_FACE {
+                bm_face_kill(bm, f);
+            }
+        }
+    } else {
+        for &f in faces {
+            if bm.face(f).head.htype == BM_FACE {
+                bm_face_kill(bm, f);
+            }
+        }
+    }
+
+    if had_active && bm.act_face == BM_NIL {
+        bm.act_face = f_new;
+    }
+    f_new
+}
