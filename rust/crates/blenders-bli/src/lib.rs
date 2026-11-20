@@ -84,3 +84,5 @@ pub mod math_base_safe_inline;
 pub mod linklist_lockfree;
 pub mod filereader_file;
 pub mod color;
+pub mod fileops;
+pub mod varray_print;
