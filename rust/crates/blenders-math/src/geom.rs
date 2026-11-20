@@ -2794,3 +2794,585 @@ pub fn barycentric_weights_v2_clamped(v1: Vec2, v2: Vec2, v3: Vec2, co: Vec2) ->
         Vec3::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
     }
 }
+
+/// `area_tri_signed_v2`.
+#[inline]
+pub fn area_tri_signed_v2(v1: Vec2, v2: Vec2, v3: Vec2) -> f32 {
+    0.5 * ((v1.x - v2.x) * (v2.y - v3.y) + (v1.y - v2.y) * (v3.x - v2.x))
+}
+
+/// `area_tri_v2`.
+#[inline]
+pub fn area_tri_v2(v1: Vec2, v2: Vec2, v3: Vec2) -> f32 {
+    area_tri_signed_v2(v1, v2, v3).abs()
+}
+
+/// `barycentric_weights_v2_persp` — perspective-correct weights (v are clip-space).
+pub fn barycentric_weights_v2_persp(
+    v1: Vec4,
+    v2: Vec4,
+    v3: Vec4,
+    co: Vec2,
+) -> Vec3 {
+    let mut w = Vec3::new(
+        cross_tri_v2(v2.xy(), v3.xy(), co) / v1.w,
+        cross_tri_v2(v3.xy(), v1.xy(), co) / v2.w,
+        cross_tri_v2(v1.xy(), v2.xy(), co) / v3.w,
+    );
+    let wtot = w.x + w.y + w.z;
+    w *= 1.0 / wtot;
+    if w.is_finite() {
+        w
+    } else {
+        Vec3::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+    }
+}
+
+/// `barycentric_weights_v2_quad` — mean-value weights on a quad.
+pub fn barycentric_weights_v2_quad(
+    v1: Vec2,
+    v2: Vec2,
+    v3: Vec2,
+    v4: Vec2,
+    co: Vec2,
+) -> [f32; 4] {
+    let dirs = [v1 - co, v2 - co, v3 - co, v4 - co];
+    let lens = [
+        dirs[0].length(),
+        dirs[1].length(),
+        dirs[2].length(),
+        dirs[3].length(),
+    ];
+    let mut w = [0.0f32; 4];
+    for i in 0..4 {
+        if lens[i] < FLT_EPSILON {
+            w[i] = 1.0;
+            return w;
+        }
+    }
+    let areas = [
+        dirs[0].cross(dirs[1]),
+        dirs[1].cross(dirs[2]),
+        dirs[2].cross(dirs[3]),
+        dirs[3].cross(dirs[0]),
+    ];
+    let dots = [
+        dirs[0].dot(dirs[1]),
+        dirs[1].dot(dirs[2]),
+        dirs[2].dot(dirs[3]),
+        dirs[3].dot(dirs[0]),
+    ];
+    let lens_prod = [
+        lens[0] * lens[1],
+        lens[1] * lens[2],
+        lens[2] * lens[3],
+        lens[3] * lens[0],
+    ];
+
+    // point exactly on an edge
+    for i in 0..4 {
+        if areas[i].abs() < 1.0e-12 * lens_prod[i] && dots[i] <= 0.0 {
+            let j = (i + 1) & 3;
+            let sum = lens[i] + lens[j];
+            w[i] = lens[j] / sum;
+            w[j] = lens[i] / sum;
+            return w;
+        }
+    }
+
+    // NOTE(ideasman42): fabsf needed for concave/bow-tie quads (mask rasterizer).
+    let t = [
+        if areas[0] != 0.0 {
+            ((lens_prod[0] - dots[0]) / areas[0]).abs()
+        } else {
+            0.0
+        },
+        if areas[1] != 0.0 {
+            ((lens_prod[1] - dots[1]) / areas[1]).abs()
+        } else {
+            0.0
+        },
+        if areas[2] != 0.0 {
+            ((lens_prod[2] - dots[2]) / areas[2]).abs()
+        } else {
+            0.0
+        },
+        if areas[3] != 0.0 {
+            ((lens_prod[3] - dots[3]) / areas[3]).abs()
+        } else {
+            0.0
+        },
+    ];
+    w[0] = (t[3] + t[0]) / lens[0];
+    w[1] = (t[0] + t[1]) / lens[1];
+    w[2] = (t[1] + t[2]) / lens[2];
+    w[3] = (t[2] + t[3]) / lens[3];
+    let wtot = w[0] + w[1] + w[2] + w[3];
+    for x in w.iter_mut() {
+        *x *= 1.0 / wtot;
+    }
+    if w.iter().all(|x| x.is_finite()) {
+        w
+    } else {
+        [0.25; 4]
+    }
+}
+
+/// `transform_point_by_tri_v3` — map `pt_src` to target tri space via barycentric weights.
+pub fn transform_point_by_tri(
+    pt_src: Vec3,
+    tri_tar: &[Vec3; 3],
+    tri_src: &[Vec3; 3],
+) -> Vec3 {
+    let no_tar = normal_tri(tri_tar[0], tri_tar[1], tri_tar[2]).0;
+    let no_src = normal_tri(tri_src[0], tri_src[1], tri_src[2]).0;
+    let mat_src = axis_dominant_to_m3(no_src);
+
+    let pt_src_xy = mat_src * pt_src;
+    let tri_xy_src: [Vec3; 3] = [
+        mat_src * tri_src[0],
+        mat_src * tri_src[1],
+        mat_src * tri_src[2],
+    ];
+    let w_src = barycentric_weights_v2(
+        tri_xy_src[0].xy(),
+        tri_xy_src[1].xy(),
+        tri_xy_src[2].xy(),
+        pt_src_xy.xy(),
+    );
+    let mut pt_tar = tri_tar[0] * w_src.x + tri_tar[1] * w_src.y + tri_tar[2] * w_src.z;
+
+    let area_tar = area_tri(tri_tar[0], tri_tar[1], tri_tar[2]).sqrt();
+    let area_src = area_tri_v2(
+        tri_xy_src[0].xy(),
+        tri_xy_src[1].xy(),
+        tri_xy_src[2].xy(),
+    )
+    .sqrt();
+    let z_ofs_src = pt_src_xy.z - tri_xy_src[0].z;
+    pt_tar += no_tar * ((z_ofs_src / area_src) * area_tar);
+    pt_tar
+}
+
+/// `transform_point_by_seg_v3`.
+pub fn transform_point_by_seg(
+    p_src: Vec3,
+    l_dst_p1: Vec3,
+    l_dst_p2: Vec3,
+    l_src_p1: Vec3,
+    l_src_p2: Vec3,
+) -> Vec3 {
+    let t = line_point_factor(p_src, l_src_p1, l_src_p2);
+    l_dst_p1 * (1.0 - t) + l_dst_p2 * t
+}
+
+/// `interp_sparse_array` — fill `skipval` entries by nearest-valid interpolation.
+/// -1 = no valid entries, 0 = none invalid, 1 = interpolated.
+pub fn interp_sparse_array(array: &mut [f32], skipval: f32) -> i32 {
+    let list_size = array.len();
+    let mut found_invalid = false;
+    let mut found_valid = false;
+    for &x in array.iter() {
+        if x == skipval {
+            found_invalid = true;
+        } else {
+            found_valid = true;
+        }
+    }
+    if !found_valid {
+        return -1;
+    }
+    if !found_invalid {
+        return 0;
+    }
+
+    let mut array_up = vec![0.0f32; list_size];
+    let mut array_down = vec![0.0f32; list_size];
+    let mut ofs_tot_up = vec![0i32; list_size];
+    let mut ofs_tot_down = vec![0i32; list_size];
+
+    let mut valid_last = skipval;
+    let mut valid_ofs = 0;
+    for i in 0..list_size {
+        if array[i] == skipval {
+            array_up[i] = valid_last;
+            valid_ofs += 1;
+            ofs_tot_up[i] = valid_ofs;
+        } else {
+            valid_last = array[i];
+            valid_ofs = 0;
+        }
+    }
+    valid_last = skipval;
+    valid_ofs = 0;
+    for i in (0..list_size).rev() {
+        if array[i] == skipval {
+            array_down[i] = valid_last;
+            valid_ofs += 1;
+            ofs_tot_down[i] = valid_ofs;
+        } else {
+            valid_last = array[i];
+            valid_ofs = 0;
+        }
+    }
+
+    for i in 0..list_size {
+        if array[i] == skipval {
+            if array_up[i] != skipval && array_down[i] != skipval {
+                array[i] = (array_up[i] * ofs_tot_down[i] as f32
+                    + array_down[i] * ofs_tot_up[i] as f32)
+                    / (ofs_tot_down[i] + ofs_tot_up[i]) as f32;
+            } else if array_up[i] != skipval {
+                array[i] = array_up[i];
+            } else if array_down[i] != skipval {
+                array[i] = array_down[i];
+            }
+        }
+    }
+    1
+}
+
+/* Mean-value interpolation weights for polygons (Mark Mayer et al). */
+
+struct Float3Len {
+    dir: Vec3,
+    len: f32,
+}
+struct Double2Len {
+    dir: [f64; 2],
+    len: f64,
+}
+
+fn mean_value_half_tan_v3(d_curr: &Float3Len, d_next: &Float3Len) -> f32 {
+    let cross = d_curr.dir.cross(d_next.dir);
+    let area = cross.length();
+    if area != 0.0 {
+        let dot = d_curr.dir.dot(d_next.dir);
+        let len = d_curr.len * d_next.len;
+        let result = (len - dot) / area;
+        if result.is_finite() {
+            return result;
+        }
+    }
+    0.0
+}
+
+fn mean_value_half_tan_v2_db(d_curr: &Double2Len, d_next: &Double2Len) -> f64 {
+    let area = d_curr.dir[0] * d_next.dir[1] - d_curr.dir[1] * d_next.dir[0];
+    if area != 0.0 {
+        let dot = d_curr.dir[0] * d_next.dir[0] + d_curr.dir[1] * d_next.dir[1];
+        let len = d_curr.len * d_next.len;
+        let result = (len - dot) / area;
+        if result.is_finite() {
+            return result;
+        }
+    }
+    0.0
+}
+
+const IS_POINT_IX: u8 = 1 << 0;
+const IS_SEGMENT_IX: u8 = 1 << 1;
+
+/// `interp_weights_poly_v3` — fills `w[i]` for each of the `n` polygon verts.
+pub fn interp_weights_poly(w: &mut [f32], v: &[Vec3], co: Vec3) {
+    let n = v.len();
+    let mut max_value = 0.0f32;
+    for vi in v {
+        max_value = max_ff(max_value, (vi.x - co.x).abs());
+        max_value = max_ff(max_value, (vi.y - co.y).abs());
+        max_value = max_ff(max_value, (vi.z - co.z).abs());
+    }
+    let eps = 16.0 * FLT_EPSILON * max_value;
+    let eps_sq = eps * eps;
+
+    let mut i_curr = n - 1;
+    let mut i_next = 0usize;
+    let mut ix_flag = 0u8;
+    let mut totweight = 0.0f32;
+
+    let mut v_curr = v[i_curr];
+    let mut v_next = v[i_next];
+    let dir_len3 = |va: Vec3, vb: Vec3| -> Float3Len {
+        let dir = va - vb;
+        Float3Len {
+            dir,
+            len: dir.length(),
+        }
+    };
+    let mut d_curr = dir_len3(v[n - 2], co);
+    let mut d_next = dir_len3(v_curr, co);
+    let mut ht_prev = mean_value_half_tan_v3(&d_curr, &d_next);
+
+    while i_next < n {
+        if d_next.len < eps {
+            ix_flag = IS_POINT_IX;
+            break;
+        }
+        if dist_squared_to_line_segment_v3(co, v_curr, v_next) < eps_sq {
+            ix_flag = IS_SEGMENT_IX;
+            break;
+        }
+        d_curr = d_next;
+        d_next = dir_len3(v_next, co);
+        let ht = mean_value_half_tan_v3(&d_curr, &d_next);
+        w[i_curr] = (ht_prev + ht) / d_curr.len;
+        totweight += w[i_curr];
+        i_curr = i_next;
+        i_next += 1;
+        v_curr = v_next;
+        v_next = v[i_next % n];
+        ht_prev = ht;
+    }
+
+    if ix_flag != 0 {
+        for x in w.iter_mut() {
+            *x = 0.0;
+        }
+        if ix_flag & IS_POINT_IX != 0 {
+            w[i_curr] = 1.0;
+        } else {
+            let fac = line_point_factor(co, v_curr, v_next).clamp(0.0, 1.0);
+            w[i_curr] = 1.0 - fac;
+            w[i_next % n] = fac;
+        }
+    } else if totweight != 0.0 {
+        for x in w.iter_mut() {
+            *x /= totweight;
+        }
+    }
+}
+
+/// `interp_weights_poly_v2`.
+pub fn interp_weights_poly_v2(w: &mut [f32], v: &[Vec2], co: Vec2) {
+    let n = v.len();
+    let mut max_value = 0.0f32;
+    for vi in v {
+        max_value = max_ff(max_value, (vi.x - co.x).abs());
+        max_value = max_ff(max_value, (vi.y - co.y).abs());
+    }
+    let eps = 16.0 * FLT_EPSILON * max_value;
+    let eps_sq = eps * eps;
+
+    let mut i_curr = n - 1;
+    let mut i_next = 0usize;
+    let mut ix_flag = 0u8;
+    let mut totweight = 0.0f32;
+
+    let mut v_curr = v[i_curr];
+    let mut v_next = v[i_next];
+    let dir_len2 = |va: Vec2, vb: Vec2| -> Double2Len {
+        let dir = [
+            va.x as f64 - vb.x as f64,
+            va.y as f64 - vb.y as f64,
+        ];
+        Double2Len {
+            dir,
+            len: (dir[0] * dir[0] + dir[1] * dir[1]).sqrt(),
+        }
+    };
+    let mut d_curr = dir_len2(v[n - 2], co);
+    let mut d_next = dir_len2(v_curr, co);
+    let mut ht_prev = mean_value_half_tan_v2_db(&d_curr, &d_next);
+
+    while i_next < n {
+        if d_next.len < eps as f64 {
+            ix_flag = IS_POINT_IX;
+            break;
+        }
+        if dist_squared_to_line_segment_v2(co, v_curr, v_next) < eps_sq {
+            ix_flag = IS_SEGMENT_IX;
+            break;
+        }
+        d_curr = d_next;
+        d_next = dir_len2(v_next, co);
+        let ht = mean_value_half_tan_v2_db(&d_curr, &d_next);
+        w[i_curr] = if d_curr.len == 0.0 {
+            0.0
+        } else {
+            ((ht_prev + ht) / d_curr.len) as f32
+        };
+        totweight += w[i_curr];
+        i_curr = i_next;
+        i_next += 1;
+        v_curr = v_next;
+        v_next = v[i_next % n];
+        ht_prev = ht;
+    }
+
+    if ix_flag != 0 {
+        for x in w.iter_mut() {
+            *x = 0.0;
+        }
+        if ix_flag & IS_POINT_IX != 0 {
+            w[i_curr] = 1.0;
+        } else {
+            let fac = line_point_factor_v2(co, v_curr, v_next).clamp(0.0, 1.0);
+            w[i_curr] = 1.0 - fac;
+            w[i_next % n] = fac;
+        }
+    } else if totweight != 0.0 {
+        for x in w.iter_mut() {
+            *x /= totweight;
+        }
+    }
+}
+
+/// `interp_cubic_v3` — Hermite interpolation `(x, v)` at parameter `t`.
+pub fn interp_cubic(
+    x1: Vec3,
+    v1: Vec3,
+    x2: Vec3,
+    v2: Vec3,
+    t: f32,
+) -> (Vec3, Vec3) {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let a = v1 + v2 + (x1 - x2) * 2.0;
+    let b = v1 * -2.0 - v2 - (x1 - x2) * 3.0;
+    (a * t3 + b * t2 + v1 * t + x1, a * (3.0 * t2) + b * (2.0 * t) + v1)
+}
+
+/// `resolve_tri_uv_v2`.
+pub fn resolve_tri_uv_v2(st: Vec2, st0: Vec2, st1: Vec2, st2: Vec2) -> Vec2 {
+    let a = (st0.x - st2.x) as f64;
+    let b = (st1.x - st2.x) as f64;
+    let c = (st0.y - st2.y) as f64;
+    let d = (st1.y - st2.y) as f64;
+    let det = a * d - c * b;
+    if det > -f64::EPSILON && det < f64::EPSILON {
+        return Vec2::ZERO;
+    }
+    let x = [
+        (st.x - st2.x) as f64,
+        (st.y - st2.y) as f64,
+    ];
+    Vec2::new(
+        ((d * x[0] - b * x[1]) / det) as f32,
+        ((-c * x[0] + a * x[1]) / det) as f32,
+    )
+}
+
+/// `resolve_tri_uv_v3`.
+pub fn resolve_tri_uv(st: Vec3, st0: Vec3, st1: Vec3, st2: Vec3) -> Vec2 {
+    let v0 = st1 - st0;
+    let v1 = st2 - st0;
+    let v2 = st - st0;
+    let d00 = v0.dot(v0) as f64;
+    let d01 = v0.dot(v1) as f64;
+    let d11 = v1.dot(v1) as f64;
+    let d20 = v2.dot(v0) as f64;
+    let d21 = v2.dot(v1) as f64;
+    let det = d00 * d11 - d01 * d01;
+    if det > -f64::EPSILON && det < f64::EPSILON {
+        return Vec2::ZERO;
+    }
+    let w = ((d00 * d21 - d01 * d20) / det) as f32;
+    let v = ((d11 * d20 - d01 * d21) / det) as f32;
+    Vec2::new(1.0 - v - w, v)
+}
+
+fn quad_uv_coeffs(st: Vec2, st0: Vec2, st1: Vec2, st2: Vec2, st3: Vec2) -> (f64, f64, f64, f64) {
+    let signed_area = ((st0.x * st1.y - st0.y * st1.x)
+        + (st1.x * st2.y - st1.y * st2.x)
+        + (st2.x * st3.y - st2.y * st3.x)
+        + (st3.x * st0.y - st3.y * st0.x)) as f64;
+    let a = ((st0.x - st.x) * (st0.y - st3.y) - (st0.y - st.y) * (st0.x - st3.x)) as f64;
+    let b = 0.5 * (((st0.x - st.x) * (st1.y - st2.y) - (st0.y - st.y) * (st1.x - st2.x))
+        + ((st1.x - st.x) * (st0.y - st3.y) - (st1.y - st.y) * (st0.x - st3.x)))
+        as f64;
+    let fc = ((st1.x - st.x) * (st1.y - st2.y) - (st1.y - st.y) * (st1.x - st2.x)) as f64;
+    (signed_area, a, b, fc)
+}
+
+/// `resolve_quad_uv_v2_deriv` — `(uv, deriv)`.
+pub fn resolve_quad_uv_v2_deriv(
+    st: Vec2,
+    st0: Vec2,
+    st1: Vec2,
+    st2: Vec2,
+    st3: Vec2,
+) -> (Vec2, [[f32; 2]; 2]) {
+    let (signed_area, a, b, fc) = quad_uv_coeffs(st, st0, st1, st2, st3);
+    let mut r_uv = Vec2::ZERO;
+    let mut denom = a - 2.0 * b + fc;
+    if denom > -f64::EPSILON && denom < f64::EPSILON {
+        let f_den = a - fc;
+        if f_den < -f64::EPSILON || f_den > f64::EPSILON {
+            r_uv.x = (a / f_den) as f32;
+        }
+    } else {
+        let desc_sq = b * b - a * fc;
+        let desc = desc_sq.max(0.0).sqrt();
+        let s = if signed_area > 0.0 { -1.0 } else { 1.0 };
+        r_uv.x = (((a - b) + s * desc) / denom) as f32;
+    }
+
+    {
+        let denom_s = ((1.0 - r_uv.x) * (st0.x - st3.x) + r_uv.x * (st1.x - st2.x)) as f64;
+        let denom_t = ((1.0 - r_uv.x) * (st0.y - st3.y) + r_uv.x * (st1.y - st2.y)) as f64;
+        let (i, d) = if denom_s.abs() < denom_t.abs() {
+            (1usize, denom_t)
+        } else {
+            (0usize, denom_s)
+        };
+        denom = d;
+        if denom < -f64::EPSILON || denom > f64::EPSILON {
+            r_uv.y = (((1.0 - r_uv.x) * (st0[i] - st[i]) + r_uv.x * (st1[i] - st[i])) as f64
+                / denom) as f32;
+        }
+    }
+
+    let mut r_deriv = [[0.0f32; 2]; 2];
+    {
+        let tmp1 = st1 - st0;
+        let tmp2 = st2 - st3;
+        let s = tmp1 * (1.0 - r_uv.y) + tmp2 * r_uv.y;
+        let tmp1 = st3 - st0;
+        let tmp2 = st2 - st1;
+        let t = tmp1 * (1.0 - r_uv.x) + tmp2 * r_uv.x;
+        let denom = (t.x * s.y - t.y * s.x) as f64;
+        if denom < -f64::EPSILON || denom > f64::EPSILON {
+            let inv_denom = 1.0 / denom;
+            r_deriv[0][0] = (-t.y as f64 * inv_denom) as f32;
+            r_deriv[0][1] = (t.x as f64 * inv_denom) as f32;
+            r_deriv[1][0] = (s.y as f64 * inv_denom) as f32;
+            r_deriv[1][1] = (-s.x as f64 * inv_denom) as f32;
+        }
+    }
+    (r_uv, r_deriv)
+}
+
+/// `resolve_quad_uv_v2`.
+pub fn resolve_quad_uv_v2(st: Vec2, st0: Vec2, st1: Vec2, st2: Vec2, st3: Vec2) -> Vec2 {
+    resolve_quad_uv_v2_deriv(st, st0, st1, st2, st3).0
+}
+
+/// `resolve_quad_u_v2` — only the u coordinate.
+pub fn resolve_quad_u_v2(st: Vec2, st0: Vec2, st1: Vec2, st2: Vec2, st3: Vec2) -> f32 {
+    let (signed_area, a, b, fc) = quad_uv_coeffs(st, st0, st1, st2, st3);
+    let denom = a - 2.0 * b + fc;
+    if denom > -f64::EPSILON && denom < f64::EPSILON {
+        let f_den = a - fc;
+        if f_den < -f64::EPSILON || f_den > f64::EPSILON {
+            return (a / f_den) as f32;
+        }
+        return 0.0;
+    }
+    let desc_sq = b * b - a * fc;
+    let desc = desc_sq.max(0.0).sqrt();
+    let s = if signed_area > 0.0 { -1.0 } else { 1.0 };
+    (((a - b) + s * desc) / denom) as f32
+}
+
+/// `interp_bilinear_quad_v3` — bilinear interpolation of four `Vec3` samples.
+pub fn interp_bilinear_quad_v3(data: &[Vec3; 4], u: f32, v: f32) -> Vec3 {
+    data[0] * ((1.0 - u) * (1.0 - v))
+        + data[1] * (u * (1.0 - v))
+        + data[2] * (u * v)
+        + data[3] * ((1.0 - u) * v)
+}
+
+/// `interp_barycentric_tri_v3`.
+pub fn interp_barycentric_tri(data: &[Vec3; 3], u: f32, v: f32) -> Vec3 {
+    data[0] * u + data[1] * v + data[2] * (1.0 - u - v)
+}

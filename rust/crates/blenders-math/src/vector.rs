@@ -351,6 +351,12 @@ impl Vec3 {
     }
 
 
+    /// First two components (`float2(v3)`).
+    #[inline]
+    pub fn xy(self) -> Vec2 {
+        Vec2::new(self.x, self.y)
+    }
+
     pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
     pub const X: Self = Self { x: 1.0, y: 0.0, z: 0.0 };
     pub const Y: Self = Self { x: 0.0, y: 1.0, z: 0.0 };
@@ -434,6 +440,12 @@ impl Vec4 {
     pub const fn splat(v: f32) -> Self {
         Self { x: v, y: v, z: v, w: v }
     }
+    /// First two components.
+    #[inline]
+    pub fn xy(self) -> Vec2 {
+        Vec2::new(self.x, self.y)
+    }
+
     /// `xyz()` — drop the w component.
     #[inline]
     pub fn xyz(self) -> Vec3 {
