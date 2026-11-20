@@ -127,3 +127,5 @@ pub mod expr_pylike_eval;
 pub mod scanfill;
 pub mod path_utils;
 pub mod array_store;
+pub mod noise_tables;
+pub mod noise_c;
