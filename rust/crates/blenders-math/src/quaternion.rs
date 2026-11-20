@@ -1489,3 +1489,20 @@ pub fn sub_eul_euleul(a: crate::euler::Euler3, b: crate::euler::Euler3) -> crate
     let quat = b.to_quaternion().inverted() * a.to_quaternion();
     crate::euler::quat_to_euler(quat, a.order)
 }
+
+/// `math::rotate_direction_around_axis` — Rodrigues rotation of unit
+/// `direction` around unit `axis`.
+pub fn rotate_direction_around_axis(direction: Vec3, axis: Vec3, angle: f32) -> Vec3 {
+    if angle == 0.0 || direction.is_zero() {
+        return direction;
+    }
+    let axis_scaled = axis * direction.dot(axis);
+    let diff = direction - axis_scaled;
+    let cross = axis.cross(diff);
+    axis_scaled + diff * angle.cos() + cross * angle.sin()
+}
+
+/// `math::rotate_around_axis` — rotate `vector` around `axis` through `center`.
+pub fn rotate_around_axis(vector: Vec3, center: Vec3, axis: Vec3, angle: f32) -> Vec3 {
+    axis_angle_normalized_to_mat3(axis, angle) * (vector - center) + center
+}

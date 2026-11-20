@@ -8,6 +8,7 @@
 
 pub mod base;
 pub mod euler;
+pub mod filter;
 pub mod geom;
 pub mod half;
 pub mod interp;

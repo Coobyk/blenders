@@ -4251,3 +4251,36 @@ pub fn shell_v2v2_mid_normalized_to_dist(a: Vec2, b: Vec2) -> f32 {
         1.0 / angle_cos
     }
 }
+
+/* ---- math_vec.cc ---- */
+
+/// `isect_seg_seg<float2>` — `(kind, lambda, mu)` intersection of segments
+/// `v1v2` and `v3v4`.
+pub fn isect_seg_seg_v2_lambda_mu(v1: Vec2, v2: Vec2, v3: Vec2, v4: Vec2) -> (Isect, f32, f32) {
+    let div = (v2.x - v1.x) * (v4.y - v3.y) - (v2.y - v1.y) * (v4.x - v3.x);
+    if div == 0.0 {
+        return (Isect::Colinear, 0.0, 0.0);
+    }
+    let lambda = ((v1.y - v3.y) * (v4.x - v3.x) - (v1.x - v3.x) * (v4.y - v3.y)) / div;
+    let mu = ((v1.y - v3.y) * (v2.x - v1.x) - (v1.x - v3.x) * (v2.y - v1.y)) / div;
+    let kind = if (0.0..=1.0).contains(&lambda) && (0.0..=1.0).contains(&mu) {
+        if lambda == 0.0 || lambda == 1.0 || mu == 0.0 || mu == 1.0 {
+            Isect::Exact
+        } else {
+            Isect::Cross
+        }
+    } else {
+        Isect::None
+    };
+    (kind, lambda, mu)
+}
+
+/// `translate_points` — add `translation` to every point.
+pub fn translate_points(points: &mut [Vec3], translation: Vec3) {
+    if translation.is_zero() {
+        return;
+    }
+    for p in points.iter_mut() {
+        *p += translation;
+    }
+}
