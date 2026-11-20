@@ -23,6 +23,7 @@ pub mod validate;
 pub mod mods;
 pub mod normals;
 pub mod operators;
+pub mod opdefines;
 pub mod tessellate;
 pub mod query;
 pub mod structure;
