@@ -96,3 +96,32 @@ pub fn or_bools_into_bits(bools: &[bool], r_bits: &mut MutableBitSpan) -> bool {
         |b| b != 0,
     )
 }
+
+impl MutableBitSpan<'_> {
+    /// `MutableBitSpan::set_all` (bit_span.cc).
+    pub fn set_all(&mut self) {
+        for i in 0..self.size {
+            self.bit(i).set();
+        }
+    }
+    /// `MutableBitSpan::reset_all`.
+    pub fn reset_all(&mut self) {
+        for i in 0..self.size {
+            self.bit(i).reset();
+        }
+    }
+    /// `MutableBitSpan::copy_from` — `copy_from_or` ORs then copies; for a
+    /// plain copy semantics equal to `b |= other` per C impl.
+    pub fn copy_from(&mut self, other: &[u64], other_start: usize) {
+        for i in 0..self.size {
+            let idx = other_start + i;
+            let src = (other[idx / BITS_PER_INT] >> (idx % BITS_PER_INT)) & 1 != 0;
+            let mut r = self.bit(i);
+            if src {
+                r.set();
+            } else {
+                r.reset();
+            }
+        }
+    }
+}

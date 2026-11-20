@@ -48,3 +48,4 @@ pub mod offset_indices;
 pub mod bitmap;
 pub mod basis_types;
 pub mod sort_utils;
+pub mod tempfile;
