@@ -621,6 +621,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-bmesh"
+version = "0.1.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-math",
+]
+
+[[package]]
 name = "blenders-core"
 version = "0.1.0"
 dependencies = [
