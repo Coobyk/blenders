@@ -1275,3 +1275,217 @@ pub fn mul_v3m3_dq(r_in: Vec3, dq: &DualQuat) -> (Vec3, Mat3) {
     };
     (r, r_mat)
 }
+
+/// `axis_angle_to_quat` — axis may be unnormalized.
+pub fn axis_angle_to_quat(axis: Vec3, angle: f32) -> Quaternion {
+    let mut nor = axis;
+    if nor.normalize_and_get_length() != 0.0 {
+        Quaternion::from_axis_angle(AxisAngle { axis: nor, angle })
+    } else {
+        Quaternion::IDENTITY
+    }
+}
+
+/// `quat_to_axis_angle` — returns (axis, angle).
+pub fn quat_to_axis_angle(q: Quaternion) -> (Vec3, f32) {
+    let ha = q.w.clamp(-1.0, 1.0).acos();
+    let mut si = ha.sin();
+    let angle = ha * 2.0;
+    if si.abs() < 0.0005 {
+        si = 1.0;
+    }
+    let mut axis = Vec3::new(q.x / si, q.y / si, q.z / si);
+    if axis.is_zero() {
+        axis.y = 1.0;
+    }
+    (axis, angle)
+}
+
+/// `axis_angle_to_eulO`.
+pub fn axis_angle_to_eul(axis: Vec3, angle: f32, order: crate::euler::EulerOrder) -> crate::euler::Euler3 {
+    let q = axis_angle_to_quat(axis, angle);
+    crate::euler::quat_to_euler(q, order)
+}
+
+/// `eulO_to_axis_angle`.
+pub fn eul_to_axis_angle(eul: crate::euler::Euler3) -> (Vec3, f32) {
+    quat_to_axis_angle(eul.to_quaternion())
+}
+
+/// `axis_angle_normalized_to_mat3`.
+pub fn axis_angle_normalized_to_mat3(axis: Vec3, angle: f32) -> Mat3 {
+    let (s, c) = angle.sin_cos();
+    axis_angle_normalized_to_mat3_ex(axis, s, c)
+}
+
+/// `axis_angle_to_mat3` — axis may be unnormalized.
+pub fn axis_angle_to_mat3(axis: Vec3, angle: f32) -> Mat3 {
+    let mut nor = axis;
+    if nor.normalize_and_get_length() == 0.0 {
+        return Mat3::IDENTITY;
+    }
+    axis_angle_normalized_to_mat3(nor, angle)
+}
+
+/// `axis_angle_to_mat4`.
+pub fn axis_angle_to_mat4(axis: Vec3, angle: f32) -> Mat4 {
+    let m = axis_angle_to_mat3(axis, angle);
+    let mut r = Mat4::IDENTITY;
+    r[0].x = m[0].x;
+    r[0].y = m[0].y;
+    r[0].z = m[0].z;
+    r[1].x = m[1].x;
+    r[1].y = m[1].y;
+    r[1].z = m[1].z;
+    r[2].x = m[2].x;
+    r[2].y = m[2].y;
+    r[2].z = m[2].z;
+    r
+}
+
+/// `mat3_normalized_to_axis_angle`.
+pub fn mat3_normalized_to_axis_angle(mat: Mat3) -> (Vec3, f32) {
+    quat_to_axis_angle(Quaternion::from_mat3(mat))
+}
+
+/// `mat3_to_axis_angle`.
+pub fn mat3_to_axis_angle(mat: Mat3) -> (Vec3, f32) {
+    mat3_normalized_to_axis_angle(mat.normalized())
+}
+
+/// `mat4_to_axis_angle` (and normalized variant — same path via Mat3).
+pub fn mat4_to_axis_angle(mat: Mat4) -> (Vec3, f32) {
+    mat3_to_axis_angle(Mat3::from_cols(mat[0].xyz(), mat[1].xyz(), mat[2].xyz()))
+}
+
+/// `axis_angle_to_mat3_single` — single-axis rotation ('X', 'Y', 'Z' as 0,1,2).
+pub fn axis_angle_to_mat3_single(axis: usize, angle: f32) -> Mat3 {
+    let (angle_sin, angle_cos) = angle.sin_cos();
+    match axis {
+        0 => Mat3::from_cols(
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, angle_cos, -angle_sin),
+            Vec3::new(0.0, angle_sin, angle_cos),
+        ),
+        1 => Mat3::from_cols(
+            Vec3::new(angle_cos, 0.0, angle_sin),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(-angle_sin, 0.0, angle_cos),
+        ),
+        _ => Mat3::from_cols(
+            Vec3::new(angle_cos, -angle_sin, 0.0),
+            Vec3::new(angle_sin, angle_cos, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        ),
+    }
+}
+
+/// `axis_angle_to_mat4_single`.
+pub fn axis_angle_to_mat4_single(axis: usize, angle: f32) -> Mat4 {
+    let m = axis_angle_to_mat3_single(axis, angle);
+    let mut r = Mat4::IDENTITY;
+    for c in 0..3 {
+        for row in 0..3 {
+            r[c][row] = m[c][row];
+        }
+    }
+    r
+}
+
+/// `axis_angle_to_quat_single` — quaternion rotating `angle` around `axis` (0,1,2).
+pub fn axis_angle_to_quat_single(axis: usize, angle: f32) -> Quaternion {
+    let half = angle * 0.5;
+    let mut q = Quaternion {
+        w: half.cos(),
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    q[axis + 1] = half.sin();
+    q
+}
+
+/// `quat_normalized_to_expmap` — axis * angle.
+pub fn quat_normalized_to_expmap(q: Quaternion) -> Vec3 {
+    let (axis, angle) = quat_to_axis_angle(q);
+    axis * angle
+}
+
+/// `quat_to_expmap`.
+pub fn quat_to_expmap(q: Quaternion) -> Vec3 {
+    quat_normalized_to_expmap(q.normalized())
+}
+
+/// `expmap_to_quat`.
+pub fn expmap_to_quat(expmap: Vec3) -> Quaternion {
+    let mut axis = expmap;
+    let angle = axis.normalize_and_get_length();
+    if angle != 0.0 {
+        Quaternion::from_axis_angle(AxisAngle {
+            axis,
+            angle: angle_wrap_rad(angle),
+        })
+    } else {
+        Quaternion::IDENTITY
+    }
+}
+
+/// `rotate_eul` — rotate XYZ euler by `angle` around `axis` (0,1,2).
+pub fn rotate_eul(beul: crate::euler::EulerXYZ, axis: usize, angle: f32) -> crate::euler::EulerXYZ {
+    let mut eul = crate::euler::EulerXYZ::ZERO;
+    match axis {
+        0 => eul.x = angle,
+        1 => eul.y = angle,
+        _ => eul.z = angle,
+    }
+    let mat1 = eul.to_mat3();
+    let mat2 = beul.to_mat3();
+    let totmat = mat2 * mat1;
+    crate::euler::mat3_to_euler_xyz(&totmat)
+}
+
+/// `rotate_eulO`.
+pub fn rotate_eul_o(beul: crate::euler::Euler3, axis: usize, angle: f32) -> crate::euler::Euler3 {
+    let mut eul = Vec3::ZERO;
+    eul[axis] = angle;
+    let eul = crate::euler::Euler3::new(eul, beul.order);
+    let totmat = beul.to_mat3() * eul.to_mat3();
+    crate::euler::mat3_to_euler(&totmat, beul.order)
+}
+
+/// `eulO_to_gimbal_axis` — gimbal frame columns.
+pub fn eul_to_gimbal_axis(eul: crate::euler::Euler3) -> Mat3 {
+    let axes = [
+        eul.order.i_index(),
+        eul.order.j_index(),
+        eul.order.k_index(),
+    ];
+    // first axis is local
+    let mat = eul.to_mat3();
+    let col0 = mat[axes[0]];
+    // second axis is local minus first rotation
+    let mut teul = eul.xyz;
+    teul[axes[0]] = 0.0;
+    let mat2 = crate::euler::Euler3::new(teul, eul.order).to_mat3();
+    let col1 = mat2[axes[1]];
+    // last axis is global
+    let mut col2 = Vec3::ZERO;
+    col2[axes[2]] = 1.0;
+    let mut gmat = Mat3::IDENTITY;
+    gmat[axes[0]] = col0;
+    gmat[axes[1]] = col1;
+    gmat[axes[2]] = col2;
+    gmat
+}
+
+/// `add_eul_euleul` — `a` rotated by `b` (quat multiply order `b*a`).
+pub fn add_eul_euleul(a: crate::euler::Euler3, b: crate::euler::Euler3) -> crate::euler::Euler3 {
+    let quat = b.to_quaternion() * a.to_quaternion();
+    crate::euler::quat_to_euler(quat, a.order)
+}
+
+/// `sub_eul_euleul` — `a` minus `b` (`b^-1 * a`).
+pub fn sub_eul_euleul(a: crate::euler::Euler3, b: crate::euler::Euler3) -> crate::euler::Euler3 {
+    let quat = b.to_quaternion().inverted() * a.to_quaternion();
+    crate::euler::quat_to_euler(quat, a.order)
+}
