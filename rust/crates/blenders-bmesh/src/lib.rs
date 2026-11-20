@@ -18,6 +18,7 @@ pub mod partial_update;
 pub mod polygon;
 pub mod duplicate;
 pub mod edgeloop;
+pub mod edgenet;
 pub mod mesh;
 pub mod validate;
 pub mod mods;

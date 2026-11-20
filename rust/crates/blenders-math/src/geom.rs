@@ -4285,3 +4285,67 @@ pub fn translate_points(points: &mut [Vec3], translation: Vec3) {
         *p += translation;
     }
 }
+
+/// `isect_seg_seg_v2_point_ex` — 1 on hit (`r_vi`), -1 otherwise.
+/// `endpoint_bias` expands the valid u/v range past the endpoints.
+pub fn isect_seg_seg_v2_point_ex(
+    v0: Vec2, v1: Vec2, v2: Vec2, v3: Vec2, endpoint_bias: f32, r_vi: &mut Vec2,
+) -> i32 {
+    let eps = 1e-6f32;
+    let endpoint_min = -endpoint_bias;
+    let endpoint_max = endpoint_bias + 1.0;
+    let mut v0 = v0;
+    let mut v1 = v1;
+    let mut v2 = v2;
+    let mut v3 = v3;
+    let mut s10 = v1 - v0;
+    let s32 = v3 - v2;
+    let mut s30 = v3 - v0;
+    let d = s10.x * s32.y - s10.y * s32.x;
+    if d != 0.0 {
+        let u = (s30.x * s32.y - s30.y * s32.x) / d;
+        let v = (s10.x * s30.y - s10.y * s30.x) / d;
+        if (endpoint_min..=endpoint_max).contains(&u) && (endpoint_min..=endpoint_max).contains(&v)
+        {
+            let vi_test = v0 + s10 * u;
+            let s_vi_v2 = vi_test - v2;
+            let v = s32.dot(s_vi_v2) / s32.dot(s32);
+            if (endpoint_min..=endpoint_max).contains(&v) {
+                *r_vi = vi_test;
+                return 1;
+            }
+        }
+        return -1;
+    }
+    if (s10.x * s30.y - s10.y * s30.x) == 0.0 && (s32.x * s30.y - s32.y * s30.x) == 0.0 {
+        /* equal lines */
+        if (v1 - v0).length_squared() <= eps * eps {
+            if (v3 - v2).length_squared() > eps * eps {
+                std::mem::swap(&mut v0, &mut v2);
+                std::mem::swap(&mut v1, &mut v3);
+                s10 = v1 - v0;
+                s30 = v3 - v0;
+            } else {
+                if (v2 - v0).length_squared() <= eps * eps {
+                    *r_vi = v0;
+                    return 1;
+                }
+                return -1;
+            }
+        }
+        let s20 = v2 - v0;
+        let mut u_a = s20.dot(s10) / s10.dot(s10);
+        let mut u_b = s30.dot(s10) / s10.dot(s10);
+        if u_a > u_b {
+            std::mem::swap(&mut u_a, &mut u_b);
+        }
+        if u_a > endpoint_max || u_b < endpoint_min {
+            return -1;
+        }
+        if u_a.max(0.0) == u_b.min(1.0) {
+            *r_vi = v0 + s10 * u_a.max(0.0);
+            return 1;
+        }
+    }
+    -1
+}

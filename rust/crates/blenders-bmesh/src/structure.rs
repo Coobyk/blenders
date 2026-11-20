@@ -598,3 +598,13 @@ pub fn bmesh_disk_vert_replace(bm: &mut BMesh, e: usize, v_dst: usize, v_src: us
     bmesh_disk_edge_append(bm, e, v_dst);
     debug_assert_ne!(bm.edge(e).v1, bm.edge(e).v2);
 }
+
+/// `BM_edge_other_vert` — the edge's other vertex.
+#[inline]
+pub fn bm_edge_other_vert(bm: &BMesh, e: usize, v: usize) -> usize {
+    if bm.edge(e).v1 == v {
+        bm.edge(e).v2
+    } else {
+        bm.edge(e).v1
+    }
+}
