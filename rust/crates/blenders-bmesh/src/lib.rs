@@ -26,6 +26,7 @@ pub mod normals;
 pub mod operators;
 pub mod opdefines;
 pub mod tessellate;
+pub mod uvselect;
 pub mod query;
 pub mod query_uv;
 pub mod structure;
@@ -189,6 +190,8 @@ pub struct BMesh {
     /// `elem_table_dirty`/`elem_index_dirty` — index arrays stale.
     pub elem_table_dirty: bool,
     pub elem_index_dirty: bool,
+    // `uv_select_sync_valid` — UV selection state mirrors the mesh.
+    pub uv_select_sync_valid: bool,
     // Flag toolflags/CustomData and other BMesh fields are PORT_PENDING.
 }
 impl BMesh {
@@ -199,6 +202,7 @@ impl BMesh {
         bm.act_vert = BM_NIL;
         bm.act_edge = BM_NIL;
         bm.act_face = BM_NIL;
+        bm.uv_select_sync_valid = false;
         bm
     }
 
