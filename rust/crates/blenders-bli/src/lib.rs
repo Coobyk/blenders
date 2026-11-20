@@ -60,3 +60,4 @@ pub mod cache_mutex;
 pub mod task_scheduler;
 pub mod task_graph;
 pub mod task_iterator;
+pub mod task_range;
