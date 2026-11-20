@@ -29,3 +29,4 @@ pub mod linklist;
 pub mod listbase;
 pub mod rand;
 pub mod rct;
+pub mod stack;
