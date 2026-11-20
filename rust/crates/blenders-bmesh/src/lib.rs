@@ -9,6 +9,7 @@
 //! Source: `source/blender/bmesh/` (`bmesh_class.hh`, `intern/*.cc`).
 
 pub mod core;
+pub mod iterators;
 pub mod mesh;
 pub mod structure;
 

@@ -268,6 +268,26 @@ pub fn bmesh_disk_faceedge_count(bm: &BMesh, v: usize) -> i32 {
     count
 }
 
+/// `bmesh_disk_facevert_find_first` — a radial loop at v on a disk edge of v.
+pub fn bmesh_disk_facevert_find_first(bm: &BMesh, e: usize, v: usize) -> usize {
+    /* Walk the disk from e looking for an edge whose radial has a loop at v. */
+    let mut e_iter = e;
+    loop {
+        let l = bm.edge(e_iter).l;
+        if l != BM_NIL {
+            let lf = bmesh_radial_faceloop_find_first(bm, l, v);
+            if lf != BM_NIL {
+                return lf;
+            }
+        }
+        e_iter = bmesh_disk_edge_next(bm, e_iter, v);
+        if e_iter == e || e_iter == BM_NIL {
+            break;
+        }
+    }
+    BM_NIL
+}
+
 /// `bmesh_disk_faceedge_find_first`.
 pub fn bmesh_disk_faceedge_find_first(bm: &BMesh, v: usize, e: usize) -> usize {
     if e != BM_NIL && bm_vert_in_edge(bm, e, v) {
