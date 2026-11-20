@@ -829,7 +829,7 @@ pub const OPDEF_UNSUBDIVIDE: BMOpDefine = BMOpDefine {
         ("iterations", BMOSlotType::Int)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_unsubdivide::bmo_unsubdivide_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1032,7 +1032,7 @@ pub const OPDEF_SPLIT_EDGES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_split_edges::bmo_split_edges_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
