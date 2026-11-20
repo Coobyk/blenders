@@ -62,3 +62,6 @@ pub mod task_graph;
 pub mod task_iterator;
 pub mod task_range;
 pub mod threads;
+pub mod voxel;
+pub mod timeit;
+pub mod vector_stats;

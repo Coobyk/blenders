@@ -32,7 +32,7 @@ impl HashTableStats {
             self.removed_amount,
             self.removed_load_factor * 100.0
         );
-        println!("  Size: ~{}", format_byte_unit(self.size_in_bytes));
+        println!("  Size: ~{}", format_byte_unit_pub(self.size_in_bytes));
         println!("  Size per Slot: {} bytes", self.size_per_element);
         println!("  Average Collisions: {}", self.average_collisions);
         for (i, count) in self.keys_by_collision_count.iter().enumerate() {
@@ -42,7 +42,7 @@ impl HashTableStats {
 }
 
 /// Minimal `BLI_str_format_byte_unit` for the stats printer.
-fn format_byte_unit(bytes: i64) -> String {
+pub fn format_byte_unit_pub(bytes: i64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut v = bytes as f64;
     let mut u = 0;
