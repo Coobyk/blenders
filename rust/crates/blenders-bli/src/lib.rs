@@ -117,3 +117,4 @@ pub mod polyfill_2d;
 pub mod polyfill_2d_beautify;
 pub mod fftw;
 pub mod task_pool;
+pub mod math_interp;
