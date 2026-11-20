@@ -58,3 +58,5 @@ pub mod astar;
 pub mod lazy_threading;
 pub mod cache_mutex;
 pub mod task_scheduler;
+pub mod task_graph;
+pub mod task_iterator;
