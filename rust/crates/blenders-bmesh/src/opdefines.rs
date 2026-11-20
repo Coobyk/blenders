@@ -462,7 +462,7 @@ pub const OPDEF_EDGELOOP_FILL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_fill_edgeloop::bmo_edgeloop_fill_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
