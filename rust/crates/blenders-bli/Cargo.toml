@@ -8,3 +8,5 @@ description = "BLI (blenlib) utilities ported to Rust"
 
 [dependencies]
 blenders-math = { path = "../blenders-math" }
+flate2 = "1"
+zstd = "0.13"

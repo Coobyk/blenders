@@ -107,3 +107,5 @@ pub mod bli_args;
 pub mod filelist;
 pub mod serialize;
 pub mod storage;
+pub mod filereader_gzip;
+pub mod filereader_zstd;
