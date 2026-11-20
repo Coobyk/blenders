@@ -9,6 +9,7 @@
 pub mod base;
 pub mod euler;
 pub mod geom;
+pub mod half;
 pub mod matrix;
 pub mod quaternion;
 pub mod solvers;
