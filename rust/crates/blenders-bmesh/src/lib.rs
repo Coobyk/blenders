@@ -8,6 +8,7 @@
 //!
 //! Source: `source/blender/bmesh/` (`bmesh_class.hh`, `intern/*.cc`).
 
+pub mod bmo;
 pub mod construct;
 pub mod core;
 pub mod delete;

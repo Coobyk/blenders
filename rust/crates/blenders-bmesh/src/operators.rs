@@ -477,3 +477,106 @@ pub fn bmo_op_finish(_bm: &mut BMesh, op: BMOperator) {
 /// `BMO_push`/`BMO_pop` — nesting guards (no-op here; error handling pending).
 pub fn bmo_push(_bm: &mut BMesh) {}
 pub fn bmo_pop(_bm: &mut BMesh) {}
+
+/// `BMO_slot_buffer_flag_enable` — set api_flag `oflag` on every element in a slot.
+pub fn bmo_slot_buffer_flag_enable(bm: &mut BMesh, op: &mut BMOperator, out: bool, name: &str, oflag: u8) {
+    for i in 0..bmo_slot_buffer_len(op, out, name) {
+        let elem = bmo_slot_buffer(op, out, name)[i];
+        bmo_elem_flag_enable(bm, elem, oflag);
+    }
+}
+/// `BMO_slot_buffer_flag_disable`.
+pub fn bmo_slot_buffer_flag_disable(bm: &mut BMesh, op: &mut BMOperator, out: bool, name: &str, oflag: u8) {
+    for i in 0..bmo_slot_buffer_len(op, out, name) {
+        let elem = bmo_slot_buffer(op, out, name)[i];
+        bmo_elem_flag_disable(bm, elem, oflag);
+    }
+}
+/// `BMO_slot_buffer_hflag_enable` — set hflag on slot elements of `htype`.
+pub fn bmo_slot_buffer_hflag_enable(bm: &mut BMesh, op: &mut BMOperator, out: bool, name: &str, htype: u8, hflag: u8, only_named: bool) {
+    let _ = only_named;
+    for i in 0..bmo_slot_buffer_len(op, out, name) {
+        let (t, i_) = bmo_slot_buffer(op, out, name)[i];
+        if t == htype {
+            match t {
+                BM_VERT => bm.vpool[i_].head.hflag |= hflag,
+                BM_EDGE => bm.epool[i_].head.hflag |= hflag,
+                BM_LOOP => bm.lpool[i_].head.hflag |= hflag,
+                _ => bm.fpool[i_].head.hflag |= hflag,
+            }
+        }
+    }
+}
+/// `BMO_slot_buffer_from_enabled_flag` — fill slot with elems having api_flag `oflag`.
+pub fn bmo_slot_buffer_from_enabled_flag(bm: &BMesh, op: &mut BMOperator, out: bool, name: &str, htype: u8, oflag: u8) {
+    let pool = match htype {
+        BM_VERT => bm.totvert,
+        BM_EDGE => bm.totedge,
+        BM_LOOP => bm.totloop,
+        _ => bm.totface,
+    } as usize;
+    for i in 0..pool {
+        let f = match htype {
+            BM_VERT => bm.vert(i).head.api_flag,
+            BM_EDGE => bm.edge(i).head.api_flag,
+            BM_LOOP => bm.loo(i).head.api_flag,
+            _ => bm.face(i).head.api_flag,
+        };
+        if f & (1 << oflag) != 0 {
+            let slot_i = bmo_slot_buffer_grow(op, out, name, 1);
+            bmo_slot_buffer_mut(op, out, name)[slot_i] = (htype, i);
+        }
+    }
+}
+
+
+/// `BMO_iter_elem_count_flag` — count `oflag`-marked edges of a vert.
+pub fn bmo_iter_elem_count_flag_edges_of_vert(bm: &BMesh, v: usize, oflag: u8) -> usize {
+    let mut count = 0;
+    let mut it = crate::iterators::EdgesOfVert::new(bm, v);
+    while let Some(e) = it.next() {
+        if bm.edge(e).head.api_flag & (1 << oflag) != 0 { count += 1; }
+    }
+    count
+}
+/// Argument for `bmo_op_callf` (typed replacement for the C varargs format).
+pub enum CallfArg<'a> {
+    SlotRef(&'a str, &'a BMOperator, &'a str),
+    SlotMap(&'a str, &'a BMOperator, &'a str),
+    Int(&'a str, i32),
+    Bool(&'a str, bool),
+    Float(&'a str, f32),
+    Vec(&'a str, Vec3),
+    Mat(&'a str, Mat4),
+}
+/// `BMO_op_callf` — init, fill input slots, exec, return the op
+/// (caller drops or reads slots_out).
+pub fn bmo_op_callf(bm: &mut BMesh, flag: i32, opname: &str, args: &[CallfArg]) -> BMOperator {
+    let opcode = crate::opdefines::bmo_opcode_from_opname(opname);
+    assert!(opcode >= 0, "bmo_op_callf: unknown op '{opname}'");
+    let define: &'static BMOpDefine = crate::opdefines::BMO_OPDEFINES[opcode as usize];
+    let mut op = bmo_op_init(bm, define, flag);
+    for arg in args {
+        match arg {
+            CallfArg::SlotRef(name, src_op, src_slot) => {
+                let src = if *src_slot == "SLOT_ALL" { *name } else { *src_slot };
+                let buf: Vec<BMElemRef> = bmo_slot_buffer(src_op, false, src).to_vec();
+                slot_get_mut(&mut op.slots_in, name).buf = buf;
+            }
+            CallfArg::SlotMap(name, src_op, src_slot) => {
+                let src = if *src_slot == "SLOT_ALL" { *name } else { *src_slot };
+                let m = slot_get(&src_op.slots_out, src).map.clone();
+                slot_get_mut(&mut op.slots_in, name).map = m;
+            }
+            CallfArg::Int(name, v) => bmo_slot_int_set(&mut op, false, name, *v),
+            CallfArg::Bool(name, v) => bmo_slot_bool_set(&mut op, false, name, *v),
+            CallfArg::Float(name, v) => bmo_slot_float_set(&mut op, false, name, *v),
+            CallfArg::Vec(name, v) => bmo_slot_vec_set(&mut op, false, name, *v),
+            CallfArg::Mat(name, m) => bmo_slot_mat_set(&mut op, false, name, *m),
+        }
+    }
+    if let Some(exec) = define.exec {
+        exec(bm, &mut op);
+    }
+    op
+}

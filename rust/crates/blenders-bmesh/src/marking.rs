@@ -693,3 +693,20 @@ pub fn bm_editselection_normal(bm: &BMesh, ese: &BMEditSelection) -> Vec3 {
         _ => Vec3::new(0.0, 0.0, 0.0),
     }
 }
+
+/// `BM_mesh_elem_hflag_disable_all` — clear `hflag` on all elems of `htype`
+/// (or all types when htype==BM_ALL... here: match C semantics: htype masks).
+pub fn bm_mesh_elem_hflag_disable_all(bm: &mut BMesh, htype: u8, hflag: u8) {
+    if htype & (1 << crate::BM_VERT) != 0 || htype == crate::BM_VERT {
+        for v in 0..bm.totvert as usize { bm.vpool[v].head.hflag &= !hflag; }
+    }
+    if htype & (1 << crate::BM_EDGE) != 0 || htype == crate::BM_EDGE {
+        for e in 0..bm.totedge as usize { bm.epool[e].head.hflag &= !hflag; }
+    }
+    if htype & (1 << crate::BM_LOOP) != 0 || htype == crate::BM_LOOP {
+        for l in 0..bm.totloop as usize { bm.lpool[l].head.hflag &= !hflag; }
+    }
+    if htype & (1 << crate::BM_FACE) != 0 || htype == crate::BM_FACE {
+        for f in 0..bm.totface as usize { bm.fpool[f].head.hflag &= !hflag; }
+    }
+}

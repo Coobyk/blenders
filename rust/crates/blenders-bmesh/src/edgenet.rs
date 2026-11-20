@@ -9,6 +9,7 @@
 
 use crate::structure;
 use crate::structure::*;
+use std::collections::VecDeque;
 use crate::{delete, query, construct, core};
 use crate::{BMesh, BM_NIL, BM_ELEM_SELECT_UV, BM_ELEM_INTERNAL_TAG, BM_ELEM_SELECT};
 use blenders_math::geom;
@@ -1042,4 +1043,272 @@ pub fn bm_face_split_edgenet_connect_islands(
         bm.vpool[v2].head.hflag &= !BM_ELEM_INTERNAL_TAG;
     }
     edge_net_new
+}
+
+/* ------------------------------------------------------------------ */
+/* tools/bmesh_edgenet.cc — BM_mesh_edgenet fill                        */
+/* ------------------------------------------------------------------ */
+
+const VNINFO_FLAG_IS_MIXFACE: i32 = 1;
+
+/// `VertNetInfo` — BFS path-walking state per vert.
+#[derive(Clone, Copy, Default)]
+struct VertNetInfo {
+    /// previous vertex in path.
+    prev: usize,
+    /// path scanning pass value.
+    pass: i32,
+    /// face index connected to the edge between this and the previous vert.
+    face: i32,
+    flag: i32,
+}
+
+/// `bm_edge_step_ok` — tagged edge with ≤1 face (wire or boundary).
+fn bm_edge_step_ok_fill(bm: &BMesh, e: usize) -> bool {
+    let ed = bm.edge(e);
+    ed.head.hflag & crate::BM_ELEM_TAG != 0 && { let l = ed.l; l == BM_NIL || bm.loo(l).radial_next == l }
+}
+/// `bm_edge_face` — face index of `e`'s first loop face, or -1.
+fn bm_edge_face_fill(bm: &BMesh, e: usize) -> i32 {
+    let l = bm.edge(e).l;
+    if l == BM_NIL { -1 } else { bm.face(bm.loo(l).f).head.index }
+}
+
+/// `bm_edgenet_edge_get_next` — pop a usable edge from queue, else scan mesh.
+fn bm_edgenet_edge_get_next(bm: &BMesh, edge_queue: &mut VecDeque<usize>) -> Option<usize> {
+    while let Some(e) = edge_queue.pop_front() {
+        if bm_edge_step_ok_fill(bm, e) { return Some(e); }
+    }
+    for e in 0..bm.totedge as usize {
+        if bm_edge_step_ok_fill(bm, e) { return Some(e); }
+    }
+    None
+}
+
+/// `bm_edgenet_path_from_pass` — collect half a loop following `prev` while
+/// pass matches; prepends to `v_ls`, returns count added.
+fn bm_edgenet_path_from_pass(mut v: usize, v_ls: &mut Vec<usize>, vnet_info: &[VertNetInfo]) -> usize {
+    let mut v_ls_tot = 0;
+    let mut vn = vnet_info[bm_vert_index(v)];
+    let pass = vn.pass;
+    loop {
+        v_ls.push(v);
+        v_ls_tot += 1;
+        v = vn.prev;
+        vn = vnet_info[bm_vert_index(v)];
+        if vn.pass != pass { break; }
+    }
+    v_ls_tot
+}
+
+fn bm_vert_index(_v: usize) -> usize { _v } /* index arenas: index == arena slot */
+
+/// `bm_edgenet_path_check_overlap` — would the union of the two
+/// vert-paths ending at (v1, v2) already form a face?
+fn bm_edgenet_path_check_overlap(bm: &BMesh, v1: usize, v2: usize, vnet_info: &[VertNetInfo]) -> bool {
+    let mut vert_arr: Vec<usize> = Vec::new();
+    for &v0 in &[v1, v2] {
+        let mut v = v0;
+        let mut vn = vnet_info[v];
+        let pass = vn.pass;
+        loop {
+            vert_arr.push(v);
+            v = vn.prev;
+            vn = vnet_info[v];
+            if vn.pass != pass { break; }
+        }
+    }
+    if !vert_arr.is_empty() {
+        return crate::query::bm_face_exists_overlap(bm, &vert_arr) != BM_NIL;
+    }
+    false
+}
+
+/// `bm_edgenet_face_from_path` — build face from ordered path verts.
+fn bm_edgenet_face_from_path(bm: &mut BMesh, path: &[usize]) -> usize {
+    let edge_arr = crate::construct::bm_edges_from_verts(bm, path);
+    crate::core::bm_face_create(bm, path, &edge_arr, None, 0)
+}
+
+/// `bm_edgenet_path_step` — expand BFS frontier from v_curr.
+/// Returns the connecting edge when a face-loop is closed, else None.
+fn bm_edgenet_path_step(bm: &BMesh, v_curr: usize, v_ls: &mut Vec<usize>, vnet_info: &mut [VertNetInfo]) -> Option<usize> {
+    let mut v_curr = v_curr;
+    'begin: loop {
+        let mut tot = 0;
+        let mut v_ls_tot = 0;
+        let vn_curr = vnet_info[v_curr];
+        let mut edges = Vec::new();
+        { /* EdgesOfVert iteration */
+            let mut it = crate::iterators::EdgesOfVert::new(bm, v_curr);
+            while let Some(e) = it.next() { edges.push(e); }
+        }
+        for e in edges {
+            let v_next = structure::bm_edge_other_vert(bm, e, v_curr);
+            if v_next == vn_curr.prev {
+                tot += 1;
+                continue;
+            }
+            if bm_edge_step_ok_fill(bm, e) {
+                let vn_next = vnet_info[v_next];
+                if vn_curr.pass != vn_next.pass {
+                    if vn_curr.pass == -vn_next.pass {
+                        if (vn_curr.flag | vn_next.flag) & VNINFO_FLAG_IS_MIXFACE != 0
+                            && !bm_edgenet_path_check_overlap(bm, v_curr, v_next, vnet_info)
+                        {
+                            return Some(e);
+                        }
+                    } else {
+                        let nn = &mut vnet_info[v_next];
+                        nn.face = bm_edge_face_fill(bm, e);
+                        nn.pass = vn_curr.pass;
+                        nn.prev = v_curr;
+                        nn.flag &= !VNINFO_FLAG_IS_MIXFACE;
+                        if vn_curr.flag & VNINFO_FLAG_IS_MIXFACE != 0
+                            || nn.face == -1
+                            || nn.face != vn_curr.face
+                        {
+                            nn.flag |= VNINFO_FLAG_IS_MIXFACE;
+                        }
+                        v_ls.push(v_next);
+                        v_ls_tot += 1;
+                    }
+                }
+            }
+            tot += 1;
+        }
+        /* trick to walk along wire-edge paths (C `goto begin`) */
+        if v_ls_tot == 1 && tot == 1 {
+            v_curr = v_ls.pop().unwrap();
+            continue 'begin;
+        }
+        return None;
+    }
+}
+
+/// `bm_edgenet_path_calc` — BFS both ways from edge `e` until halves meet.
+/// Returns ordered vert loop or None. `path_cost` = BFS depth.
+fn bm_edgenet_path_calc(
+    bm: &mut BMesh,
+    e: usize,
+    pass_nr: i32,
+    path_cost_max: u32,
+    vnet_info: &mut [VertNetInfo],
+) -> Option<(Vec<usize>, u32)> {
+    debug_assert!(bm_edge_step_ok_fill(bm, e));
+    let (v1, v2) = { let ed = bm.edge(e); (ed.v1, ed.v2) };
+    let f_index = bm_edge_face_fill(bm, e);
+    let mut path_cost_accum: u32 = 0;
+    vnet_info[v1] = VertNetInfo {
+        pass: pass_nr, prev: v2, face: f_index,
+        flag: if f_index == -1 { VNINFO_FLAG_IS_MIXFACE } else { 0 },
+    };
+    vnet_info[v2] = VertNetInfo {
+        pass: -pass_nr, prev: v1, face: f_index,
+        flag: if f_index == -1 { VNINFO_FLAG_IS_MIXFACE } else { 0 },
+    };
+    let mut v_ls_prev: Vec<usize> = vec![v1, v2];
+    let mut v_ls_next: Vec<usize> = Vec::new();
+    loop {
+        let mut found = false;
+        if path_cost_accum >= path_cost_max { return None; }
+        while let Some(v) = v_ls_prev.pop() {
+            let n_before = v_ls_next.len();
+            if let Some(e_found) = bm_edgenet_path_step(bm, v, &mut v_ls_next, vnet_info) {
+                let mut path: Vec<usize> = Vec::new();
+                let (ev1, ev2) = { let ed = bm.edge(e_found); (ed.v1, ed.v2) };
+                let mut half1 = Vec::new();
+                bm_edgenet_path_from_pass(ev1, &mut half1, vnet_info);
+                half1.reverse();
+                path.extend(half1);
+                bm_edgenet_path_from_pass(ev2, &mut path, vnet_info);
+                let path_len = path.len();
+                return Some((path[..path_len].to_vec(), path_cost_accum));
+            }
+            if v_ls_next.len() != n_before { found = true; }
+        }
+        path_cost_accum += 1;
+        std::mem::swap(&mut v_ls_prev, &mut v_ls_next);
+        if !found { break; }
+    }
+    /* tag not to search again */
+    bm.epool[e].head.hflag &= !crate::BM_ELEM_TAG;
+    None
+}
+
+/// `bm_edgenet_path_calc_best` — like path_calc but re-searches from every
+/// path edge for a cheaper alternative.
+fn bm_edgenet_path_calc_best(
+    bm: &mut BMesh,
+    e: usize,
+    pass_nr: &mut i32,
+    path_cost_max: u32,
+    vnet_info: &mut [VertNetInfo],
+) -> Option<(Vec<usize>, u32)> {
+    let (mut path, mut path_cost) =
+        match bm_edgenet_path_calc(bm, e, *pass_nr, path_cost_max, vnet_info) {
+            Some(r) => r,
+            None => return None,
+        };
+    *pass_nr += 1;
+    if path_cost < 1 { return Some((path, path_cost)); }
+    /* Check every edge to see if any can give a better path. */
+    let path_len = path.len();
+    let mut i_prev = path_len - 1;
+    for i in 0..path_len {
+        let e_other = crate::query::bm_edge_exists(bm, path[i], path[i_prev]);
+        if e_other != BM_NIL && e_other != e {
+                if let Some((p2, c2)) = bm_edgenet_path_calc(&mut *bm, e_other, *pass_nr, path_cost, vnet_info) {
+                    debug_assert!(c2 < path_cost);
+                    path = p2;
+                    path_cost = c2;
+                }
+                *pass_nr += 1;
+        }
+        i_prev = i;
+    }
+    Some((path, path_cost))
+}
+
+/// `BM_mesh_edgenet` — fill in tagged edge-nets with faces (edge-net fill).
+/// `use_edge_tag=false` tags all boundary/wire edges first;
+/// `use_new_face_tag` tags each new face.
+pub fn bm_mesh_edgenet(bm: &mut BMesh, use_edge_tag: bool, use_new_face_tag: bool) {
+    let mut vnet_info = vec![VertNetInfo::default(); bm.totvert as usize];
+    let mut edge_queue: VecDeque<usize> = VecDeque::new();
+    let mut pass_nr: i32 = 1;
+    if !use_edge_tag {
+        for e in 0..bm.totedge as usize {
+            let ok = bm_edge_step_ok_fill(bm, e);
+            bm.epool[e].head.hflag &= !crate::BM_ELEM_TAG;
+            if ok { bm.epool[e].head.hflag |= crate::BM_ELEM_TAG; }
+        }
+    }
+    crate::mesh::bm_mesh_elem_index_ensure(bm, crate::BM_VERT | crate::BM_FACE);
+    loop {
+        let e = match bm_edgenet_edge_get_next(bm, &mut edge_queue) {
+            Some(e) => e,
+            None => break,
+        };
+        debug_assert!(bm_edge_step_ok_fill(bm, e));
+        if let Some((path, _cost)) = bm_edgenet_path_calc_best(&mut *bm, e, &mut pass_nr, u32::MAX, &mut vnet_info) {
+            let f = bm_edgenet_face_from_path(bm, &path);
+            /* queue edges to operate on */
+            let l_first = bm.face(f).l_first;
+            let mut l_iter = l_first;
+            loop {
+                let le = bm.loo(l_iter).e;
+                if bm_edge_step_ok_fill(bm, le) { edge_queue.push_back(le); }
+                l_iter = bm.loo(l_iter).next;
+                if l_iter == l_first { break; }
+            }
+            if use_new_face_tag {
+                bm.fpool[f].head.hflag |= crate::BM_ELEM_TAG;
+            }
+            /* the face index only needs to be unique, not kept valid */
+            bm.fpool[f].head.index = bm.totface - 1;
+        }
+    }
+    bm.elem_index_dirty = true;
+    bm.elem_table_dirty = true;
 }

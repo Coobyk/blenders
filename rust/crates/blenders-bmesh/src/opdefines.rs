@@ -53,7 +53,7 @@ pub const OPDEF_RECALC_FACE_NORMALS: BMOpDefine = BMOpDefine {
         ("faces", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_normals::bmo_recalc_face_normals_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -447,7 +447,7 @@ pub const OPDEF_FACE_ATTRIBUTE_FILL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces_fail.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_fill_attribute::bmo_face_attribute_fill_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -478,7 +478,7 @@ pub const OPDEF_EDGENET_FILL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_edgenet::bmo_edgenet_fill_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -491,7 +491,7 @@ pub const OPDEF_EDGENET_PREPARE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_edgenet::bmo_edgenet_prepare_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
