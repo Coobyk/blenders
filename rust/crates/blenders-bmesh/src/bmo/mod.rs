@@ -15,3 +15,4 @@ pub mod bmo_dupe;
 pub mod bmo_mirror;
 pub mod bmo_utils;
 pub mod bmo_poke;
+pub mod bmo_connect;

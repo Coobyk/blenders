@@ -662,7 +662,7 @@ pub const OPDEF_CONNECT_VERTS: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_connect::bmo_connect_verts_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
