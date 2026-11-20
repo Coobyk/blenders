@@ -13,6 +13,7 @@ pub mod core;
 pub mod delete;
 pub mod iterators;
 pub mod mesh;
+pub mod query;
 pub mod structure;
 
 use blenders_math::vector::Vec3;
