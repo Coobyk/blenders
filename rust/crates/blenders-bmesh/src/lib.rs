@@ -13,6 +13,7 @@ pub mod core;
 pub mod delete;
 pub mod interp;
 pub mod iterators;
+pub mod log;
 pub mod marking;
 pub mod partial_update;
 pub mod polygon;
