@@ -1371,7 +1371,7 @@ pub const OPDEF_SPACE_EDGE_LOOPS_EVENLY: BMOpDefine = BMOpDefine {
         ("lock_z", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_space::bmo_space_edge_loops_evenly_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
