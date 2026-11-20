@@ -326,6 +326,9 @@ impl From<Mat4> for Mat3 {
 }
 
 impl Mat4 {
+    pub const ZERO: Self = Self {
+        cols: [Vec4::ZERO, Vec4::ZERO, Vec4::ZERO, Vec4::ZERO],
+    };
     pub const IDENTITY: Self = Self {
         cols: [
             Vec4::new(1.0, 0.0, 0.0, 0.0),
