@@ -4,6 +4,7 @@
 use crate::core::*;
 use crate::iterators::*;
 use crate::structure::*;
+use crate::{mods, query};
 use crate::{BMesh, BM_NIL, BM_ELEM_INTERNAL_TAG};
 use blenders_math::vector::Vec3;
 use std::collections::{HashSet, VecDeque};
@@ -494,4 +495,177 @@ pub fn bm_edgeloop_overlap_check(
         bm.vpool[v].head.hflag &= !BM_ELEM_INTERNAL_TAG;
     }
     overlap
+}
+
+/// `divide_floor_i` (BLI_math_base.h).
+#[inline]
+fn divide_floor_i(a: i32, b: i32) -> i32 {
+    a.div_euclid(b)
+}
+
+/// `BM_mesh_edgeloops_calc_order` — reorder loops by greedy nearest-next.
+pub fn bm_mesh_edgeloops_calc_order(eloops: &mut Vec<BMEdgeLoopStore>, use_normals: bool) {
+    let mut cent = Vec3::ZERO;
+    let mut tot = 0;
+    for el in eloops.iter() {
+        if el.co.is_finite() {
+            cent += el.co;
+            tot += 1;
+        }
+    }
+    if tot > 0 {
+        cent *= 1.0 / tot as f32;
+        if !cent.is_finite() {
+            cent = Vec3::ZERO;
+        }
+    }
+    /* pick the furthest-out loop */
+    let mut ordered: Vec<BMEdgeLoopStore> = Vec::with_capacity(eloops.len());
+    {
+        let mut best = usize::MAX;
+        let mut len_best_sq = -1.0f32;
+        for (i, el) in eloops.iter().enumerate() {
+            let len_sq = (cent - el.co).length_squared();
+            if len_sq > len_best_sq || best == usize::MAX {
+                len_best_sq = len_sq;
+                best = i;
+            }
+        }
+        ordered.push(eloops.remove(best));
+    }
+    while !eloops.is_empty() {
+        let co = ordered.last().unwrap().co;
+        let no = ordered.last().unwrap().no;
+        if use_normals {
+            debug_assert!((no.length() - 1.0).abs() < 1e-4);
+        }
+        let mut best = usize::MAX;
+        let mut len_best_sq = f32::MAX;
+        for (i, el) in eloops.iter().enumerate() {
+            let len_sq = if use_normals {
+                let dir = (co - el.co).normalized();
+                let l = (co - el.co).length();
+                l * ((1.0 - dir.dot(no).abs()) + (1.0 - dir.dot(el.no).abs()))
+            } else {
+                (co - el.co).length_squared()
+            };
+            if len_sq < len_best_sq || best == usize::MAX {
+                len_best_sq = len_sq;
+                best = i;
+            }
+        }
+        ordered.push(eloops.remove(best));
+    }
+    *eloops = ordered;
+}
+
+/// `BM_edgeloop_expand` — grow the loop to `el_store_len` verts, optionally
+/// splitting edges (recording new edges in `split_edges`).
+pub fn bm_edgeloop_expand(
+    bm: &mut BMesh,
+    el_store: &mut BMEdgeLoopStore,
+    el_store_len: i32,
+    split: bool,
+    split_edges: &mut HashSet<usize>,
+) {
+    let mut split_swap = true;
+    /* EDGE_SPLIT: split edge (copy_vert — other_vert), copy becomes v_split. */
+    macro_rules! edge_split {
+        ($copy_v:expr, $other_v:expr) => {{
+            let e_other = crate::query::bm_edge_exists(bm, $copy_v, $other_v);
+            let mut e_split = BM_NIL;
+            let v_from = if split_swap { $copy_v } else { $other_v };
+            let v_split = mods::bm_edge_split(bm, e_other, v_from, Some(&mut e_split), 0.0);
+            bm.vpool[v_split].e = e_split;
+            debug_assert_eq!(v_split, bm.edge(e_split).v2);
+            split_edges.insert(e_split);
+            v_split
+        }};
+    }
+    /* first double until more than half as big */
+    while (el_store.len * 2) < el_store_len {
+        let mut i = 0usize;
+        let n = el_store.verts.len();
+        let mut processed = 0usize;
+        while processed < n && i < el_store.verts.len() {
+            let node_v = el_store.verts[i];
+            if !split {
+                el_store.verts.insert(i + 1, node_v);
+                i += 2;
+            } else {
+                if i + 1 < el_store.verts.len()
+                    || (el_store.flag & BM_EDGELOOP_IS_CLOSED) != 0
+                {
+                    let other_v = if i + 1 < el_store.verts.len() {
+                        el_store.verts[i + 1]
+                    } else {
+                        el_store.verts[0]
+                    };
+                    let v_split = edge_split!(node_v, other_v);
+                    el_store.verts.insert(i + 1, v_split);
+                    i += 2;
+                } else {
+                    let other_v = el_store.verts[i - 1];
+                    let v_split = edge_split!(node_v, other_v);
+                    el_store.verts.insert(i, v_split);
+                    i += 2;
+                }
+                split_swap = !split_swap;
+            }
+            el_store.len += 1;
+            processed += 1;
+        }
+        split_swap = !split_swap;
+    }
+    if el_store.len < el_store_len {
+        /* evenly spread the rest (BLI_FOREACH_SPARSE_RANGE) */
+        let src = el_store.len;
+        let dst = el_store_len - el_store.len;
+        let src2 = src * 2;
+        let dst2 = dst * 2;
+        let mut error = dst2 - src;
+        let mut iter = 0i32;
+        let mut i = 0usize; /* node index cursor */
+        let mut iter_prev = 0i32;
+        loop {
+            let delta = divide_floor_i(error, dst2);
+            iter -= delta;
+            if iter >= src {
+                break;
+            }
+            while iter_prev < iter {
+                i += 1;
+                iter_prev += 1;
+            }
+            let node_v = el_store.verts[i];
+            if !split {
+                el_store.verts.insert(i + 1, node_v);
+                i += 1;
+            } else {
+                if i + 1 < el_store.verts.len()
+                    || (el_store.flag & BM_EDGELOOP_IS_CLOSED) != 0
+                {
+                    let other_v = if i + 1 < el_store.verts.len() {
+                        el_store.verts[i + 1]
+                    } else {
+                        el_store.verts[0]
+                    };
+                    let v_split = edge_split!(node_v, other_v);
+                    el_store.verts.insert(i + 1, v_split);
+                    i += 1;
+                } else {
+                    let other_v = el_store.verts[i - 1];
+                    let v_split = edge_split!(node_v, other_v);
+                    el_store.verts.insert(i, v_split);
+                    i += 1;
+                }
+                split_swap = !split_swap;
+            }
+            el_store.len += 1;
+            iter_prev += 1;
+            i += 1;
+            error -= delta * dst2 + src2;
+        }
+    }
+    debug_assert_eq!(el_store.len, el_store_len);
 }
