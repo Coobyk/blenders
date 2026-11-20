@@ -15,6 +15,7 @@ mod tests {
 pub mod endian;
 pub mod ghash;
 pub mod string;
+pub mod string_utf8;
 pub mod ghash_utils;
 pub mod gsqueue;
 pub mod hash_tables;
