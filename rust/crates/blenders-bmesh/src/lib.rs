@@ -253,3 +253,75 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod kernel_tests {
+    use super::*;
+    use crate::core::*;
+    use crate::structure::*;
+
+    fn quad() -> (BMesh, [usize; 4], usize) {
+        let mut bm = BMesh::new();
+        let v: Vec<usize> = (0..4)
+            .map(|i| bm_vert_create(&mut bm, Vec3::new((i % 2) as f32, (i / 2) as f32, 0.0), None, 0))
+            .collect();
+        let mut edges = [0usize; 4];
+        for i in 0..4 {
+            edges[i] = bm_edge_create(&mut bm, v[i], v[(i + 1) % 4], None, 0);
+        }
+        let f = bm_face_create(&mut bm, &v, &edges, None, 0);
+        (bm, [v[0], v[1], v[2], v[3]], f)
+    }
+
+    #[test]
+    fn split_face_quad_to_tris() {
+        let (mut bm, _v, f) = quad();
+        /* find loops of v0 and v2 */
+        let l_first = bm.face(f).l_first;
+        let mut l_iter = l_first;
+        let (mut l_v0, mut l_v2) = (BM_NIL, BM_NIL);
+        loop {
+            let lv = bm.loo(l_iter).v;
+            if lv == 0 {
+                l_v0 = l_iter;
+            } else if lv == 2 {
+                l_v2 = l_iter;
+            }
+            l_iter = bm.loo(l_iter).next;
+            if l_iter == l_first {
+                break;
+            }
+        }
+        let f2 = bmesh_kernel_split_face_make_edge(&mut bm, f, l_v0, l_v2, None, false);
+        assert_eq!(bm.totface, 2);
+        assert_eq!(bm.totedge, 5);
+        assert_eq!(bm.face(f).len, 3);
+        assert_eq!(bm.face(f2).len, 3);
+        /* new edge is manifold with 2 radial loops */
+        let e_new = bmesh_disk_edge_exists(&bm, 0, 2);
+        assert_ne!(e_new, BM_NIL);
+        assert_eq!(bmesh_radial_length(&bm, bm.edge(e_new).l), 2);
+    }
+
+    #[test]
+    fn split_edge_then_join_back() {
+        let (mut bm, v, _f) = quad();
+        let e = bmesh_disk_edge_exists(&bm, v[0], v[1]);
+        let mut e_new = BM_NIL;
+        let v_new = bmesh_kernel_split_edge_make_vert(&mut bm, v[0], e, Some(&mut e_new));
+        assert_eq!(bm.totvert, 5);
+        assert_eq!(bm.totedge, 5);
+        assert_eq!(bm.totloop, 5); /* 4 loops + 1 split */
+        /* face lens grew by 1 */
+        assert_eq!(bm.face(0).len, 5);
+        /* join back: v_new has valence 2 */
+        let e_survive = bmesh_kernel_join_edge_kill_vert(
+            &mut bm, e_new, v_new, true, false, false, false,
+        );
+        assert_ne!(e_survive, BM_NIL);
+        assert_eq!(bm.totvert, 4);
+        assert_eq!(bm.totedge, 4);
+        assert_eq!(bm.totloop, 4);
+        assert_eq!(bm.face(0).len, 4);
+    }
+}

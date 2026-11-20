@@ -573,3 +573,28 @@ pub fn bmesh_loop_find_face(bm: &BMesh, l: usize) -> usize {
 pub fn bmesh_radial_faceloop_find_vert(bm: &BMesh, l: usize, v: usize) -> usize {
     bmesh_radial_faceloop_find_first(bm, l, v)
 }
+
+/// `bmesh_disk_vert_swap` — swap `v_src` for `v_dst` inside `e` (verts + disk links).
+pub fn bmesh_disk_vert_swap(bm: &mut BMesh, e: usize, v_dst: usize, v_src: usize) {
+    debug_assert!(bm.edge(e).v1 == v_src || bm.edge(e).v2 == v_src);
+    if bm.edge(e).v1 == v_src {
+        let dl = bm.edge(e).v1_disk_link;
+        bm.epool[e].v1 = v_dst;
+        bm.epool[e].v1_disk_link = dl;
+        let _ = dl;
+    } else {
+        let dl = bm.edge(e).v2_disk_link;
+        bm.epool[e].v2 = v_dst;
+        bm.epool[e].v2_disk_link = dl;
+        let _ = dl;
+    }
+}
+
+/// `bmesh_disk_vert_replace` — replace `v_src` by `v_dst` as endpoint of `e`.
+pub fn bmesh_disk_vert_replace(bm: &mut BMesh, e: usize, v_dst: usize, v_src: usize) {
+    debug_assert!(bm.edge(e).v1 == v_src || bm.edge(e).v2 == v_src);
+    bmesh_disk_edge_remove(bm, e, v_src);
+    bmesh_disk_vert_swap(bm, e, v_dst, v_src);
+    bmesh_disk_edge_append(bm, e, v_dst);
+    debug_assert_ne!(bm.edge(e).v1, bm.edge(e).v2);
+}

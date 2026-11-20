@@ -381,3 +381,437 @@ pub fn bmesh_kernel_loop_reverse(bm: &mut BMesh, f: usize) {
     }
     /* Fix radial order isn't required (radial order is free). */
 }
+
+/* ---- kernel ops ---------------------------------------------------------- */
+
+/// `bm_face_create__sfme` — copy face f's flags/normal for a split.
+fn bm_face_create_sfme(bm: &mut BMesh, f_src: usize) -> usize {
+    let f = bm_face_create_internal(bm);
+    bm.fpool[f].no = bm.face(f_src).no;
+    bm.fpool[f].mat_nr = bm.face(f_src).mat_nr;
+    bm.fpool[f].head.hflag = bm.face(f_src).head.hflag;
+    bm.fpool[f].head.api_flag = bm.face(f_src).head.api_flag;
+    f
+}
+
+/// `bmesh_kernel_split_face_make_edge` — split `f` into two faces by adding
+/// an edge between `l_v1->v` and `l_v2->v`. Returns the new face `f2`.
+pub fn bmesh_kernel_split_face_make_edge(
+    bm: &mut BMesh,
+    f: usize,
+    l_v1: usize,
+    l_v2: usize,
+    r_l: Option<&mut usize>,
+    no_double: bool,
+) -> usize {
+    debug_assert_eq!(bm.loo(l_v1).f, f);
+    debug_assert_eq!(bm.loo(l_v2).f, f);
+    let (v1, v2) = (bm.loo(l_v1).v, bm.loo(l_v2).v);
+    let e = bm_edge_create(bm, v1, v2, None, if no_double { BM_CREATE_NO_DOUBLE } else { 0 });
+    let f2 = bm_face_create_sfme(bm, f);
+    let l_f1 = bm_loop_create(bm, v2, e, f);
+    let l_f2 = bm_loop_create(bm, v1, e, f2);
+
+    let l_v1_prev = bm.loo(l_v1).prev;
+    let l_v2_prev = bm.loo(l_v2).prev;
+    bm.lpool[l_f1].prev = l_v2_prev;
+    bm.lpool[l_f2].prev = l_v1_prev;
+    bm.lpool[l_v2_prev].next = l_f1;
+    bm.lpool[l_v1_prev].next = l_f2;
+    bm.lpool[l_f1].next = l_v1;
+    bm.lpool[l_f2].next = l_v2;
+    bm.lpool[l_v1].prev = l_f1;
+    bm.lpool[l_v2].prev = l_f2;
+
+    /* find which face the original first loop landed in (no holes build) */
+    let mut l_iter = l_f1;
+    let mut first_loop_f1 = false;
+    loop {
+        if l_iter == bm.face(f).l_first {
+            first_loop_f1 = true;
+        }
+        l_iter = bm.loo(l_iter).next;
+        if l_iter == l_f1 {
+            break;
+        }
+    }
+    let f_l_first = bm.face(f).l_first;
+    if first_loop_f1 {
+        /* original first loop was in f1 */
+        if bm.loo(f_l_first).prev == l_f1 {
+            bm.fpool[f2].l_first = bm.loo(l_f2).prev;
+        } else if bm.loo(f_l_first).next == l_f1 {
+            bm.fpool[f2].l_first = bm.loo(l_f2).next;
+        } else {
+            bm.fpool[f2].l_first = l_f2;
+        }
+    } else {
+        bm.fpool[f2].l_first = f_l_first;
+        if bm.loo(f_l_first).prev == l_f2 {
+            bm.fpool[f].l_first = bm.loo(l_f1).prev;
+        } else if bm.loo(f_l_first).next == l_f2 {
+            bm.fpool[f].l_first = bm.loo(l_f1).next;
+        } else {
+            bm.fpool[f].l_first = l_f1;
+        }
+    }
+
+    /* fix face pointers of f2's loops + count f2len */
+    let f2_first = bm.face(f2).l_first;
+    let mut f2len = 0;
+    let mut l_iter = f2_first;
+    loop {
+        bm.lpool[l_iter].f = f2;
+        f2len += 1;
+        l_iter = bm.loo(l_iter).next;
+        if l_iter == f2_first {
+            break;
+        }
+    }
+    bmesh_radial_loop_append(bm, e, l_f1);
+    bmesh_radial_loop_append(bm, e, l_f2);
+    bm.fpool[f2].len = f2len;
+
+    let f_first = bm.face(f).l_first;
+    let mut f1len = 0;
+    let mut l_iter = f_first;
+    loop {
+        f1len += 1;
+        l_iter = bm.loo(l_iter).next;
+        if l_iter == f_first {
+            break;
+        }
+    }
+    bm.fpool[f].len = f1len;
+
+    if let Some(r_l) = r_l {
+        *r_l = l_f2;
+    }
+    f2
+}
+
+/// `bmesh_kernel_split_edge_make_vert` — split `e` at new vert near `tv`.
+pub fn bmesh_kernel_split_edge_make_vert(
+    bm: &mut BMesh,
+    tv: usize,
+    e: usize,
+    r_e: Option<&mut usize>,
+) -> usize {
+    debug_assert!(bm_vert_in_edge(bm, e, tv));
+    let v_old = if bm.edge(e).v1 == tv {
+        bm.edge(e).v2
+    } else {
+        bm.edge(e).v1
+    };
+    let v_co = bm.vert(tv).co;
+    let v_new = bm_vert_create(bm, v_co, None, 0);
+    let e_new = bm_edge_create(bm, tv, v_new, None, 0);
+    bmesh_disk_edge_remove(bm, e_new, tv);
+    bmesh_disk_edge_remove(bm, e_new, v_new);
+    bmesh_disk_vert_replace(bm, e, v_new, tv);
+    bmesh_disk_edge_append(bm, e_new, v_new);
+    bmesh_disk_edge_append(bm, e_new, tv);
+
+    /* Split the radial cycle if present. */
+    let mut l_next = bm.edge(e).l;
+    bm.epool[e].l = BM_NIL;
+    let mut is_first = true;
+    while l_next != BM_NIL {
+        let l = l_next;
+        let lf = bm.loo(l).f;
+        bm.fpool[lf].len += 1;
+        l_next = {
+            let rn = bm.loo(l).radial_next;
+            if rn != l {
+                rn
+            } else {
+                BM_NIL
+            }
+        };
+        bmesh_radial_loop_unlink(bm, l);
+        let l_new = bm_loop_create(bm, v_new, BM_NIL, lf);
+        let l_n = bm.loo(l).next;
+        bm.lpool[l_new].prev = l;
+        bm.lpool[l_new].next = l_n;
+        bm.lpool[l].next = l_new;
+        bm.lpool[l_n].prev = l_new;
+        bm.lpool[l_new].v = v_new;
+
+        let ln_v = bm.loo(l_new).v;
+        let ln_next_v = bm.loo(l_n).v;
+        if bm_verts_in_edge(bm, ln_v, ln_next_v, e) {
+            bm.lpool[l_new].e = e;
+            bm.lpool[l].e = e_new;
+            if is_first {
+                is_first = false;
+                bm.lpool[l].radial_next = BM_NIL;
+                bm.lpool[l].radial_prev = BM_NIL;
+            }
+            let le_new = bm.loo(l_new).e;
+            let le = bm.loo(l).e;
+            bmesh_radial_loop_append(bm, le_new, l_new);
+            bmesh_radial_loop_append(bm, le, l);
+        } else if bm_verts_in_edge(bm, ln_v, ln_next_v, e_new) {
+            bm.lpool[l_new].e = e_new;
+            bm.lpool[l].e = e;
+            if is_first {
+                is_first = false;
+                bm.lpool[l].radial_next = BM_NIL;
+                bm.lpool[l].radial_prev = BM_NIL;
+            }
+            let le_new = bm.loo(l_new).e;
+            let le = bm.loo(l).e;
+            bmesh_radial_loop_append(bm, le_new, l_new);
+            bmesh_radial_loop_append(bm, le, l);
+        }
+    }
+    let _ = v_old;
+    if let Some(r_e) = r_e {
+        *r_e = e_new;
+    }
+    v_new
+}
+
+/// `bmesh_kernel_join_edge_kill_vert` — merge `e_kill` into the other edge at
+/// `v_kill` (which must have valence 2). Returns the surviving edge or NIL.
+pub fn bmesh_kernel_join_edge_kill_vert(
+    bm: &mut BMesh,
+    e_kill: usize,
+    v_kill: usize,
+    do_del: bool,
+    check_edge_exists: bool,
+    kill_degenerate_faces: bool,
+    kill_duplicate_faces: bool,
+) -> usize {
+    if !bm_vert_in_edge(bm, e_kill, v_kill) {
+        return BM_NIL;
+    }
+    if bmesh_disk_count_at_most(bm, v_kill, 3) != 2 {
+        return BM_NIL;
+    }
+    let e_old = bmesh_disk_edge_next(bm, e_kill, v_kill);
+    let v_target = if bm.edge(e_kill).v1 == v_kill {
+        bm.edge(e_kill).v2
+    } else {
+        bm.edge(e_kill).v1
+    };
+    let v_old = if bm.edge(e_old).v1 == v_kill {
+        bm.edge(e_old).v2
+    } else {
+        bm.edge(e_old).v1
+    };
+    /* check for double edges */
+    if bm_verts_in_edge(bm, v_kill, v_target, e_old) {
+        return BM_NIL;
+    }
+    let e_splice = if check_edge_exists {
+        bmesh_disk_edge_exists(bm, v_target, v_old)
+    } else {
+        BM_NIL
+    };
+    let mut faces_degenerate: Vec<usize> = Vec::new();
+    let mut faces_duplicate_candidate: Vec<usize> = Vec::new();
+
+    bmesh_disk_vert_replace(bm, e_old, v_target, v_kill);
+    bmesh_disk_edge_remove(bm, e_kill, v_target);
+
+    if bm.edge(e_kill).l != BM_NIL {
+        let l_start = bm.edge(e_kill).l;
+        let mut l_kill = l_start;
+        loop {
+            /* relink loops and fix vertex pointer */
+            let ln = bm.loo(l_kill).next;
+            let lp = bm.loo(l_kill).prev;
+            if bm.loo(ln).v == v_kill {
+                bm.lpool[ln].v = v_target;
+            }
+            bm.lpool[ln].prev = lp;
+            bm.lpool[lp].next = ln;
+            let lf = bm.loo(l_kill).f;
+            if bm.face(lf).l_first == l_kill {
+                bm.fpool[lf].l_first = ln;
+            }
+            bm.fpool[lf].len -= 1;
+            if kill_degenerate_faces && bm.face(lf).len < 3 {
+                faces_degenerate.push(lf);
+            } else if kill_duplicate_faces {
+                faces_duplicate_candidate.push(lf);
+            }
+            let l_kill_next = bm.loo(l_kill).radial_next;
+            bm_kill_only_loop(bm, l_kill);
+            l_kill = l_kill_next;
+            if l_kill == l_start {
+                break;
+            }
+        }
+        /* all radial loops are dead; drop the edge's radial reference */
+        bm.epool[e_kill].l = BM_NIL;
+    }
+    bm_kill_only_edge(bm, e_kill);
+    if do_del {
+        bm_kill_only_vert(bm, v_kill);
+    } else {
+        bm.vpool[v_kill].e = BM_NIL;
+    }
+
+    if e_splice != BM_NIL {
+        /* splice the two edges' radials: move e_splice's loops onto e_old */
+        if bm.edge(e_splice).l != BM_NIL {
+            /* swap loops of e_splice to point to e_old */
+            let l_start = bm.edge(e_splice).l;
+            let mut l_iter = l_start;
+            loop {
+                let next = bm.loo(l_iter).radial_next;
+                bmesh_radial_loop_unlink(bm, l_iter);
+                bm.lpool[l_iter].e = e_old;
+                bmesh_radial_loop_append(bm, e_old, l_iter);
+                l_iter = next;
+                if l_iter == l_start || l_iter == BM_NIL {
+                    break;
+                }
+            }
+        }
+        /* swap verts so e_splice shares e_old's verts, then kill it */
+        let (v1, v2) = (bm.edge(e_old).v1, bm.edge(e_old).v2);
+        bmesh_disk_edge_remove(bm, e_splice, bm.edge(e_splice).v1);
+        bmesh_disk_edge_remove(bm, e_splice, bm.edge(e_splice).v2);
+        bm.epool[e_splice].v1 = v1;
+        bm.epool[e_splice].v2 = v2;
+        bm_kill_only_edge(bm, e_splice);
+        /* note: C keeps e_splice but redirects; killing is equivalent for
+         * topology since all its loops were moved. */
+    }
+
+    for f in faces_degenerate {
+        bm_face_kill(bm, f);
+    }
+    if kill_duplicate_faces {
+        for f in faces_duplicate_candidate {
+            if bm.face(f).head.htype != BM_FACE {
+                continue;
+            }
+            /* find a same-vert face != f */
+            let varr: Vec<usize> = {
+                let l_first = bm.face(f).l_first;
+                let mut l_iter = l_first;
+                let mut vs = Vec::new();
+                loop {
+                    vs.push(bm.loo(l_iter).v);
+                    l_iter = bm.loo(l_iter).next;
+                    if l_iter == l_first {
+                        break;
+                    }
+                }
+                vs
+            };
+            let found = crate::query::bm_face_exists(bm, &varr);
+            if found != BM_NIL && found != f {
+                bm_face_kill(bm, f);
+            }
+        }
+    }
+    e_old
+}
+
+/// `bmesh_kernel_join_face_kill_edge` — merge `f2` into `f1` across `e`.
+pub fn bmesh_kernel_join_face_kill_edge(
+    bm: &mut BMesh,
+    f1: usize,
+    f2: usize,
+    e: usize,
+) -> usize {
+    if f1 == f2 {
+        return BM_NIL;
+    }
+    if !crate::query::bm_edge_is_manifold(bm, e) {
+        return BM_NIL;
+    }
+    let l_f1 = crate::query::bm_face_edge_share_loop(bm, f1, e);
+    let l_f2 = crate::query::bm_face_edge_share_loop(bm, f2, e);
+    if l_f1 == BM_NIL || l_f2 == BM_NIL {
+        return BM_NIL;
+    }
+    if bm.loo(l_f1).v == bm.loo(l_f2).v {
+        return BM_NIL;
+    }
+    let l_f1_next_e = bm.loo(bm.loo(l_f1).next).e;
+    let l_f1_prev_e = bm.loo(bm.loo(l_f1).prev).e;
+    let l_f2_next_e = bm.loo(bm.loo(l_f2).next).e;
+    let l_f2_prev_e = bm.loo(bm.loo(l_f2).prev).e;
+    if crate::query::bm_edge_in_face(bm, l_f1_next_e, f2)
+        || crate::query::bm_edge_in_face(bm, l_f1_prev_e, f2)
+        || crate::query::bm_edge_in_face(bm, l_f2_next_e, f1)
+        || crate::query::bm_edge_in_face(bm, l_f2_prev_e, f1)
+    {
+        return BM_NIL;
+    }
+    if crate::query::bm_face_share_edge_count(bm, f1, f2) > 1 {
+        return BM_NIL;
+    }
+    /* validate no internal join (shared verts other than on e) */
+    {
+        let verts_f1: std::collections::HashSet<usize> = {
+            let l_first = bm.face(f1).l_first;
+            let mut l_iter = l_first;
+            let mut s = std::collections::HashSet::new();
+            loop {
+                if l_iter != l_f1 {
+                    s.insert(bm.loo(l_iter).v);
+                }
+                l_iter = bm.loo(l_iter).next;
+                if l_iter == l_first {
+                    break;
+                }
+            }
+            s
+        };
+        let l_first = bm.face(f2).l_first;
+        let mut l_iter = l_first;
+        loop {
+            if l_iter != l_f2 && verts_f1.contains(&bm.loo(l_iter).v) {
+                return BM_NIL;
+            }
+            l_iter = bm.loo(l_iter).next;
+            if l_iter == l_first {
+                break;
+            }
+        }
+    }
+    /* join the loops */
+    let lf1_prev = bm.loo(l_f1).prev;
+    let lf1_next = bm.loo(l_f1).next;
+    let lf2_prev = bm.loo(l_f2).prev;
+    let lf2_next = bm.loo(l_f2).next;
+    bm.lpool[lf1_prev].next = lf2_next;
+    bm.lpool[lf2_next].prev = lf1_prev;
+    bm.lpool[lf1_next].prev = lf2_prev;
+    bm.lpool[lf2_prev].next = lf1_next;
+    if bm.face(f1).l_first == l_f1 {
+        bm.fpool[f1].l_first = lf1_next;
+    }
+    bm.fpool[f1].len += bm.face(f2).len - 2;
+    let newlen = bm.face(f1).len;
+    let l_first = bm.face(f1).l_first;
+    let mut l_iter = l_first;
+    for _ in 0..newlen {
+        bm.lpool[l_iter].f = f1;
+        l_iter = bm.loo(l_iter).next;
+    }
+    /* remove e from disk cycles + kill e, l_f1, l_f2, f2 */
+    let (ev1, ev2) = (bm.edge(e).v1, bm.edge(e).v2);
+    bmesh_disk_edge_remove(bm, e, ev1);
+    bmesh_disk_edge_remove(bm, e, ev2);
+    bm.epool[e] = BMEdge::default();
+    bm.epool[e].v1 = BM_NIL;
+    bm.epool[e].v2 = BM_NIL;
+    bm.totedge -= 1;
+    bm.lpool[l_f1] = BMLoop::default();
+    bm.lpool[l_f2] = BMLoop::default();
+    bm.totloop -= 2;
+    bm.fpool[f2] = BMFace::default();
+    bm.fpool[f2].l_first = BM_NIL;
+    bm.totface -= 1;
+    bm.elem_table_dirty = true;
+    bm.elem_index_dirty = true;
+    f1
+}
