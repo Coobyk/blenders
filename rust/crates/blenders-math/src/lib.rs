@@ -18,6 +18,7 @@ pub mod quaternion;
 pub mod solvers;
 pub mod statistics;
 pub mod vector;
+pub mod vector_inline;
 
 pub use euler::{Euler3, EulerOrder, EulerXYZ};
 pub use matrix::{Mat2, Mat3, Mat4};
