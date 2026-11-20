@@ -27,3 +27,4 @@ pub mod heap;
 pub mod heap_simple;
 pub mod linklist;
 pub mod rand;
+pub mod rct;
