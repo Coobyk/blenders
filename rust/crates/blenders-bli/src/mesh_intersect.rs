@@ -528,6 +528,12 @@ impl IMesh {
         self.face[f_index] = arena.add_face_full(new_vert, orig, new_edge_orig, new_is_intersect);
         false
     }
+    /// `IMesh::set_dirty_verts`.
+    pub fn set_dirty_verts(&mut self) {
+        self.vert.clear();
+        self.vert_to_index.clear();
+        self.vert_populated = false;
+    }
     /// `IMesh::remove_null_faces`.
     pub fn remove_null_faces(&mut self) {
         self.face.retain(|&f| f != NIL);
