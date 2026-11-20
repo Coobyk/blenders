@@ -2647,17 +2647,18 @@ pub fn ortho_basis(n: Vec3) -> (Vec3, Vec3) {
     }
 }
 
-/// `axis_dominant_v3_to_m3` — rotation taking +Z to `normal` (normalized).
+/// `axis_dominant_v3_to_m3` — basis matrix whose rows project onto (n1, n2, normal):
+/// `mul_v3_m3v3(mat, v)` = (v·n1, v·n2, v·n3). C fills rows then `transpose_m3`.
 pub fn axis_dominant_to_m3(normal: Vec3) -> Mat3 {
     let (n1, n2) = ortho_basis(normal);
-    Mat3::from_cols(n1, n2, normal)
+    Mat3::from_cols(n1, n2, normal).transposed()
 }
 
 /// `axis_dominant_v3_to_m3_negate`.
 pub fn axis_dominant_to_m3_negate(normal: Vec3) -> Mat3 {
     let z = -normal;
     let (n1, n2) = ortho_basis(z);
-    Mat3::from_cols(n1, n2, z)
+    Mat3::from_cols(n1, n2, z).transposed()
 }
 
 fn tri_signed_area(v1: Vec3, v2: Vec3, v3: Vec3, i: usize, j: usize) -> f32 {
