@@ -11,6 +11,7 @@
 pub mod construct;
 pub mod core;
 pub mod delete;
+pub mod interp;
 pub mod iterators;
 pub mod marking;
 pub mod partial_update;
