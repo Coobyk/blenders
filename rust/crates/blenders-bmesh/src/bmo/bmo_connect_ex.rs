@@ -141,7 +141,7 @@ fn bm_face_split_by_angle(
         if angle_cos < angle_limit_cos {
             let mut l_new = BM_NIL;
             let f_new = crate::mods::bm_face_split(
-                bm, f, l_a, l_b, Some(&mut l_new), None, false);
+                bm, f, l_a, l_b, Some(&mut l_new), false);
             if f_new != BM_NIL {
                 bmo_elem_flag_enable(bm, (BM_FACE, f), FACE_OUT);
                 bmo_elem_flag_enable(bm, (BM_FACE, f_new), FACE_OUT);
