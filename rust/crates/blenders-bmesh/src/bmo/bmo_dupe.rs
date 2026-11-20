@@ -4,7 +4,8 @@
 
 use std::collections::HashMap;
 use crate::operators::*;
-use crate::{BMesh, BMElemRef, BMEdge, BMFace, BMVert, BM_NIL, BM_EDGE, BM_FACE, BM_VERT};
+use crate::operators::BMElemRef;
+use crate::{BMesh, BM_NIL, BM_EDGE, BM_FACE, BM_VERT};
 
 const DUPE_INPUT: u8 = 1;
 const DUPE_NEW: u8 = 2;
@@ -54,7 +55,7 @@ fn bmo_edge_copy(
     }
     let e_dst_v1 = vhash[&bm_src.edge(e_src).v1];
     let e_dst_v2 = vhash[&bm_src.edge(e_src).v2];
-    let e_dst = crate::construct::bm_edge_create(bm_dst, e_dst_v1, e_dst_v2, None, 0);
+    let e_dst = crate::core::bm_edge_create(bm_dst, e_dst_v1, e_dst_v2, None, 0);
     slot_map_insert(op, true, "edge_map.out", (BM_EDGE, e_src), (BM_EDGE, e_dst));
     slot_map_insert(op, true, "edge_map.out", (BM_EDGE, e_dst), (BM_EDGE, e_src));
     if rlen < 2 {
@@ -92,7 +93,7 @@ fn bmo_face_copy(
         l_iter_src = bm_src.loo(l_iter_src).next;
         if l_iter_src == l_first_src { break; }
     }
-    let f_dst = crate::construct::bm_face_create(bm_dst, &vtar, &edar, None, 0);
+    let f_dst = crate::core::bm_face_create(bm_dst, &vtar, &edar, None, 0);
     slot_map_insert(op, true, "face_map.out", (BM_FACE, f_src), (BM_FACE, f_dst));
     slot_map_insert(op, true, "face_map.out", (BM_FACE, f_dst), (BM_FACE, f_src));
     bmo_elem_flag_enable(bm_dst, (BM_FACE, f_dst), DUPE_NEW);
@@ -152,7 +153,7 @@ fn bmo_mesh_copy(op: &mut BMOperator, bm_dst: &mut BMesh, bm_src: &mut BMesh) {
     /* faces */
     for f in crate::iterators::FacesOfMesh::new(bm_src).collect::<Vec<_>>() {
         if bmo_elem_flag_test(bm_src, (BM_FACE, f), DUPE_INPUT) {
-            for v in crate::iterators::VertsOfFace::new(bm_src, f) {
+            for v in crate::iterators::VertsOfFace::new(bm_src, f).collect::<Vec<_>>() {
                 if !bmo_elem_flag_test(bm_src, (BM_VERT, v), DUPE_DONE) {
                     bmo_vert_copy(op, bm_dst, v, &mut vhash);
                     bmo_elem_flag_enable(bm_src, (BM_VERT, v), DUPE_DONE);
@@ -194,10 +195,10 @@ const SPLIT_INPUT: u8 = 1;
 pub fn bmo_split_exec(bm: &mut BMesh, op: &mut BMOperator) {
     let use_only_faces = bmo_slot_bool_get(op, false, "use_only_faces");
     /* run duplicate on the same geom */
-    let mut dupeop = bmo_op_init(bm, crate::opdefines::OPDEF_DUPLICATE, op.flag);
+    let mut dupeop = bmo_op_init(bm, &crate::opdefines::OPDEF_DUPLICATE, op.flag);
     let geom: Vec<BMElemRef> = bmo_slot_buffer(op, false, "geom").to_vec();
     crate::operators::slot_get_mut(&mut dupeop.slots_in, "geom").buf = geom;
-    bmo_op_exec(bm, &mut dupeop);
+    bmo_op_exec(bm, &mut dupeop, crate::bmo::bmo_dupe::bmo_duplicate_exec);
     /* remap active face */
     if bm.act_face != BM_NIL {
         if let Some((ht, idx)) = bmo_slot_map_get(&dupeop, true, "face_map.out", (BM_FACE, bm.act_face)) {
@@ -249,5 +250,5 @@ pub fn bmo_split_exec(bm: &mut BMesh, op: &mut BMOperator) {
         bmo_elem_flag_enable(bm, (ht, idx), SPLIT_INPUT);
     }
     crate::delete::bmo_mesh_delete_oflag_context(bm, SPLIT_INPUT, crate::delete::DEL_FACES, None);
-    bmo_op_finish(bm, &mut dupeop);
+    bmo_op_finish(bm, dupeop);
 }

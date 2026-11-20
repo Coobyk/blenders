@@ -124,7 +124,7 @@ pub const OPDEF_REVERSE_FACES: BMOpDefine = BMOpDefine {
         ("flip_multires", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_reverse_faces_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -170,7 +170,7 @@ pub const OPDEF_MIRROR: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_mirror::bmo_mirror_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -311,7 +311,7 @@ pub const OPDEF_WELD_VERTS: BMOpDefine = BMOpDefine {
         ("average_vert_data", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_weld_verts_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1387,7 +1387,7 @@ pub const OPDEF_SYMMETRIZE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_mirror::bmo_symmetrize_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

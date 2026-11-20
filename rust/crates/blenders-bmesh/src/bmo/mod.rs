@@ -10,3 +10,6 @@ pub mod bmo_split_edges;
 pub mod bmo_unsubdivide;
 pub mod bmo_wireframe;
 pub mod bmo_bisect_plane;
+pub mod bmo_removedoubles;
+pub mod bmo_dupe;
+pub mod bmo_mirror;
