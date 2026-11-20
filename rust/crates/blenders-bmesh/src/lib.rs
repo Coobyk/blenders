@@ -27,6 +27,7 @@ pub mod operators;
 pub mod opdefines;
 pub mod tessellate;
 pub mod query;
+pub mod query_uv;
 pub mod structure;
 pub mod walkers;
 
