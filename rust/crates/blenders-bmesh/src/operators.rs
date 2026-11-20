@@ -100,7 +100,7 @@ fn slot_get<'a>(slots: &'a [BMOpSlot], name: &str) -> &'a BMOpSlot {
     let i = slot_index(slots, name).unwrap_or_else(|| panic!("BMO_slot_get: no slot '{name}'"));
     &slots[i]
 }
-fn slot_get_mut<'a>(slots: &'a mut Vec<BMOpSlot>, name: &str) -> &'a mut BMOpSlot {
+pub fn slot_get_mut<'a>(slots: &'a mut Vec<BMOpSlot>, name: &str) -> &'a mut BMOpSlot {
     let i = slot_index(slots, name).unwrap_or_else(|| panic!("BMO_slot_get: no slot '{name}'"));
     &mut slots[i]
 }
