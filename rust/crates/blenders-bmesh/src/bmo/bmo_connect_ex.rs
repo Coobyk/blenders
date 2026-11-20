@@ -37,9 +37,10 @@ fn bm_face_split_by_concave(bm: &mut BMesh, f_base: usize, eps: f32) -> bool {
                 let mut ok = true;
                 for &l in &[l0, l1] {
                     let p1 = bm.vert(bm.loo(l).v).co;
-                    let p2 = bm.vert(bm.loo(bm.loo(bm.loo(l).radial_next).next).next).v;
-                    let p3 = bm.vert(bm.loo(l).prev).v;
-                    let cross = (p2 - p1).cross(bm.vert(p3).co - p1);
+                    let l_rn = bm.loo(bm.loo(bm.loo(l).radial_next).next).next;
+                    let p2 = bm.vert(bm.loo(l_rn).v).co;
+                    let p3 = bm.vert(bm.loo(bm.loo(l).prev).v).co;
+                    let cross = (p2 - p1).cross(p3 - p1);
                     if cross.dot(normal) <= eps {
                         ok = false;
                         break;
@@ -162,7 +163,7 @@ pub fn bmo_connect_verts_nonplanar_exec(bm: &mut BMesh, op: &mut BMOperator) {
     while let Some(f) = fstack.pop() {
         if let Some((f0, f1)) = bm_face_split_by_angle(bm, f, angle_limit_cos) {
             for fp in [f0, f1] {
-                crate::normals::bm_face_normal_update(bm, fp);
+                crate::normals::bm_face_calc_normals(bm, fp);
                 if bm.face(fp).len > 3 {
                     fstack.push(fp);
                 }
