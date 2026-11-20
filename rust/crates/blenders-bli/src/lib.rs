@@ -77,3 +77,4 @@ pub mod memory_cache;
 pub mod memblock;
 pub mod resource_scope;
 pub mod subprocess;
+pub mod mmap;
