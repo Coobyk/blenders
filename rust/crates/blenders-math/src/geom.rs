@@ -2251,3 +2251,237 @@ pub fn isect_axial_line_segment_tri(
     }
     Some(lambda)
 }
+
+/// `isect_line_line_epsilon_v3` — 0 none / 1 coplanar point / 2 nearest points.
+pub fn isect_line_line_epsilon(
+    v1: Vec3,
+    v2: Vec3,
+    v3: Vec3,
+    v4: Vec3,
+    epsilon: f32,
+) -> (i8, Vec3, Vec3) {
+    let mut c = v3 - v1;
+    let mut a = v2 - v1;
+    let mut b = v4 - v3;
+    let mut ab = a.cross(b);
+    let d = c.dot(ab);
+    let div = ab.dot(ab);
+
+    // test zero length line
+    if div == 0.0 {
+        return (0, Vec3::ZERO, Vec3::ZERO);
+    }
+    // test if the two lines are coplanar
+    if d.abs() <= epsilon {
+        let cb = c.cross(b);
+        let i1 = v1 + a * (cb.dot(ab) / div);
+        return (1, i1, i1);
+    }
+
+    let mut t = v1 - v3;
+    let n = a.cross(b);
+    // project_v3_v3v3(t, t, n)
+    t = t - n * (t.dot(n) / n.dot(n));
+
+    let v3t = v3 + t;
+    let v4t = v4 + t;
+    c = v3t - v1;
+    a = v2 - v1;
+    b = v4t - v3t;
+    ab = a.cross(b);
+    let cb = c.cross(b);
+    let i1 = v1 + a * (cb.dot(ab) / ab.dot(ab));
+    let i2 = i1 - t;
+    (2, i1, i2)
+}
+
+/// `isect_line_line_v3`.
+pub fn isect_line_line(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> (i8, Vec3, Vec3) {
+    isect_line_line_epsilon(v1, v2, v3, v4, 0.000001)
+}
+
+/// `isect_line_line_strict_v3` — segment-segment crossing point + lambda.
+pub fn isect_line_line_strict(
+    v1: Vec3,
+    v2: Vec3,
+    v3: Vec3,
+    v4: Vec3,
+) -> Option<(Vec3, f32)> {
+    const EPSILON: f32 = 0.000001;
+    let c = v3 - v1;
+    let a = v2 - v1;
+    let b = v4 - v3;
+    let ab = a.cross(b);
+    let d = c.dot(ab);
+    let div = ab.dot(ab);
+    if div == 0.0 || d.abs() < EPSILON {
+        return None;
+    }
+    let cb = c.cross(b);
+    let ca = c.cross(a);
+    let f1 = cb.dot(ab) / div;
+    let f2 = ca.dot(ab) / div;
+    if (0.0..=1.0).contains(&f1) && (0.0..=1.0).contains(&f2) {
+        return Some((v1 + a * f1, f1));
+    }
+    None
+}
+
+/// `isect_ray_ray_epsilon_v3` — `(lambda_a, lambda_b)`.
+pub fn isect_ray_ray_epsilon(
+    ray_origin_a: Vec3,
+    ray_direction_a: Vec3,
+    ray_origin_b: Vec3,
+    ray_direction_b: Vec3,
+    epsilon: f32,
+) -> Option<(f32, f32)> {
+    let n = ray_direction_b.cross(ray_direction_a);
+    let nlen = n.length_squared();
+    if nlen < epsilon {
+        return None; // parallel
+    }
+    let t = ray_origin_b - ray_origin_a;
+    let c = n - t;
+    let la = c.cross(ray_direction_b).dot(n) / nlen;
+    let lb = c.cross(ray_direction_a).dot(n) / nlen;
+    Some((la, lb))
+}
+
+/// `isect_ray_ray_v3`.
+pub fn isect_ray_ray(
+    ray_origin_a: Vec3,
+    ray_direction_a: Vec3,
+    ray_origin_b: Vec3,
+    ray_direction_b: Vec3,
+) -> Option<(f32, f32)> {
+    isect_ray_ray_epsilon(
+        ray_origin_a,
+        ray_direction_a,
+        ray_origin_b,
+        ray_direction_b,
+        f32::MIN,
+    )
+}
+
+/// `isect_aabb_aabb_v3`.
+pub fn isect_aabb_aabb(min1: Vec3, max1: Vec3, min2: Vec3, max2: Vec3) -> bool {
+    min1.x < max2.x
+        && min1.y < max2.y
+        && min1.z < max2.z
+        && min2.x < max1.x
+        && min2.y < max1.y
+        && min2.z < max1.z
+}
+
+/// `IsectRayAABB_Precalc`.
+#[derive(Debug, Clone, Copy)]
+pub struct IsectRayAabbPrecalc {
+    pub ray_origin: Vec3,
+    pub ray_inv_dir: Vec3,
+    pub sign: [usize; 3],
+}
+
+/// `isect_ray_aabb_v3_precalc`.
+pub fn isect_ray_aabb_precalc(ray_origin: Vec3, ray_direction: Vec3) -> IsectRayAabbPrecalc {
+    let inv = Vec3::new(
+        1.0 / ray_direction.x,
+        1.0 / ray_direction.y,
+        1.0 / ray_direction.z,
+    );
+    IsectRayAabbPrecalc {
+        ray_origin,
+        ray_inv_dir: inv,
+        sign: [
+            (inv.x < 0.0) as usize,
+            (inv.y < 0.0) as usize,
+            (inv.z < 0.0) as usize,
+        ],
+    }
+}
+
+/// `isect_ray_aabb_v3` — ray-AABB slab test, returns `tmin`.
+pub fn isect_ray_aabb(data: &IsectRayAabbPrecalc, bb_min: Vec3, bb_max: Vec3) -> Option<f32> {
+    let bbox = [bb_min, bb_max];
+    let mut tmin = (bbox[data.sign[0]][0] - data.ray_origin[0]) * data.ray_inv_dir[0];
+    let mut tmax = (bbox[1 - data.sign[0]][0] - data.ray_origin[0]) * data.ray_inv_dir[0];
+    let tymin = (bbox[data.sign[1]][1] - data.ray_origin[1]) * data.ray_inv_dir[1];
+    let tymax = (bbox[1 - data.sign[1]][1] - data.ray_origin[1]) * data.ray_inv_dir[1];
+    if tmin > tymax || tymin > tmax {
+        return None;
+    }
+    tmin = tymin.max(tmin);
+    tmax = tymax.min(tmax);
+    let tzmin = (bbox[data.sign[2]][2] - data.ray_origin[2]) * data.ray_inv_dir[2];
+    let tzmax = (bbox[1 - data.sign[2]][2] - data.ray_origin[2]) * data.ray_inv_dir[2];
+    if tmin > tzmax || tzmin > tmax {
+        return None;
+    }
+    tmin = tzmin.max(tmin);
+    Some(tmin)
+}
+
+/// `isect_ray_aabb_v3_simple` — `(tmin, tmax)`.
+pub fn isect_ray_aabb_simple(
+    orig: Vec3,
+    dir: Vec3,
+    bb_min: Vec3,
+    bb_max: Vec3,
+) -> Option<(f32, f32)> {
+    let invdir = |d: f32| -> f64 {
+        if d > 1e-35 || d < -1e-35 {
+            1.0 / d as f64
+        } else {
+            f64::MAX
+        }
+    };
+    let (ix, iy, iz) = (invdir(dir.x), invdir(dir.y), invdir(dir.z));
+    let t = [
+        (bb_min.x - orig.x) as f64 * ix,
+        (bb_max.x - orig.x) as f64 * ix,
+        (bb_min.y - orig.y) as f64 * iy,
+        (bb_max.y - orig.y) as f64 * iy,
+        (bb_min.z - orig.z) as f64 * iz,
+        (bb_max.z - orig.z) as f64 * iz,
+    ];
+    let hit_min = t[0].min(t[1]).max(t[2].min(t[3])).max(t[4].min(t[5])) as f32;
+    let hit_max = t[0].max(t[1]).min(t[2].max(t[3])).min(t[4].max(t[5])) as f32;
+    if hit_max < 0.0 || hit_min > hit_max {
+        return None;
+    }
+    Some((hit_min, hit_max))
+}
+
+/// `closest_to_line_v2_db` — double-precision variant.
+pub fn closest_to_line_v2_db(p: [f64; 2], l1: [f64; 2], l2: [f64; 2]) -> ([f64; 2], f64) {
+    let u = [l2[0] - l1[0], l2[1] - l1[1]];
+    let h = [p[0] - l1[0], p[1] - l1[1]];
+    let denom = u[0] * u[0] + u[1] * u[1];
+    if denom == 0.0 {
+        return (l1, 0.0);
+    }
+    let lambda = (u[0] * h[0] + u[1] * h[1]) / denom;
+    ([l1[0] + u[0] * lambda, l1[1] + u[1] * lambda], lambda)
+}
+
+/// `line_point_factor_v2_ex`.
+pub fn line_point_factor_v2_ex(
+    p: Vec2,
+    l1: Vec2,
+    l2: Vec2,
+    epsilon: f32,
+    fallback: f32,
+) -> f32 {
+    let u = l2 - l1;
+    let h = p - l1;
+    let dot = u.length_squared();
+    if dot > epsilon {
+        u.dot(h) / dot
+    } else {
+        fallback
+    }
+}
+
+/// `line_point_factor_v2`.
+pub fn line_point_factor_v2(p: Vec2, l1: Vec2, l2: Vec2) -> f32 {
+    line_point_factor_v2_ex(p, l1, l2, 0.0, 0.0)
+}
