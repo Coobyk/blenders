@@ -2,7 +2,6 @@
 //! The context objects are defined per-subsystem in C++; here we port the
 //! hash, stack walk and printing machinery.
 
-use crate::hash_mm3;
 
 /// `ComputeContextHash` — 128-bit hash (XXH128 in C++; MM3-derived here,
 /// same role in the protocol).
@@ -20,7 +19,6 @@ impl ComputeContextHash {
             | ((crate::hash_mm3::hash_mm3(data, 1) as u64) << 32);
         let v2 = crate::hash_mm3::hash_mm3(data, 2) as u64
             | ((crate::hash_mm3::hash_mm3(data, 3) as u64) << 32);
-        let _ = hash_mm3;
         ComputeContextHash { v1, v2 }
     }
     /// `operator<<` — hex dump.
