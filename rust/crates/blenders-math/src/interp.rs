@@ -647,7 +647,7 @@ pub fn ewa_filter(
 
     let rmin = (if intpol { 1.5625f32 } else { 0.765625 }) / ff2;
     let (ar, br, th, _ecc) = ewa_imp2radangle(a, b, c, f);
-    let mut a2 = ar * ar;
+    let a2 = ar * ar;
     let mut b2 = br * br;
     if b2 < rmin {
         if a2 < rmin {
