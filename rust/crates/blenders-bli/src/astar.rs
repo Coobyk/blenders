@@ -132,10 +132,12 @@ pub fn astar_graph_solve<N, T>(
     max_steps: i32,
 ) -> bool {
     use crate::bitmap;
-    let done_nodes = &mut r_solution.done_nodes;
+    {
+        let done_nodes = &mut r_solution.done_nodes;
+        bitmap::bitmap_set_all(done_nodes, false, graph.node_num);
+    }
     r_solution.steps = 0;
     r_solution.prev_nodes[node_index_src as usize] = -1;
-    bitmap::bitmap_set_all(done_nodes, false, graph.node_num);
     r_solution.g_costs.fill(f32::MAX);
     r_solution.g_costs[node_index_src as usize] = 0.0;
     r_solution.g_steps[node_index_src as usize] = 0;
@@ -146,7 +148,7 @@ pub fn astar_graph_solve<N, T>(
     let f = f_cost_cb(graph, r_solution, None, -1, node_index_src, node_index_dst);
     todo_nodes.push(HeapEntry(f, node_index_src));
     while let Some(HeapEntry(_, node_curr_idx)) = todo_nodes.pop() {
-        if bitmap::bitmap_get(done_nodes, node_curr_idx as usize) {
+        if bitmap::bitmap_get(&r_solution.done_nodes, node_curr_idx as usize) {
             continue;
         }
         if max_steps != 0 && r_solution.g_steps[node_curr_idx as usize] > max_steps {
@@ -156,12 +158,12 @@ pub fn astar_graph_solve<N, T>(
             r_solution.steps = r_solution.g_steps[node_curr_idx as usize] + 1;
             return true;
         }
-        bitmap::bitmap_set(done_nodes, node_curr_idx as usize);
+        bitmap::bitmap_set(&mut r_solution.done_nodes, node_curr_idx as usize);
         let node_curr = &graph.nodes[node_curr_idx as usize];
         for &link_idx in &node_curr.neighbor_links {
             let link = &graph.links[link_idx];
             let node_next_idx = astar_node_link_other_node(link, node_curr_idx);
-            if !bitmap::bitmap_get(done_nodes, node_next_idx as usize) {
+            if !bitmap::bitmap_get(&r_solution.done_nodes, node_next_idx as usize) {
                 let g_cst = r_solution.g_costs[node_curr_idx as usize] + link.cost;
                 if g_cst < r_solution.g_costs[node_next_idx as usize] {
                     r_solution.prev_nodes[node_next_idx as usize] = node_curr_idx;
