@@ -122,3 +122,4 @@ pub mod array_store_rle;
 pub mod bitmap_draw_2d;
 pub mod kdtree;
 pub mod structure_of_array_conversion;
+pub mod index_mask_expression;
