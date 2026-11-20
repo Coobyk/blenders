@@ -14,6 +14,7 @@ pub mod delete;
 pub mod iterators;
 pub mod marking;
 pub mod partial_update;
+pub mod polygon;
 pub mod duplicate;
 pub mod edgeloop;
 pub mod mesh;
