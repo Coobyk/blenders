@@ -12,3 +12,6 @@ mod tests {
         assert_eq!(crate::hash_md5::hash_md5_to_hexdigest(&d), "900150983cd24fb0d6963f7d28e17f72");
     }
 }
+pub mod endian;
+pub mod hash_tables;
+pub mod time;
