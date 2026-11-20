@@ -152,8 +152,8 @@ fn bm_vert_collapse_is_degenerate(bm: &BMesh, v: usize) -> bool {
     if crate::edgenet::edge_is_wire(bm, e0) || crate::edgenet::edge_is_wire(bm, e1) {
         return false;
     }
-    let v0 = bm_edge_other_vert(bm, e0, v);
-    let v1 = bm_edge_other_vert(bm, e1, v);
+    let v0 = crate::structure::bm_edge_other_vert(bm, e0, v);
+    let v1 = crate::structure::bm_edge_other_vert(bm, e1, v);
     if blenders_math::vector::cos_v3v3v3(bm.vert(v0).co, bm.vert(v).co, bm.vert(v1).co).abs()
         < 1.0 - f32::EPSILON
     {
@@ -204,17 +204,17 @@ pub fn bm_mesh_decimate_dissolve_ex(
             std::collections::HashMap::new();
         for e_iter in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
             let wire = crate::edgenet::edge_is_wire(bm, e_iter);
-            bm.pool[bm.edge(e_iter).head.arena_index()].hflag_mut_set(
-                if wire { crate::BM_ELEM_TAG } else { 0 }, crate::BM_ELEM_TAG);
+            if wire { bm.epool[e_iter].head.hflag |= crate::BM_ELEM_TAG; }
+            else { bm.epool[e_iter].head.hflag &= !crate::BM_ELEM_TAG; }
         }
         for (i, &e) in einput.iter().enumerate() {
             let cost = bm_edge_calc_dissolve_error(bm, e, delimit);
             eheap_table[i] = Some(eheap.insert(cost, e));
             e_index.insert(e, i);
         }
-        while let Some(&e) = eheap.top() {
-            if eheap.top_cost() >= angle_limit_cos_neg { break; }
-            let node = eheap.top_node().unwrap();
+        while let Some(node) = eheap.top() {
+            if eheap.node_value(node) >= angle_limit_cos_neg { break; }
+            let e = *eheap.node_ptr(node);
             let i = *e_index.get(&e).unwrap_or(&usize::MAX);
             let mut f_new: usize = BM_NIL;
             if bm_edge_is_manifold(bm, e) {
@@ -224,9 +224,9 @@ pub fn bm_mesh_decimate_dissolve_ex(
                 if f_new != BM_NIL {
                     eheap.remove(node);
                     if i != usize::MAX { eheap_table[i] = None; }
-                    crate::normals::bm_face_calc_normals(bm);
+                    crate::normals::bm_face_calc_normals(bm, f_new);
                     if oflag_out != 0 {
-                        bm.face_mut(f_new).head.oflag |= oflag_out;
+                        bm.fpool[f_new].head.api_flag |= oflag_out;
                     }
                     let l_first = bm.face(f_new).l_first;
                     let mut l_iter = l_first;
@@ -235,7 +235,7 @@ pub fn bm_mesh_decimate_dissolve_ex(
                         if let Some(&j) = e_index.get(&le) {
                             if let Some(hn) = eheap_table[j] {
                                 let cost = bm_edge_calc_dissolve_error(bm, le, delimit);
-                                eheap.update(hn, cost);
+                                eheap.node_value_update(hn, cost);
                             }
                         }
                         l_iter = bm.loo(l_iter).next;
@@ -244,15 +244,15 @@ pub fn bm_mesh_decimate_dissolve_ex(
                 }
             }
             if f_new == BM_NIL {
-                eheap.update(node, COST_INVALID);
+                eheap.node_value_update(node, COST_INVALID);
             }
         }
         /* kill wire edges marked non-TAG, and verts left dangling */
-        crate::indexing::bm_mesh_elem_index_ensure(bm, 1 << crate::BM_VERT);
-        let mut vert_reverse_lookup = vec![usize::MAX; bm.totvert];
+        bm.elem_index_dirty = true;
+        let mut vert_reverse_lookup = vec![usize::MAX; bm.totvert as usize];
         for (i, v) in vinput.iter().enumerate() {
             if let Some(v) = v {
-                vert_reverse_lookup[bm.vert(*v).head.index] = i;
+                vert_reverse_lookup[bm.vert(*v).head.index as usize] = i;
             }
         }
         let earray: Vec<usize> = crate::iterators::EdgesOfMesh::new(bm).collect();
@@ -264,7 +264,7 @@ pub fn bm_mesh_decimate_dissolve_ex(
                 bm_edge_kill(bm, e_iter);
                 for v in [v1, v2] {
                     if bm.vert(v).e == BM_NIL {
-                        let idx = bm.vert(v).head.index;
+                        let idx = bm.vert(v).head.index as usize;
                         let r = vert_reverse_lookup[idx];
                         if r != usize::MAX { vinput[r] = None; }
                         bm_vert_kill(bm, v);
@@ -279,7 +279,7 @@ pub fn bm_mesh_decimate_dissolve_ex(
             if let Some(v) = v {
                 if bm_vert_is_edge_pair(bm, *v) {
                     let e = bm.vert(*v).e;
-                    bm_vert_collapse_edge(bm, e, *v, true, true, true);
+                    crate::mods::bm_vert_collapse_edge(bm, e, *v, true, true, true);
                 }
             }
         }
@@ -297,14 +297,14 @@ pub fn bm_mesh_decimate_dissolve_ex(
                 v_index.insert(*v, i);
             }
         }
-        while let Some(&v) = vheap.top() {
-            if vheap.top_cost() >= angle_limit { break; }
-            let node = vheap.top_node().unwrap();
+        while let Some(node) = vheap.top() {
+            if vheap.node_value(node) >= angle_limit { break; }
+            let v = *vheap.node_ptr(node);
             let i = *v_index.get(&v).unwrap_or(&usize::MAX);
             let mut e_new: usize = BM_NIL;
             if !bm_vert_collapse_is_degenerate(bm, v) {
                 let e = bm.vert(v).e;
-                e_new = bm_vert_collapse_edge(bm, e, v, true, true, true);
+                e_new = crate::mods::bm_vert_collapse_edge(bm, e, v, true, true, true);
                 if e_new != BM_NIL {
                     vheap.remove(node);
                     if i != usize::MAX { vheap_table[i] = None; }
@@ -312,18 +312,17 @@ pub fn bm_mesh_decimate_dissolve_ex(
                         let l_first = bm.edge(e_new).l;
                         let mut l_iter = l_first;
                         loop {
+                            crate::normals::bm_face_calc_normals(bm, bm.loo(l_iter).f);
                             l_iter = bm.loo(l_iter).radial_next;
                             if l_iter == l_first { break; }
                         }
-                        crate::normals::bm_face_calc_normals(bm);
                     }
-                    for v_iter in crate::iterators::VertsOfEdge::new(bm, e_new)
-                        .collect::<Vec<_>>()
+                    for v_iter in [bm.edge(e_new).v1, bm.edge(e_new).v2]
                     {
                         if let Some(&j) = v_index.get(&v_iter) {
                             if let Some(hn) = vheap_table[j] {
                                 let cost = bm_vert_edge_face_angle(bm, v_iter, delimit);
-                                vheap.update(hn, cost);
+                                vheap.node_value_update(hn, cost);
                             }
                         }
                     }
@@ -341,7 +340,7 @@ pub fn bm_mesh_decimate_dissolve_ex(
                                         if vheap.node_value(hn) == COST_INVALID {
                                             let cost = bm_vert_edge_face_angle(
                                                 bm, cv, delimit);
-                                            vheap.update(hn, cost);
+                                            vheap.node_value_update(hn, cost);
                                         }
                                     }
                                 }
@@ -355,7 +354,7 @@ pub fn bm_mesh_decimate_dissolve_ex(
                 }
             }
             if e_new == BM_NIL {
-                vheap.update(node, COST_INVALID);
+                vheap.node_value_update(node, COST_INVALID);
             }
         }
     }
