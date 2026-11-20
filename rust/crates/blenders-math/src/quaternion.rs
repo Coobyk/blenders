@@ -2,7 +2,8 @@
 //!
 //! `Quaternion` stores `(w, x, y, z)` exactly like `QuaternionBase`.
 
-use std::ops::{Index, IndexMut, Mul, Neg};
+use std::ops::{Add, Index, IndexMut, Mul, Neg};
+use crate::base::FLT_EPSILON;
 
 use crate::base;
 use crate::matrix::Mat3;
@@ -245,6 +246,19 @@ impl Quaternion {
 }
 
 /// `mul_qt_qtqt(a, b)` — Hamilton product; `a ⊗ b` applies `b` first.
+impl Add for Quaternion {
+    type Output = Quaternion;
+    #[inline]
+    fn add(self, rhs: Quaternion) -> Quaternion {
+        Quaternion {
+            w: self.w + rhs.w,
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
 impl Mul<Quaternion> for Quaternion {
     type Output = Quaternion;
     #[inline]
@@ -520,4 +534,328 @@ impl Quaternion {
         q = q.normalized();
         q
     }
+}
+
+/* ---- math_rotation_c.cc: quaternion angle/track/interp functions ---- */
+
+/// `rotation_between_quats_to_quat` — q = q1^-1 * q2.
+pub fn rotation_between_quats_to_quat(q1: Quaternion, q2: Quaternion) -> Quaternion {
+    let mut tquat = q1.conjugated();
+    tquat = tquat * (1.0 / tquat.dot(tquat));
+    tquat * q2
+}
+
+/// `quat_split_swing_and_twist` — returns (twist_angle, Option<swing>, Option<twist>).
+pub fn quat_split_swing_and_twist(
+    q_in: Quaternion,
+    axis: usize,
+    want_swing: bool,
+    want_twist: bool,
+) -> (f32, Option<Quaternion>, Option<Quaternion>) {
+    debug_assert!(axis <= 2);
+    let q = if q_in.w < 0.0 { -q_in } else { q_in };
+    let t = q_in_axis(q, axis).atan2(q.w);
+
+    let mut swing = None;
+    let mut twist = None;
+    if want_swing || want_twist {
+        let (sin_t, cos_t) = t.sin_cos();
+        if want_swing {
+            let mut twist_inv = Quaternion {
+                w: cos_t,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            twist_inv[axis + 1] = -sin_t;
+            swing = Some(q * twist_inv);
+        }
+        if want_twist {
+            let mut tq = Quaternion {
+                w: cos_t,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            tq[axis + 1] = sin_t;
+            twist = Some(tq);
+        }
+    }
+    (2.0 * t, swing, twist)
+}
+
+fn q_in_axis(q: Quaternion, axis: usize) -> f32 {
+    q[axis + 1]
+}
+
+/// `angle_normalized_qt` — twice acos of w (unit quaternion).
+pub fn angle_normalized(self_q: Quaternion) -> f32 {
+    2.0 * self_q.w.clamp(-1.0, 1.0).acos()
+}
+
+/// `angle_qt`.
+pub fn angle(q: Quaternion) -> f32 {
+    angle_normalized(q.normalized())
+}
+
+/// `angle_normalized_qtqt` — angle between two unit quaternions.
+pub fn angle_normalized_qtqt(q1: Quaternion, q2: Quaternion) -> f32 {
+    angle_normalized(rotation_between_quats_to_quat(q1, q2))
+}
+
+/// `angle_qtqt`.
+pub fn angle_qtqt(q1: Quaternion, q2: Quaternion) -> f32 {
+    angle_normalized_qtqt(q1.normalized(), q2.normalized())
+}
+
+/// `angle_signed_normalized_qt`.
+pub fn angle_signed_normalized(q: Quaternion) -> f32 {
+    if q.w >= 0.0 {
+        2.0 * q.w.clamp(-1.0, 1.0).acos()
+    } else {
+        -2.0 * (-q.w).clamp(-1.0, 1.0).acos()
+    }
+}
+
+/// `angle_signed_normalized_qtqt`.
+pub fn angle_signed_normalized_qtqt(q1: Quaternion, q2: Quaternion) -> f32 {
+    if q1.dot(q2) >= 0.0 {
+        angle_normalized_qtqt(q1, q2)
+    } else {
+        -angle_normalized_qtqt(q1, -q2)
+    }
+}
+
+/// `angle_signed_qt`.
+pub fn angle_signed_qt(q: Quaternion) -> f32 {
+    angle_signed_normalized(q.normalized())
+}
+
+/// `angle_signed_qtqt`.
+pub fn angle_signed_qtqt(q1: Quaternion, q2: Quaternion) -> f32 {
+    if q1.dot(q2) >= 0.0 {
+        angle_qtqt(q1, q2)
+    } else {
+        -angle_qtqt(q1, -q2)
+    }
+}
+
+/// `vec_to_quat` — quaternion aligning `axis` of `vec` to point along +axis
+/// with `upflag` orientation. `axis` 0-2 = +X/Y/Z, 3-5 = -X/Y/Z.
+pub fn vec_to_quat(vec: Vec3, mut axis: u8, upflag: u8) -> Quaternion {
+    const EPS: f32 = 1e-4;
+    let len = vec.length();
+    if len == 0.0 {
+        return Quaternion::IDENTITY;
+    }
+    let tvec = if axis > 2 {
+        axis -= 3;
+        vec
+    } else {
+        -vec
+    };
+    let (mut nor, co_raw) = match axis {
+        0 => {
+            let n = Vec3::new(0.0, -tvec.z, tvec.y);
+            (
+                if tvec.y.abs() + tvec.z.abs() < EPS {
+                    Vec3::new(n.x, 1.0, n.z)
+                } else {
+                    n
+                },
+                tvec.x,
+            )
+        }
+        1 => {
+            let n = Vec3::new(tvec.z, 0.0, -tvec.x);
+            (
+                if tvec.x.abs() + tvec.z.abs() < EPS {
+                    Vec3::new(n.x, n.y, 1.0)
+                } else {
+                    n
+                },
+                tvec.y,
+            )
+        }
+        _ => {
+            let n = Vec3::new(-tvec.y, tvec.x, 0.0);
+            (
+                if tvec.x.abs() + tvec.y.abs() < EPS {
+                    Vec3::new(1.0, n.y, n.z)
+                } else {
+                    n
+                },
+                tvec.z,
+            )
+        }
+    };
+    let co = co_raw / len;
+    nor.normalize();
+    let mut q = Quaternion::from_axis_angle(AxisAngle {
+        axis: nor,
+        angle: co.clamp(-1.0, 1.0).acos(),
+    });
+    if axis != upflag {
+        let mat = q.to_mat3();
+        let fp = mat[2];
+        let angle = match (axis, upflag) {
+            (0, 1) => 0.5 * fp.z.atan2(fp.y),
+            (0, _) => -0.5 * fp.y.atan2(fp.z),
+            (1, 0) => -0.5 * fp.z.atan2(fp.x),
+            (1, _) => 0.5 * fp.x.atan2(fp.z),
+            (2, 0) => 0.5 * (-fp.y).atan2(-fp.x),
+            _ => -0.5 * (-fp.x).atan2(-fp.y),
+        };
+        let si = angle.sin() / len;
+        let q2 = Quaternion {
+            w: angle.cos(),
+            x: tvec.x * si,
+            y: tvec.y * si,
+            z: tvec.z * si,
+        };
+        q = q2 * q;
+    }
+    q
+}
+
+/// `interp_qt_qtqt` — slerp with shortest-arc correction.
+pub fn interp_qt(a: Quaternion, b: Quaternion, t: f32) -> Quaternion {
+    let mut cosom = a.dot(b);
+    let quat = if cosom < 0.0 {
+        cosom = -cosom;
+        -a
+    } else {
+        a
+    };
+    let (w0, w1) = crate::vector::interp_dot_slerp(t, cosom);
+    quat * w0 + b * w1
+}
+
+/// `add_qt_qtqt` — `a + t*b` componentwise.
+pub fn add_qt_scaled(a: Quaternion, b: Quaternion, t: f32) -> Quaternion {
+    a + b * t
+}
+
+/// `tri_to_quat_ex` — quaternion from triangle + precomputed normal.
+pub fn tri_to_quat_ex(v1: Vec3, v2: Vec3, no_orig: Vec3) -> Quaternion {
+    let vec = no_orig;
+    let mut n = Vec3::new(vec.y, -vec.x, 0.0);
+    n.normalize();
+    if n.x == 0.0 && n.y == 0.0 {
+        n.x = 1.0;
+    }
+    let angle = -0.5 * vec.z.clamp(-1.0, 1.0).acos();
+    let (si, co) = angle.sin_cos();
+    let q1 = Quaternion {
+        w: co,
+        x: n.x * si,
+        y: n.y * si,
+        z: 0.0,
+    };
+    let mat = q1.to_mat3();
+    let imat = mat.inverted().unwrap_or(mat);
+    let mut vec2 = imat * (v2 - v1);
+    vec2.z = 0.0;
+    vec2.normalize();
+    let angle2 = 0.5 * vec2.y.atan2(vec2.x);
+    let (si2, co2) = angle2.sin_cos();
+    let q2 = Quaternion {
+        w: co2,
+        x: 0.0,
+        y: 0.0,
+        z: si2,
+    };
+    q1 * q2
+}
+
+/// `tri_to_quat` — returns (quat, face_normal_length).
+pub fn tri_to_quat(a: Vec3, b: Vec3, c: Vec3) -> (Quaternion, f32) {
+    let (n, len) = crate::geom::normal_tri(a, b, c);
+    (tri_to_quat_ex(a, b, n), len)
+}
+
+/// `sin_cos_from_fraction` — exact circle symmetry for integer fractions.
+pub fn sin_cos_from_fraction(numerator: i32, denominator: i32) -> (f32, f32) {
+    let mut numerator = numerator * 8;
+    let denominator = denominator * 8;
+    let octant = numerator / denominator;
+    let mut cos_sign = 1.0f32;
+    let mut swap = false;
+    match octant {
+        0 => {}
+        1 | 2 => {
+            numerator = denominator / 4 - numerator;
+            swap = true;
+        }
+        3 | 4 => {
+            numerator = denominator / 2 - numerator;
+            cos_sign = -1.0;
+        }
+        5 | 6 => {
+            numerator -= denominator * 3 / 4;
+            swap = true;
+            cos_sign = -1.0;
+        }
+        _ => {
+            numerator -= denominator;
+        }
+    }
+    let angle = 2.0 * std::f32::consts::PI * (numerator as f32 / denominator as f32);
+    let (s, c) = (angle.sin(), angle.cos() * cos_sign);
+    if swap {
+        (c, s)
+    } else {
+        (s, c)
+    }
+}
+
+/// `print_qt` — debug print.
+pub fn print_qt(s: &str, q: Quaternion) {
+    println!("{}: {:.3} {:.3} {:.3} {:.3}", s, q.w, q.x, q.y, q.z);
+}
+
+/// `angle_to_mat2` — 2D rotation matrix.
+pub fn angle_to_mat2(angle: f32) -> crate::matrix::Mat2 {
+    crate::matrix::Mat2::rotation(angle)
+}
+
+/// `rotation_between_vecs_to_mat3` — matrix rotating unit `v1` to unit `v2`.
+pub fn rotation_between_vecs_to_mat3(v1: Vec3, v2: Vec3) -> Mat3 {
+    let mut axis = v1.cross(v2);
+    let angle_sin = axis.normalize_and_get_length();
+    let angle_cos = v1.dot(v2);
+    let (axis, s, c) = if angle_sin > FLT_EPSILON {
+        (axis, angle_sin, angle_cos)
+    } else if angle_cos > 0.0 {
+        return Mat3::IDENTITY;
+    } else {
+        let mut ax = crate::vector::ortho_v3(v1);
+        ax.normalize();
+        (ax, 0.0, -1.0)
+    };
+    axis_angle_normalized_to_mat3_ex(axis, s, c)
+}
+
+/// `axis_angle_normalized_to_mat3_ex` — rotation matrix from unit axis with
+/// precomputed sin/cos.
+pub fn axis_angle_normalized_to_mat3_ex(axis: Vec3, angle_sin: f32, angle_cos: f32) -> Mat3 {
+    let nsi = 1.0 - angle_cos;
+    let (x, y, z) = (axis.x, axis.y, axis.z);
+    Mat3::from_cols(
+        Vec3::new(
+            nsi * x * x + angle_cos,
+            nsi * x * y + angle_sin * z,
+            nsi * x * z - angle_sin * y,
+        ),
+        Vec3::new(
+            nsi * x * y - angle_sin * z,
+            nsi * y * y + angle_cos,
+            nsi * y * z + angle_sin * x,
+        ),
+        Vec3::new(
+            nsi * x * z + angle_sin * y,
+            nsi * y * z - angle_sin * x,
+            nsi * z * z + angle_cos,
+        ),
+    )
 }
