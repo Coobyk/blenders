@@ -120,3 +120,4 @@ pub mod task_pool;
 pub mod math_interp;
 pub mod array_store_rle;
 pub mod bitmap_draw_2d;
+pub mod kdtree;
