@@ -122,7 +122,7 @@ pub fn bmo_planar_faces_exec(bm: &mut BMesh, op: &mut BMOperator) {
     for &(_, f) in &slot_faces {
         if bm.face(f).len == 3 { continue; }
         faces_center.insert(f, crate::polygon::bm_face_calc_center_median_weighted(bm, f));
-        for l in crate::iterators::LoopsOfFace::new(bm, f) {
+        for l in crate::iterators::LoopsOfFace::new(bm, f).collect::<Vec<_>>() {
             let v = bm.loo(l).v;
             if !bmo_elem_flag_test(bm, (BM_VERT, v), ELE_VERT_ADJUST) {
                 bmo_elem_flag_enable(bm, (BM_VERT, v), ELE_VERT_ADJUST);
