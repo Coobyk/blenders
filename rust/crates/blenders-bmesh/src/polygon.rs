@@ -803,3 +803,166 @@ pub fn bm_face_as_array_loop_quad(bm: &BMesh, f: usize) -> [usize; 4] {
 
 /// keep face type referenced.
 const _: Option<fn(&BMFace)> = None;
+
+/* `MOD_TRIANGULATE_QUAD_*` / `MOD_TRIANGULATE_NGON_*` (DNA_modifier_types.h). */
+pub const MOD_TRIANGULATE_NGON_BEAUTY: i32 = 0;
+pub const MOD_TRIANGULATE_QUAD_FIXED: i32 = 1;
+pub const MOD_TRIANGULATE_QUAD_ALTERNATE: i32 = 2;
+pub const MOD_TRIANGULATE_QUAD_SHORTEDGE: i32 = 3;
+pub const MOD_TRIANGULATE_QUAD_LONGEDGE: i32 = 4;
+
+/// `BM_verts_calc_rotate_beauty` — edge-rotation beauty heuristic on the
+/// quad's dominant-axis 2D projection (C computes in 3D with area weights).
+pub fn bm_verts_calc_rotate_beauty(
+    bm: &BMesh, v1: usize, v2: usize, v3: usize, v4: usize) -> f32
+{
+    let no = (bm.vert(v2).co - bm.vert(v1).co)
+        .cross(bm.vert(v4).co - bm.vert(v3).co);
+    let m = blenders_math::geom::axis_dominant_to_m3_negate(no);
+    let p = |v: usize| {
+        let q = m * bm.vert(v).co;
+        [q.x, q.y]
+    };
+    let mut area = None;
+    blenders_bli::polyfill_2d_beautify::polyfill_beautify_quad_rotate_calc_ex(
+        p(v1), p(v2), p(v3), p(v4), false, &mut area)
+}
+
+/// `BM_face_triangulate` — split `f` into triangles in place; the last
+/// triangle replaces `f` via data-swap (callers rely on `f` surviving).
+/// Returns `(faces_new, edges_new, faces_double)`.
+pub fn bm_face_triangulate(
+    bm: &mut BMesh,
+    f: usize,
+    quad_method: i32,
+    ngon_method: i32,
+    use_tag: bool,
+) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+    let use_beauty = ngon_method == MOD_TRIANGULATE_NGON_BEAUTY;
+    let mut faces_new: Vec<usize> = Vec::new();
+    let mut edges_new: Vec<usize> = Vec::new();
+    let mut faces_double: Vec<usize> = Vec::new();
+    debug_assert!(bm.face(f).len > 3);
+    let f_len = bm.face(f).len as usize;
+    let mut loops: Vec<usize> = Vec::with_capacity(f_len);
+    let mut tris: Vec<[u32; 3]> = Vec::with_capacity(f_len - 2);
+    let totfilltri = f_len - 2;
+    let last_tri = f_len - 3;
+    if f_len == 4 {
+        let l_first = bm.face(f).l_first;
+        let (l_v1, l_v2) = match quad_method {
+            MOD_TRIANGULATE_QUAD_FIXED => {
+                (l_first, bm.loo(bm.loo(l_first).next).next)
+            }
+            MOD_TRIANGULATE_QUAD_ALTERNATE => {
+                (bm.loo(l_first).next, bm.loo(l_first).prev)
+            }
+            _ => {
+                let mut l_v1 = bm.loo(l_first).next;
+                let mut l_v2 = bm.loo(bm.loo(l_first).next).next;
+                let l_v3 = bm.loo(l_first).prev;
+                let l_v4 = l_first;
+                let split_24 = match quad_method {
+                    MOD_TRIANGULATE_QUAD_SHORTEDGE => {
+                        let d1 = (bm.vert(bm.loo(l_v4).v).co - bm.vert(bm.loo(l_v2).v).co)
+                            .length_squared();
+                        let d2 = (bm.vert(bm.loo(l_v1).v).co - bm.vert(bm.loo(l_v3).v).co)
+                            .length_squared();
+                        d2 - d1 > 0.0
+                    }
+                    MOD_TRIANGULATE_QUAD_LONGEDGE => {
+                        let d1 = (bm.vert(bm.loo(l_v4).v).co - bm.vert(bm.loo(l_v2).v).co)
+                            .length_squared();
+                        let d2 = (bm.vert(bm.loo(l_v1).v).co - bm.vert(bm.loo(l_v3).v).co)
+                            .length_squared();
+                        d2 - d1 < 0.0
+                    }
+                    _ => {
+                        let flip = blenders_math::geom::is_quad_flip(
+                            bm.vert(bm.loo(l_v1).v).co, bm.vert(bm.loo(l_v2).v).co,
+                            bm.vert(bm.loo(l_v3).v).co, bm.vert(bm.loo(l_v4).v).co);
+                        if flip & 1 != 0 { true }
+                        else if flip & 2 != 0 { false }
+                        else {
+                            bm_verts_calc_rotate_beauty(
+                                bm, bm.loo(l_v1).v, bm.loo(l_v2).v,
+                                bm.loo(l_v3).v, bm.loo(l_v4).v) > 0.0
+                        }
+                    }
+                };
+                if split_24 {
+                    l_v1 = l_v4;
+                } else {
+                    l_v2 = l_v3;
+                }
+                (l_v1, l_v2)
+            }
+        };
+        loops = vec![l_v1, bm.loo(l_v1).next, l_v2, bm.loo(l_v2).next];
+        tris.push([0, 1, 2]);
+        tris.push([0, 2, 3]);
+    } else {
+        let axis_mat = blenders_math::geom::axis_dominant_to_m3_negate(bm.face(f).no);
+        let mut projverts: Vec<[f32; 2]> = Vec::with_capacity(f_len);
+        let mut l_iter = bm.face(f).l_first;
+        for _ in 0..f_len {
+            loops.push(l_iter);
+            let p = axis_mat * bm.vert(bm.loo(l_iter).v).co;
+            projverts.push([p.x, p.y]);
+            l_iter = bm.loo(l_iter).next;
+        }
+        tris = blenders_bli::polyfill_2d::polyfill_calc_pub(&projverts, 1)
+            .iter().map(|t| [t[0] as u32, t[1] as u32, t[2] as u32]).collect();
+        if use_beauty {
+            blenders_bli::polyfill_2d_beautify::polyfill_beautify(&projverts, &mut tris);
+        }
+    }
+    let mut f_new = BM_NIL;
+    for i in 0..totfilltri {
+        let t = tris[i];
+        let ltri = [loops[t[0] as usize], loops[t[1] as usize], loops[t[2] as usize]];
+        let v_tri = [bm.loo(ltri[0]).v, bm.loo(ltri[1]).v, bm.loo(ltri[2]).v];
+        f_new = crate::core::bm_face_create_verts(bm, &v_tri, Some(f), 0, true, true);
+        let l_new = bm.face(f_new).l_first;
+        /* duplicate-face check */
+        if bm.loo(l_new).radial_next != l_new {
+            let mut l_iter = bm.loo(l_new).radial_next;
+            loop {
+                if bm.face(bm.loo(l_iter).f).len == 3
+                    && bm.loo(bm.loo(l_new).prev).v == bm.loo(bm.loo(l_iter).prev).v
+                {
+                    faces_double.push(if i != last_tri { f_new } else { f });
+                    break;
+                }
+                l_iter = bm.loo(l_iter).radial_next;
+                if l_iter == l_new { break; }
+            }
+        }
+        /* CustomData loop-attr copy: PORT_PENDING */
+        if i != last_tri {
+            if use_tag {
+                bm.fpool[f_new].head.hflag |= crate::BM_ELEM_TAG;
+            }
+            faces_new.push(f_new);
+        }
+        if use_tag || true {
+            let mut l_iter = l_new;
+            loop {
+                let e = bm.loo(l_iter).e;
+                let is_new_edge = l_iter == bm.loo(l_iter).radial_next;
+                if is_new_edge {
+                    if use_tag {
+                        bm.epool[e].head.hflag |= crate::BM_ELEM_TAG;
+                    }
+                    edges_new.push(e);
+                }
+                l_iter = bm.loo(l_iter).next;
+                if l_iter == l_new { break; }
+            }
+        }
+    }
+    crate::core::bmesh_face_swap_data(bm, f, f_new);
+    crate::core::bm_face_kill(bm, f_new);
+    bm.elem_index_dirty = true;
+    (faces_new, edges_new, faces_double)
+}
