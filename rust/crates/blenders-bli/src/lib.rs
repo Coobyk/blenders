@@ -109,3 +109,4 @@ pub mod serialize;
 pub mod storage;
 pub mod filereader_gzip;
 pub mod filereader_zstd;
+pub mod generic_virtual_array;
