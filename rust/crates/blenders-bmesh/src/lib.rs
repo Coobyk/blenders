@@ -12,9 +12,27 @@ pub mod construct;
 pub mod core;
 pub mod delete;
 pub mod iterators;
+pub mod marking;
 pub mod mesh;
 pub mod query;
 pub mod structure;
+
+/// `BM_ELEM_*` hflag bits (bmesh_class.hh).
+pub const BM_ELEM_SELECT: u8 = 1 << 0;
+pub const BM_ELEM_HIDDEN: u8 = 1 << 1;
+pub const BM_ELEM_SEAM: u8 = 1 << 2;
+pub const BM_ELEM_SMOOTH: u8 = 1 << 3;
+pub const BM_ELEM_TAG: u8 = 1 << 4;
+pub const BM_ELEM_SELECT_UV: u8 = 1 << 5;
+pub const BM_ELEM_TAG_ALT: u8 = 1 << 6;
+pub const BM_ELEM_INTERNAL_TAG: u8 = 1 << 7;
+pub const BM_ELEM_SELECT_UV_EDGE: u8 = BM_ELEM_SEAM;
+
+/// `BM_SELECT` modes (bmesh.hh `selectmode`).
+pub const BM_SELECT_VERT: i32 = 1;
+pub const BM_SELECT_EDGE: i32 = 2;
+pub const BM_SELECT_FACE: i32 = 4;
+pub const BM_SELECT_ALL: i32 = BM_SELECT_VERT | BM_SELECT_EDGE | BM_SELECT_FACE;
 
 use blenders_math::vector::Vec3;
 
@@ -144,6 +162,16 @@ pub struct BMesh {
     pub totedge: i32,
     pub totloop: i32,
     pub totface: i32,
+    /// Selection-mode bitmask (`BM_SELECT_*`).
+    pub selectmode: i32,
+    /// Selected counts (`totvertsel`, `totedgesel`, `totfacesel`).
+    pub totvertsel: i32,
+    pub totedgesel: i32,
+    pub totfacesel: i32,
+    /// Active element indices (last-clicked); `BM_NIL` when none.
+    pub act_vert: usize,
+    pub act_edge: usize,
+    pub act_face: usize,
     /// `elem_table_dirty`/`elem_index_dirty` — index arrays stale.
     pub elem_table_dirty: bool,
     pub elem_index_dirty: bool,
@@ -152,7 +180,12 @@ pub struct BMesh {
 impl BMesh {
     /// `BM_mesh_create` — new empty mesh.
     pub fn new() -> Self {
-        BMesh::default()
+        let mut bm = BMesh::default();
+        bm.selectmode = BM_SELECT_ALL;
+        bm.act_vert = BM_NIL;
+        bm.act_edge = BM_NIL;
+        bm.act_face = BM_NIL;
+        bm
     }
 
     // ---- element accessors ----
