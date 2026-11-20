@@ -67,7 +67,7 @@ pub const OPDEF_RELAX_EDGE_LOOPS: BMOpDefine = BMOpDefine {
         ("even_spacing", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_relax::bmo_relax_edge_loops_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

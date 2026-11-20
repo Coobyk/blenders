@@ -18,12 +18,12 @@ struct SpaceChainData {
     is_closed: bool,
 }
 
-struct SplineCoeffs {
-    a: f32,
-    b: f32,
-    c: f32,
-    d: f32,
-    x: f32,
+pub struct SplineCoeffs {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub x: f32,
 }
 
 /// `get_space_input_chains`.
@@ -69,7 +69,7 @@ fn measure_chain(bm: &BMesh, chain: &SpaceChainData) -> (Vec<Vec3>, Vec<f32>) {
 }
 
 /// `calculate_splines_axis` — natural cubic spline coefficients per axis.
-fn calculate_splines_axis(
+pub fn calculate_splines_axis(
     distances: &[f32], coords: &[f32], is_closed: bool) -> Vec<SplineCoeffs>
 {
     let mut coeffs = Vec::new();
