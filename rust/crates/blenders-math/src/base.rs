@@ -266,3 +266,177 @@ pub fn math_time_seconds_decompose(
         *d = seconds / SECONDS_IN_DAY;
     }
 }
+
+/* ---- math_base_safe_inline.cc ---- */
+
+/// `safe_divide` — 0 when denominator is 0.
+#[inline]
+pub fn safe_divide(a: f32, b: f32) -> f32 {
+    if b != 0.0 {
+        a / b
+    } else {
+        0.0
+    }
+}
+
+/// `safe_modf`.
+#[inline]
+pub fn safe_modf(a: f32, b: f32) -> f32 {
+    if b != 0.0 {
+        a % b
+    } else {
+        0.0
+    }
+}
+
+/// `safe_floored_modf`.
+#[inline]
+pub fn safe_floored_modf(a: f32, b: f32) -> f32 {
+    if b != 0.0 {
+        a - (a / b).floor() * b
+    } else {
+        0.0
+    }
+}
+
+/// `safe_logf` — 0 on non-positive inputs.
+#[inline]
+pub fn safe_logf(a: f32, base: f32) -> f32 {
+    if a <= 0.0 || base <= 0.0 {
+        return 0.0;
+    }
+    safe_divide(a.ln(), base.ln())
+}
+
+/// `safe_inverse_sqrtf`.
+#[inline]
+pub fn safe_inverse_sqrtf(a: f32) -> f32 {
+    if a > 0.0 {
+        1.0 / a.sqrt()
+    } else {
+        0.0
+    }
+}
+
+/// `safe_powf` — 0 for negative base with fractional exponent.
+#[inline]
+pub fn safe_powf(base: f32, exponent: f32) -> f32 {
+    if base < 0.0 && exponent != (exponent as i32) as f32 {
+        return 0.0;
+    }
+    base.powf(exponent)
+}
+
+/* ---- math_bits_inline.cc ---- */
+
+/// `bitscan_forward_uint` — index of lowest set bit.
+#[inline]
+pub fn bitscan_forward_uint(a: u32) -> u32 {
+    debug_assert!(a != 0);
+    a.trailing_zeros()
+}
+
+/// `bitscan_forward_uint64`.
+#[inline]
+pub fn bitscan_forward_uint64(a: u64) -> u32 {
+    debug_assert!(a != 0);
+    a.trailing_zeros()
+}
+
+/// `bitscan_forward_clear_uint` — index of lowest set bit; clears it.
+#[inline]
+pub fn bitscan_forward_clear_uint(a: &mut u32) -> u32 {
+    let i = bitscan_forward_uint(*a);
+    *a &= *a - 1;
+    i
+}
+
+/// `bitscan_forward_clear_uint64`.
+#[inline]
+pub fn bitscan_forward_clear_uint64(a: &mut u64) -> u32 {
+    let i = bitscan_forward_uint64(*a);
+    *a &= *a - 1;
+    i
+}
+
+/// `bitscan_reverse_uint` — index of highest set bit.
+#[inline]
+pub fn bitscan_reverse_uint(a: u32) -> u32 {
+    debug_assert!(a != 0);
+    31 - a.leading_zeros()
+}
+
+/// `bitscan_reverse_uint64`.
+#[inline]
+pub fn bitscan_reverse_uint64(a: u64) -> u32 {
+    debug_assert!(a != 0);
+    63 - a.leading_zeros()
+}
+
+/// `bitscan_reverse_clear_uint`.
+#[inline]
+pub fn bitscan_reverse_clear_uint(a: &mut u32) -> u32 {
+    let i = bitscan_reverse_uint(*a);
+    *a &= !(1u32 << i);
+    i
+}
+
+/// `highest_order_bit_uint` — the highest set bit as a power of two.
+#[inline]
+pub fn highest_order_bit_uint(n: u32) -> u32 {
+    if n == 0 {
+        return 0;
+    }
+    1u32 << (31 - n.leading_zeros())
+}
+
+/// `highest_order_bit_s`.
+#[inline]
+pub fn highest_order_bit_s(n: u16) -> u16 {
+    if n == 0 {
+        return 0;
+    }
+    1u16 << (15 - n.leading_zeros())
+}
+
+/// `count_bits_i` — popcount.
+#[inline]
+pub fn count_bits_i(i: u32) -> i32 {
+    i.count_ones() as i32
+}
+
+/// `count_bits_uint64`.
+#[inline]
+pub fn count_bits_uint64(a: u64) -> i32 {
+    a.count_ones() as i32
+}
+
+/// `float_as_int`.
+#[inline]
+pub fn float_as_int(f: f32) -> i32 {
+    f.to_bits() as i32
+}
+
+/// `float_as_uint`.
+#[inline]
+pub fn float_as_uint(f: f32) -> u32 {
+    f.to_bits()
+}
+
+/// `int_as_float`.
+#[inline]
+pub fn int_as_float(i: i32) -> f32 {
+    f32::from_bits(i as u32)
+}
+
+/// `uint_as_float`.
+#[inline]
+pub fn uint_as_float(i: u32) -> f32 {
+    f32::from_bits(i)
+}
+
+/// `xor_fl` — flip bits of `x` where `y`'s bits are set.
+#[inline]
+pub fn xor_fl(x: f32, y: i32) -> f32 {
+    int_as_float(float_as_int(x) ^ y)
+}
