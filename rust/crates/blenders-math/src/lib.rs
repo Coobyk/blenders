@@ -7,6 +7,7 @@
 //! - Angles are radians, right-handed coordinate system.
 
 pub mod base;
+pub mod boolean;
 pub mod blend;
 pub mod color;
 pub mod euler;
