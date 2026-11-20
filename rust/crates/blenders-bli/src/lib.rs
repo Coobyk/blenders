@@ -26,5 +26,6 @@ pub mod session_uid;
 pub mod heap;
 pub mod heap_simple;
 pub mod linklist;
+pub mod listbase;
 pub mod rand;
 pub mod rct;
