@@ -1158,7 +1158,7 @@ pub fn isect_plane_plane_plane(plane_a: Vec4, plane_b: Vec4, plane_c: Vec4) -> O
 /* Ray → AABB distance (`dist_squared_ray_to_aabb_v3*` family)            */
 /* -------------------------------------------------------------------- */
 
-use crate::matrix::Mat4;
+use crate::matrix::{Mat3, Mat4};
 
 /// `DistRayAABB_Precalc`.
 #[derive(Debug, Clone, Copy)]
@@ -2484,4 +2484,313 @@ pub fn line_point_factor_v2_ex(
 /// `line_point_factor_v2`.
 pub fn line_point_factor_v2(p: Vec2, l1: Vec2, l2: Vec2) -> f32 {
     line_point_factor_v2_ex(p, l1, l2, 0.0, 0.0)
+}
+
+/// `line_plane_factor_v3`.
+pub fn line_plane_factor(plane_co: Vec3, plane_no: Vec3, l1: Vec3, l2: Vec3) -> f32 {
+    let u = l2 - l1;
+    let h = l1 - plane_co;
+    let dot = plane_no.dot(u);
+    if dot != 0.0 {
+        -plane_no.dot(h) / dot
+    } else {
+        0.0
+    }
+}
+
+/// `limit_dist_v3` — pull `v1`, `v2` toward their midpoint until at most `dist` apart.
+pub fn limit_dist(v1: &mut Vec3, v2: &mut Vec3, dist: f32) {
+    let dist_old = (*v2 - *v1).length();
+    if dist_old > dist {
+        let fac = (dist / dist_old) * 0.5;
+        let (v1_old, v2_old) = (*v1, *v2);
+        *v1 = v1_old * (0.5 + fac) + v2_old * (0.5 - fac);
+        *v2 = v1_old * (0.5 - fac) + v2_old * (0.5 + fac);
+    }
+}
+
+/// `isect_point_tri_v2_int` — `p` inside the rect-half triangle of a rect's diagonal.
+pub fn isect_point_tri_v2_int(x1: i32, y1: i32, x2: i32, y2: i32, a: i32, b: i32) -> i32 {
+    isect_point_tri(
+        Vec2::new(a as f32, b as f32),
+        Vec2::new(x1 as f32, y1 as f32),
+        Vec2::new(x1 as f32, y2 as f32),
+        Vec2::new(x2 as f32, y1 as f32),
+    )
+}
+
+/// `point_in_slice` — is `p` inside the slice of `v1` along line `l1->l2`.
+fn point_in_slice(p: Vec3, v1: Vec3, l1: Vec3, l2: Vec3) -> bool {
+    let (cp, _) = closest_to_line(v1, l1, l2);
+    let q = cp - v1;
+    let q_squared = q.dot(q);
+    if q_squared.abs() < f32::EPSILON {
+        return false;
+    }
+    let rp = p - v1;
+    let h = q.dot(rp) / q_squared;
+    (0.0..=1.0).contains(&h)
+}
+
+/// `point_in_slice_as` — slice defined by origin + (unnormalized) normal.
+fn point_in_slice_as(p: Vec3, origin: Vec3, normal: Vec3) -> bool {
+    let rp = p - origin;
+    let h = normal.dot(rp) / normal.dot(normal);
+    (0.0..=1.0).contains(&h)
+}
+
+/// `point_in_slice_seg`.
+pub fn point_in_slice_seg(p: Vec3, l1: Vec3, l2: Vec3) -> bool {
+    point_in_slice_as(p, l1, l2 - l1)
+}
+
+/// `isect_point_tri_prism_v3` — `p` inside the triangular prism extruded from the tri.
+pub fn isect_point_tri_prism(p: Vec3, v1: Vec3, v2: Vec3, v3: Vec3) -> bool {
+    point_in_slice(p, v1, v2, v3)
+        && point_in_slice(p, v2, v3, v1)
+        && point_in_slice(p, v3, v1, v2)
+}
+
+/// `isect_point_tri_v3` — closest point of `p` on the tri's plane when `p` is in the prism.
+pub fn isect_point_tri_prism_closest(p: Vec3, v1: Vec3, v2: Vec3, v3: Vec3) -> Option<Vec3> {
+    if isect_point_tri_prism(p, v1, v2, v3) {
+        let no = cross_tri(v1, v2, v3);
+        debug_assert!(no.length_squared() != 0.0);
+        let plane = plane_from_point_normal(v1, no);
+        Some(closest_to_plane(plane, p))
+    } else {
+        None
+    }
+}
+
+/// `clip_segment_v3_plane` — clip the segment to the halfspace behind `plane`.
+/// Returns `None` when fully clipped, else the (possibly shortened) segment.
+pub fn clip_segment_plane(p1: Vec3, p2: Vec3, plane: Vec4) -> Option<(Vec3, Vec3)> {
+    let dp = p2 - p1;
+    let div = dp.dot(plane.xyz());
+    if div == 0.0 {
+        return Some((p1, p2)); // parallel
+    }
+    let t = -plane_point_side(plane, p1);
+    if div > 0.0 {
+        if t >= div {
+            return None; // behind plane, completely clipped
+        }
+        if t > 0.0 {
+            return Some((p1 + dp * (t / div), p2));
+        }
+    } else {
+        if t >= 0.0 {
+            return None; // behind plane, completely clipped
+        }
+        if t > div {
+            return Some((p1, p1 + dp * (t / div)));
+        }
+    }
+    Some((p1, p2))
+}
+
+/// `clip_segment_v3_plane_n` — clip against all `planes`.
+pub fn clip_segment_plane_n(p1: Vec3, p2: Vec3, planes: &[Vec4]) -> Option<(Vec3, Vec3)> {
+    let mut p1_fac = 0.0;
+    let mut p2_fac = 1.0;
+    let dp = p2 - p1;
+    for plane in planes {
+        let div = dp.dot(plane.xyz());
+        if div != 0.0 {
+            let mut t = -plane_point_side(*plane, p1);
+            if div > 0.0 {
+                if t >= div {
+                    return None;
+                }
+                if t > 0.0 {
+                    t /= div;
+                    if t > p1_fac {
+                        p1_fac = t;
+                        if p1_fac > p2_fac {
+                            return None;
+                        }
+                    }
+                }
+            } else {
+                if t >= 0.0 {
+                    return None;
+                }
+                if t > div {
+                    t /= div;
+                    if t < p2_fac {
+                        p2_fac = t;
+                        if p1_fac > p2_fac {
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some((p1 + dp * p1_fac, p1 + dp * p2_fac))
+}
+
+/// `ortho_basis_v3v3_v3` — two unit vectors perpendicular to normalized `n`.
+pub fn ortho_basis(n: Vec3) -> (Vec3, Vec3) {
+    let f = n.x * n.x + n.y * n.y; // len_squared_v2(n)
+    if f > FLT_EPSILON {
+        let d = 1.0 / f.sqrt();
+        let n1 = Vec3::new(n.y * d, -n.x * d, 0.0);
+        let n2 = Vec3::new(-n.z * n1.y, n.z * n1.x, n.x * n1.y - n.y * n1.x);
+        (n1, n2)
+    } else {
+        (
+            Vec3::new(if n.z < 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        )
+    }
+}
+
+/// `axis_dominant_v3_to_m3` — rotation taking +Z to `normal` (normalized).
+pub fn axis_dominant_to_m3(normal: Vec3) -> Mat3 {
+    let (n1, n2) = ortho_basis(normal);
+    Mat3::from_cols(n1, n2, normal)
+}
+
+/// `axis_dominant_v3_to_m3_negate`.
+pub fn axis_dominant_to_m3_negate(normal: Vec3) -> Mat3 {
+    let z = -normal;
+    let (n1, n2) = ortho_basis(z);
+    Mat3::from_cols(n1, n2, z)
+}
+
+fn tri_signed_area(v1: Vec3, v2: Vec3, v3: Vec3, i: usize, j: usize) -> f32 {
+    0.5 * ((v1[i] - v2[i]) * (v2[j] - v3[j]) + (v1[j] - v2[j]) * (v3[i] - v2[i]))
+}
+
+/// `barycentric_weights` — returns `None` on degenerate (zero-area) triangles.
+fn barycentric_weights(v1: Vec3, v2: Vec3, v3: Vec3, co: Vec3, n: Vec3) -> Option<Vec3> {
+    let (i, j) = n.axis_dominant();
+    let mut w = Vec3::new(
+        tri_signed_area(v2, v3, co, i, j),
+        tri_signed_area(v3, v1, co, i, j),
+        tri_signed_area(v1, v2, co, i, j),
+    );
+    let wtot = w.x + w.y + w.z;
+    w *= 1.0 / wtot;
+    if w.is_finite() {
+        Some(w)
+    } else {
+        None
+    }
+}
+
+/// `interp_weights_tri_v3` — barycentric weights of `co` in the tri.
+pub fn interp_weights_tri(v1: Vec3, v2: Vec3, v3: Vec3, co: Vec3) -> Vec3 {
+    let n = normal_tri(v1, v2, v3).0;
+    barycentric_weights(v1, v2, v3, co, n).unwrap_or(Vec3::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0))
+}
+
+/// `interp_weights_quad_v3`.
+pub fn interp_weights_quad(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3, co: Vec3) -> [f32; 4] {
+    let mut w = [0.0f32; 4];
+    // exact match
+    if co == v1 {
+        w[0] = 1.0;
+        return w;
+    }
+    if co == v2 {
+        w[1] = 1.0;
+        return w;
+    }
+    if co == v3 {
+        w[2] = 1.0;
+        return w;
+    }
+    if co == v4 {
+        w[3] = 1.0;
+        return w;
+    }
+    // barycentric weights over the two candidate triangles
+    let n = (v1 - v3).cross(v2 - v4);
+    match barycentric_weights(v1, v2, v4, co, n) {
+        Some(w3) if w3[0] >= 0.0 => {
+            w[0] = w3[0];
+            w[1] = w3[1];
+            w[3] = w3[2];
+        }
+        _ => {
+            if let Some(w2) = barycentric_weights(v2, v3, v4, co, n) {
+                w[1] = w2[0];
+                w[2] = w2[1];
+                w[3] = w2[2];
+            }
+        }
+    }
+    w
+}
+
+/// `barycentric_inside_triangle_v2` — 0 outside, 1 strictly inside, 2 inside-incl.
+pub fn barycentric_inside_triangle_v2(w: Vec3) -> i32 {
+    if w.x > 0.0 && w.x < 1.0 && w.y > 0.0 && w.y < 1.0 && w.z > 0.0 && w.z < 1.0 {
+        return 1;
+    }
+    if w.x >= 0.0 && w.x <= 1.0 && w.y >= 0.0 && w.y <= 1.0 && w.z >= 0.0 && w.z <= 1.0 {
+        return 2;
+    }
+    0
+}
+
+/// `barycentric_coords_v2` — exact barycentric coords in a 2D tri.
+pub fn barycentric_coords_v2(v1: Vec2, v2: Vec2, v3: Vec2, co: Vec2) -> Option<Vec3> {
+    let (x, y) = (co.x, co.y);
+    let (x1, y1) = (v1.x, v1.y);
+    let (x2, y2) = (v2.x, v2.y);
+    let (x3, y3) = (v3.x, v3.y);
+    let det = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3);
+    let w = Vec3::new(
+        ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / det,
+        ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / det,
+        0.0,
+    );
+    let w = Vec3::new(w.x, w.y, 1.0 - w.x - w.y);
+    if w.is_finite() {
+        Some(w)
+    } else {
+        None
+    }
+}
+
+/// `cross_tri_v2`.
+#[inline]
+pub fn cross_tri_v2(v1: Vec2, v2: Vec2, v3: Vec2) -> f32 {
+    (v1.x - v2.x) * (v2.y - v3.y) + (v1.y - v2.y) * (v3.x - v2.x)
+}
+
+/// `barycentric_weights_v2` — signed-area weights (fallback for degenerate).
+pub fn barycentric_weights_v2(v1: Vec2, v2: Vec2, v3: Vec2, co: Vec2) -> Vec3 {
+    let mut w = Vec3::new(
+        cross_tri_v2(v2, v3, co),
+        cross_tri_v2(v3, v1, co),
+        cross_tri_v2(v1, v2, co),
+    );
+    let wtot = w.x + w.y + w.z;
+    w *= 1.0 / wtot;
+    if w.is_finite() {
+        w
+    } else {
+        Vec3::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+    }
+}
+
+/// `barycentric_weights_v2_clamped`.
+pub fn barycentric_weights_v2_clamped(v1: Vec2, v2: Vec2, v3: Vec2, co: Vec2) -> Vec3 {
+    let mut w = Vec3::new(
+        max_ff(cross_tri_v2(v2, v3, co), 0.0),
+        max_ff(cross_tri_v2(v3, v1, co), 0.0),
+        max_ff(cross_tri_v2(v1, v2, co), 0.0),
+    );
+    let wtot = w.x + w.y + w.z;
+    w *= 1.0 / wtot;
+    if w.is_finite() {
+        w
+    } else {
+        Vec3::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+    }
 }
