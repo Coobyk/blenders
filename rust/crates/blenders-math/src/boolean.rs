@@ -123,3 +123,65 @@ mod tests {
         assert_eq!(orient3d(p0, p1, p2, p3), -1);
     }
 }
+
+/* ---- math_boolean.cc `WITH_GMP` section: exact predicates on `mpq` coords.
+ * `mpq_class` -> `Mpq` (num-rational BigRational); `mpq2`/`mpq3` -> `Mpq2`/`Mpq3`.
+ * These are exact determinant signs, no filtering needed. ---- */
+
+use crate::mpq::{mpq_sgn, Mpq, Mpq2, Mpq3};
+
+/// `orient2d(const mpq2&, mpq2&, mpq2&)`.
+pub fn orient2d_mpq(a: &Mpq2, b: &Mpq2, c: &Mpq2) -> i32 {
+    let detleft = (&a.x - &c.x) * (&b.y - &c.y);
+    let detright = (&a.y - &c.y) * (&b.x - &c.x);
+    mpq_sgn(&(detleft - detright))
+}
+
+/// `incircle(const mpq2& x4)`.
+pub fn incircle_mpq(a: &Mpq2, b: &Mpq2, c: &Mpq2, d: &Mpq2) -> i32 {
+    let adx = (&a.x - &d.x);
+    let bdx = (&b.x - &d.x);
+    let cdx = (&c.x - &d.x);
+    let ady = (&a.y - &d.y);
+    let bdy = (&b.y - &d.y);
+    let cdy = (&c.y - &d.y);
+    let bdxcdy = &bdx * &cdy;
+    let cdxbdy = &cdx * &bdy;
+    let alift = &adx * &adx + &ady * &ady;
+    let cdxady = &cdx * &ady;
+    let adxcdy = &adx * &cdy;
+    let blift = &bdx * &bdx + &bdy * &bdy;
+    let adxbdy = &adx * &bdy;
+    let bdxady = &bdx * &ady;
+    let clift = &cdx * &cdx + &cdy * &cdy;
+    let det = alift * (bdxcdy - cdxbdy) + blift * (cdxady - adxcdy) + clift * (adxbdy - bdxady);
+    mpq_sgn(&det)
+}
+
+/// `orient3d(const mpq3& x4)` — exact 3D orientation determinant sign.
+pub fn orient3d_mpq(a: &Mpq3, b: &Mpq3, c: &Mpq3, d: &Mpq3) -> i32 {
+    let adx = (&a.x - &d.x);
+    let bdx = (&b.x - &d.x);
+    let cdx = (&c.x - &d.x);
+    let ady = (&a.y - &d.y);
+    let bdy = (&b.y - &d.y);
+    let cdy = (&c.y - &d.y);
+    let adz = (&a.z - &d.z);
+    let bdz = (&b.z - &d.z);
+    let cdz = (&c.z - &d.z);
+    let bdxcdy = &bdx * &cdy;
+    let cdxbdy = &cdx * &bdy;
+    let cdxady = &cdx * &ady;
+    let adxcdy = &adx * &cdy;
+    let adxbdy = &adx * &bdy;
+    let bdxady = &bdx * &ady;
+    let det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
+    mpq_sgn(&det)
+}
+
+// `insphere(mpq3...)` is not needed by mesh_intersect (PORT_NOTE): the
+// Delaunay machinery works in 2D; omitted for now.
+#[allow(dead_code)]
+fn insphere_mpq_unimplemented(_: &Mpq3) -> Mpq {
+    Mpq::default()
+}

@@ -613,6 +613,9 @@ dependencies = [
  "blenders-math",
  "flate2",
  "libc",
+ "num-bigint",
+ "num-rational",
+ "num-traits",
  "robust",
  "zstd",
 ]

@@ -43,21 +43,21 @@ fn output_uses_nonzero_holes(t: CdtOutputType) -> bool {
     )
 }
 
-/// `CDT_input`.
-pub struct CdtInput<'a> {
-    pub vert: &'a [[f64; 2]],
+/// `CDT_input`, generic over scalar T (upstream `CDT_input<T>`):
+/// `f64` -> `CDT_input<double>`; `BigRational` -> `CDT_input<mpq_class>`.
+pub struct CdtInput<'a, S: CdtScalar> {
+    pub vert: &'a [S::Co],
     pub edge: &'a [[i32; 2]],
-    /// Face vertex counts (replaces OffsetIndices); `face_vert_indices` is flattened.
+    /// `OffsetIndices` — face f spans `face_vert_indices[offsets[f]..offsets[f+1]]`.
     pub face_offsets: &'a [usize],
     pub face_vert_indices: &'a [i32],
-    pub epsilon: f64,
+    pub epsilon: S,
     pub needed_ids: u32,
 }
 
 /// `CDT_result`.
-#[derive(Default)]
-pub struct CdtResult {
-    pub vert: Vec<[f64; 2]>,
+pub struct CdtResult<S: CdtScalar> {
+    pub vert: Vec<S::Co>,
     pub edge: Vec<[i32; 2]>,
     pub face: Vec<Vec<i32>>,
     pub vert_orig: Vec<Vec<u32>>,
@@ -65,6 +65,50 @@ pub struct CdtResult {
     pub intersected_edges_orig: Vec<[i32; 2]>,
     pub face_orig: Vec<Vec<u32>>,
     pub face_edge_offset: u32,
+}
+impl<S: CdtScalar> Default for CdtResult<S> {
+    fn default() -> Self {
+        CdtResult {
+            vert: Vec::new(),
+            edge: Vec::new(),
+            face: Vec::new(),
+            vert_orig: Vec::new(),
+            edge_orig: Vec::new(),
+            intersected_edges_orig: Vec::new(),
+            face_orig: Vec::new(),
+            face_edge_offset: 0,
+        }
+    }
+}
+
+/// Scalar + 2-vector types behind `template<typename T>`:
+/// `f64` -> `VecBase<double,2>` = `[f64;2]`; `Mpq` -> `mpq2` = `Mpq2`.
+pub trait CdtScalar: Clone + PartialEq + std::fmt::Debug {
+    type Co: Clone + PartialEq + Default + std::fmt::Debug;
+    /// `co.approx` — double approximation for FatCo.
+    fn approx(c: &Self::Co) -> [f64; 2];
+    /// `orient2d` on exact coords (robust/Shewchuk for f64, exact det for mpq).
+    fn orient2d(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> i32;
+    fn incircle(a: &Self::Co, b: &Self::Co, c: &Self::Co, d: &Self::Co) -> i32;
+    fn in_line(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> bool;
+    /// `isect_seg_seg` — returns (kind, lambda-along-ab).
+    fn isect_seg_seg(a: &Self::Co, b: &Self::Co, c: &Self::Co, d: &Self::Co)
+        -> (LineLineKind, Self);
+    fn interpolate(a: &Self::Co, b: &Self::Co, t: &Self) -> Self::Co;
+    fn zero() -> Self;
+    /// `lambda = -1` 'deleted' sentinel.
+    fn deleted() -> Self;
+    fn is_zero(&self) -> bool;
+    fn is_one(&self) -> bool;
+    fn is_deleted(&self) -> bool;
+    /// `lambda <= middle_lambda (0.5)`.
+    fn below_half(&self) -> bool;
+    /// `fill_crossdata_for_intersect` CROSS epsilon snapping:
+    /// -1 -> snap to va; +1 -> snap to vb; 0 -> interior.
+    /// Always 0 for exact arithmetic (upstream skips the check for mpq).
+    fn eps_snap(&self, len_ab: f64, epsilon: &Self) -> i32;
+    /// Lexicographic compare for site sorting (`site_lexicographic_sort`).
+    fn cmp_co(a: &Self::Co, b: &Self::Co) -> std::cmp::Ordering;
 }
 
 /* Sorted-unique u32 set — `VectorSet<uint32_t>`. */
@@ -96,26 +140,27 @@ impl IdSet {
     }
 }
 
-/// `FatCo<double>` — exact + approx coords (identical for f64).
-#[derive(Clone, Copy, Default)]
-struct FatCo {
-    exact: [f64; 2],
+/// `FatCo<T>` — exact + approx coords.
+#[derive(Clone)]
+struct FatCo<S: CdtScalar> {
+    exact: S::Co,
     approx: [f64; 2],
     abs_approx: [f64; 2],
 }
-impl FatCo {
-    fn new(v: [f64; 2]) -> Self {
+impl<S: CdtScalar> FatCo<S> {
+    fn new(v: S::Co) -> Self {
+        let approx = S::approx(&v);
         FatCo {
             exact: v,
-            approx: v,
-            abs_approx: [v[0].abs(), v[1].abs()],
+            approx,
+            abs_approx: [approx[0].abs(), approx[1].abs()],
         }
     }
 }
 
 #[derive(Clone)]
-struct CdtVert {
-    co: FatCo,
+struct CdtVert<S: CdtScalar> {
+    co: FatCo<S>,
     symedge: usize,
     input_ids: IdSet,
     index: i32,
@@ -154,27 +199,26 @@ struct CdtFace {
     hole: bool,
 }
 
-#[derive(Default)]
-struct CdtArrangement {
-    verts: Vec<CdtVert>,
+struct CdtArrangement<S: CdtScalar> {
+    verts: Vec<CdtVert<S>>,
     edges: Vec<CdtEdge>,
     symedges: Vec<SymEdgeRec>,
     faces: Vec<CdtFace>,
     outer_face: usize,
 }
 
-struct CdtState {
-    cdt: CdtArrangement,
+struct CdtState<S: CdtScalar> {
+    cdt: CdtArrangement<S>,
     input_vert_num: i32,
     visit_count: i32,
     face_edge_offset: u32,
-    epsilon: f64,
+    epsilon: S,
     needed_ids: u32,
     edge_winding_map: Option<std::collections::HashMap<usize, i32>>,
     polygon_boundary_count_map: Option<std::collections::HashMap<usize, i32>>,
 }
 
-impl CdtArrangement {
+impl<S: CdtScalar> CdtArrangement<S> {
     fn se(&self, id: usize) -> SymEdgeRec {
         self.symedges[id]
     }
@@ -192,7 +236,7 @@ impl CdtArrangement {
         self.se(self.se(r.rot).next).rot
     }
 
-    fn add_vert(&mut self, pt: [f64; 2]) -> usize {
+    fn add_vert(&mut self, pt: S::Co) -> usize {
         let index = self.verts.len() as i32;
         self.verts.push(CdtVert {
             co: FatCo::new(pt),
@@ -315,17 +359,17 @@ impl CdtArrangement {
     fn split_edge(
         &mut self,
         se: usize,
-        lambda: f64,
+        lambda: S,
         edge_winding_map: Option<&mut std::collections::HashMap<usize, i32>>,
         polygon_boundary_count_map: Option<&mut std::collections::HashMap<usize, i32>>,
     ) -> usize {
-        let a = self.verts[self.se(se).vert].co.exact;
-        let b = self.verts[self.se(self.se(se).next).vert].co.exact;
+        let a = self.verts[self.se(se).vert].co.exact.clone();
+        let b = self.verts[self.se(self.se(se).next).vert].co.exact.clone();
         let sesym = self.sym(se);
         let sesymprev = self.prev(sesym);
         let sesymprevsym = self.sym(sesymprev);
         let senext = self.se(se).next;
-        let pt = [a[0] + lambda * (b[0] - a[0]), a[1] + lambda * (b[1] - a[1])];
+        let pt = S::interpolate(&a, &b, &lambda);
         let v = self.add_vert(pt);
         let se_face = self.se(se).face;
         let sesym_face = self.se(sesym).face;
@@ -440,31 +484,13 @@ impl CdtArrangement {
     }
 }
 
-/* Predicates. */
-
-fn filtered_orient2d(a: &FatCo, b: &FatCo, c: &FatCo) -> i32 {
-    sgn(robust::orient2d(
-        robust::Coord { x: a.approx[0], y: a.approx[1] },
-        robust::Coord { x: b.approx[0], y: b.approx[1] },
-        robust::Coord { x: c.approx[0], y: c.approx[1] },
-    ))
+/* Predicates — `filtered_orient2d<T>`/`filtered_incircle<T>`:
+ * exact `S::orient2d`/`S::incircle` (robust for f64, exact det for mpq). */
+fn filtered_orient2d<S: CdtScalar>(a: &FatCo<S>, b: &FatCo<S>, c: &FatCo<S>) -> i32 {
+    S::orient2d(&a.exact, &b.exact, &c.exact)
 }
-fn filtered_incircle(a: &FatCo, b: &FatCo, c: &FatCo, d: &FatCo) -> i32 {
-    sgn(robust::incircle(
-        robust::Coord { x: a.approx[0], y: a.approx[1] },
-        robust::Coord { x: b.approx[0], y: b.approx[1] },
-        robust::Coord { x: c.approx[0], y: c.approx[1] },
-        robust::Coord { x: d.approx[0], y: d.approx[1] },
-    ))
-}
-fn sgn(x: f64) -> i32 {
-    if x > 0.0 {
-        1
-    } else if x < 0.0 {
-        -1
-    } else {
-        0
-    }
+fn filtered_incircle<S: CdtScalar>(a: &FatCo<S>, b: &FatCo<S>, c: &FatCo<S>, d: &FatCo<S>) -> i32 {
+    S::incircle(&a.exact, &b.exact, &c.exact, &d.exact)
 }
 fn dot2(a: [f64; 2], b: [f64; 2]) -> f64 {
     a[0] * b[0] + a[1] * b[1]
@@ -479,71 +505,254 @@ fn distance_squared2(a: [f64; 2], b: [f64; 2]) -> f64 {
     let d = sub2(a, b);
     d[0] * d[0] + d[1] * d[1]
 }
-fn interpolate(a: [f64; 2], b: [f64; 2], t: f64) -> [f64; 2] {
-    [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
-}
 
-fn in_line(a: &FatCo, b: &FatCo, c: &FatCo) -> bool {
-    let ab = sub2(b.approx, a.approx);
-    let ac = sub2(c.approx, a.approx);
-    if dot2(ab, ac) < 0.0 {
-        return false;
-    }
-    let bc = sub2(c.approx, b.approx);
-    dot2(bc, ac) >= 0.0
-}
-
-/* isect_result for double2 (math_vec.cc `isect_seg_seg`). */
-#[derive(PartialEq, Eq)]
-enum LineLineKind {
+/* `isect_result` kind (math_vec.cc). */
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum LineLineKind {
     Colinear = -1,
     None = 0,
     Exact = 1,
     Cross = 2,
 }
-struct IsectResult {
-    kind: LineLineKind,
-    lambda: f64,
-}
-fn isect_seg_seg(v1: [f64; 2], v2: [f64; 2], v3: [f64; 2], v4: [f64; 2]) -> IsectResult {
-    let div = (v2[0] - v1[0]) * (v4[1] - v3[1]) - (v2[1] - v1[1]) * (v4[0] - v3[0]);
-    if div == 0.0 {
-        return IsectResult {
-            lambda: 0.0,
-            kind: LineLineKind::Colinear,
-        };
+
+/* `CdtScalar` for f64 — `CDT_input<double>` specialization. */
+impl CdtScalar for f64 {
+    type Co = [f64; 2];
+    fn approx(c: &Self::Co) -> [f64; 2] {
+        *c
     }
-    let lambda =
-        ((v1[1] - v3[1]) * (v4[0] - v3[0]) - (v1[0] - v3[0]) * (v4[1] - v3[1])) / div;
-    let mu = ((v1[1] - v3[1]) * (v2[0] - v1[0]) - (v1[0] - v3[0]) * (v2[1] - v1[1])) / div;
-    let kind = if (0.0..=1.0).contains(&lambda) && (0.0..=1.0).contains(&mu) {
-        if lambda == 0.0 || lambda == 1.0 || mu == 0.0 || mu == 1.0 {
-            LineLineKind::Exact
+    fn orient2d(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> i32 {
+        let r = robust::orient2d(
+            robust::Coord { x: a[0], y: a[1] },
+            robust::Coord { x: b[0], y: b[1] },
+            robust::Coord { x: c[0], y: c[1] },
+        );
+        if r > 0.0 {
+            1
+        } else if r < 0.0 {
+            -1
         } else {
-            LineLineKind::Cross
+            0
         }
-    } else {
-        LineLineKind::None
-    };
-    IsectResult { kind, lambda }
+    }
+    fn incircle(a: &Self::Co, b: &Self::Co, c: &Self::Co, d: &Self::Co) -> i32 {
+        let r = robust::incircle(
+            robust::Coord { x: a[0], y: a[1] },
+            robust::Coord { x: b[0], y: b[1] },
+            robust::Coord { x: c[0], y: c[1] },
+            robust::Coord { x: d[0], y: d[1] },
+        );
+        if r > 0.0 {
+            1
+        } else if r < 0.0 {
+            -1
+        } else {
+            0
+        }
+    }
+    fn in_line(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> bool {
+        let ab = sub2(*b, *a);
+        let ac = sub2(*c, *a);
+        if dot2(ab, ac) < 0.0 {
+            return false;
+        }
+        let bc = sub2(*c, *b);
+        dot2(bc, ac) >= 0.0
+    }
+    fn isect_seg_seg(
+        v1: &Self::Co,
+        v2: &Self::Co,
+        v3: &Self::Co,
+        v4: &Self::Co,
+    ) -> (LineLineKind, Self) {
+        let div = (v2[0] - v1[0]) * (v4[1] - v3[1]) - (v2[1] - v1[1]) * (v4[0] - v3[0]);
+        if div == 0.0 {
+            return (LineLineKind::Colinear, 0.0);
+        }
+        let lambda =
+            ((v1[1] - v3[1]) * (v4[0] - v3[0]) - (v1[0] - v3[0]) * (v4[1] - v3[1])) / div;
+        let mu = ((v1[1] - v3[1]) * (v2[0] - v1[0]) - (v1[0] - v3[0]) * (v2[1] - v1[1])) / div;
+        let kind = if (0.0..=1.0).contains(&lambda) && (0.0..=1.0).contains(&mu) {
+            if lambda == 0.0 || lambda == 1.0 || mu == 0.0 || mu == 1.0 {
+                LineLineKind::Exact
+            } else {
+                LineLineKind::Cross
+            }
+        } else {
+            LineLineKind::None
+        };
+        (kind, lambda)
+    }
+    fn interpolate(a: &Self::Co, b: &Self::Co, t: &Self) -> Self::Co {
+        [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+    }
+    fn zero() -> Self {
+        0.0
+    }
+    fn deleted() -> Self {
+        -1.0
+    }
+    fn is_zero(&self) -> bool {
+        *self == 0.0
+    }
+    fn is_one(&self) -> bool {
+        *self == 1.0
+    }
+    fn is_deleted(&self) -> bool {
+        *self == -1.0
+    }
+    fn below_half(&self) -> bool {
+        *self <= 0.5
+    }
+    fn eps_snap(&self, len_ab: f64, epsilon: &Self) -> i32 {
+        if *self * len_ab <= *epsilon {
+            -1
+        } else if (1.0 - *self) * len_ab <= *epsilon {
+            1
+        } else {
+            0
+        }
+    }
+    fn cmp_co(a: &Self::Co, b: &Self::Co) -> std::cmp::Ordering {
+        a[0].partial_cmp(&b[0])
+            .unwrap()
+            .then(a[1].partial_cmp(&b[1]).unwrap())
+    }
+}
+
+/* `CdtScalar` for `Mpq` (BigRational) — `CDT_input<mpq_class>` specialization
+ * (`WITH_GMP` path upstream). All predicates exact — no filtering needed. */
+pub mod mpq_cdt {
+    use super::{CdtScalar, LineLineKind};
+    use blenders_math::mpq::{mpq_to_f64, Mpq2, Mpq};
+    use num_bigint::BigInt;
+    use num_rational::BigRational;
+    use num_traits::{One, Zero};
+
+    fn dsub(a: &Mpq, b: &Mpq) -> Mpq {
+        a - b
+    }
+    impl CdtScalar for Mpq {
+        type Co = Mpq2;
+        fn approx(c: &Self::Co) -> [f64; 2] {
+            c.get_d()
+        }
+        /// `orient2d(const mpq2&, mpq2&, mpq2&)` — exact determinant sign.
+        fn orient2d(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> i32 {
+            let detleft = dsub(&a.x, &c.x) * dsub(&b.y, &c.y);
+            let detright = dsub(&a.y, &c.y) * dsub(&b.x, &c.x);
+            blenders_math::mpq::mpq_sgn(&(detleft - detright))
+        }
+        /// `incircle(mpq2...)` — lifted determinant sign, exact.
+        fn incircle(a: &Self::Co, b: &Self::Co, c: &Self::Co, d: &Self::Co) -> i32 {
+            let adx = dsub(&a.x, &d.x);
+            let bdx = dsub(&b.x, &d.x);
+            let cdx = dsub(&c.x, &d.x);
+            let ady = dsub(&a.y, &d.y);
+            let bdy = dsub(&b.y, &d.y);
+            let cdy = dsub(&c.y, &d.y);
+            let bdxcdy = &bdx * &cdy;
+            let cdxbdy = &cdx * &bdy;
+            let alift = &adx * &adx + &ady * &ady;
+            let cdxady = &cdx * &ady;
+            let adxcdy = &adx * &cdy;
+            let blift = &bdx * &bdx + &bdy * &bdy;
+            let adxbdy = &adx * &bdy;
+            let bdxady = &bdx * &ady;
+            let clift = &cdx * &cdx + &cdy * &cdy;
+            let det = alift * (bdxcdy - cdxbdy) + blift * (cdxady - adxcdy)
+                + clift * (adxbdy - bdxady);
+            blenders_math::mpq::mpq_sgn(&det)
+        }
+        /// `in_line<mpq_class>` — exact dot products.
+        fn in_line(a: &Self::Co, b: &Self::Co, c: &Self::Co) -> bool {
+            let ab = b - a;
+            let ac = c - a;
+            if ab.dot(&ac) < num_traits::Zero::zero() {
+                return false;
+            }
+            let bc = c - b;
+            bc.dot(&ac) >= num_traits::Zero::zero()
+        }
+        /// `isect_seg_seg(mpq2...)` — exact; avoids dividing mudiv by div.
+        fn isect_seg_seg(
+            v1: &Self::Co,
+            v2: &Self::Co,
+            v3: &Self::Co,
+            v4: &Self::Co,
+        ) -> (LineLineKind, Self) {
+            let div = (&v2.x - &v1.x) * (&v4.y - &v3.y) - (&v2.y - &v1.y) * (&v4.x - &v3.x);
+            let zero: Mpq = num_traits::Zero::zero();
+            if div == zero {
+                return (LineLineKind::Colinear, zero);
+            }
+            let lambda = ((&v1.y - &v3.y) * (&v4.x - &v3.x) - (&v1.x - &v3.x) * (&v4.y - &v3.y))
+                / &div;
+            let mudiv =
+                (&v1.y - &v3.y) * (&v2.x - &v1.x) - (&v1.x - &v3.x) * (&v2.y - &v1.y);
+            let one: Mpq = num_traits::One::one();
+            let in01 = |q: &Mpq, hi: &Mpq| -> bool { *q >= zero && *q <= *hi };
+            let seg = in01(&lambda, &one)
+                && ((div > zero && in01(&mudiv, &div))
+                    || (div < zero && mudiv <= zero && mudiv >= div));
+            let kind = if seg {
+                if lambda == zero || lambda == one || mudiv == zero || mudiv == div {
+                    LineLineKind::Exact
+                } else {
+                    LineLineKind::Cross
+                }
+            } else {
+                LineLineKind::None
+            };
+            (kind, lambda)
+        }
+        /// `interpolate(a, b, t)` = a + t*(b - a).
+        fn interpolate(a: &Self::Co, b: &Self::Co, t: &Self) -> Self::Co {
+            a + &(&(b - a) * t)
+        }
+        fn zero() -> Self {
+            num_traits::Zero::zero()
+        }
+        fn deleted() -> Self {
+            BigRational::from_integer(BigInt::from(-1))
+        }
+        fn is_zero(&self) -> bool {
+            *self == num_traits::Zero::zero()
+        }
+        fn is_one(&self) -> bool {
+            *self == num_traits::One::one()
+        }
+        fn is_deleted(&self) -> bool {
+            *self == Self::deleted()
+        }
+        fn below_half(&self) -> bool {
+            *self <= BigRational::new(BigInt::one(), BigInt::from(2))
+        }
+        fn eps_snap(&self, _len_ab: f64, _epsilon: &Self) -> i32 {
+            0 /* Upstream: no epsilon snapping for exact T. */
+        }
+        fn cmp_co(a: &Self::Co, b: &Self::Co) -> std::cmp::Ordering {
+            a.x.cmp(&b.x).then(a.y.cmp(&b.y))
+        }
+    }
 }
 
 /* Search helpers. */
 
-fn is_border_edge(cdt: &CdtArrangement, e: usize) -> bool {
+fn is_border_edge<S: CdtScalar>(cdt: &CdtArrangement<S>, e: usize) -> bool {
     cdt.symedges[e * 2].face == cdt.outer_face || cdt.symedges[e * 2 + 1].face == cdt.outer_face
 }
-fn is_constrained_edge(cdt: &CdtArrangement, e: usize) -> bool {
+fn is_constrained_edge<S: CdtScalar>(cdt: &CdtArrangement<S>, e: usize) -> bool {
     !cdt.edges[e].input_ids.is_empty()
 }
-fn is_deleted_edge(cdt: &CdtArrangement, e: usize) -> bool {
+fn is_deleted_edge<S: CdtScalar>(cdt: &CdtArrangement<S>, e: usize) -> bool {
     cdt.symedges[e * 2].next == NIL
 }
-fn is_original_vert(st: &CdtState, v: usize) -> bool {
+fn is_original_vert<S: CdtScalar>(st: &CdtState<S>, v: usize) -> bool {
     (st.cdt.verts[v].index) < st.input_vert_num
 }
 
-fn find_symedge_between_verts(cdt: &CdtArrangement, v1: usize, v2: usize) -> usize {
+fn find_symedge_between_verts<S: CdtScalar>(cdt: &CdtArrangement<S>, v1: usize, v2: usize) -> usize {
     let mut t = cdt.verts[v1].symedge;
     let tstart = t;
     loop {
@@ -557,7 +766,7 @@ fn find_symedge_between_verts(cdt: &CdtArrangement, v1: usize, v2: usize) -> usi
     }
     NIL
 }
-fn find_symedge_with_face(cdt: &CdtArrangement, v: usize, f: usize) -> usize {
+fn find_symedge_with_face<S: CdtScalar>(cdt: &CdtArrangement<S>, v: usize, f: usize) -> usize {
     let mut t = cdt.verts[v].symedge;
     let tstart = t;
     loop {
@@ -571,7 +780,7 @@ fn find_symedge_with_face(cdt: &CdtArrangement, v: usize, f: usize) -> usize {
     }
     NIL
 }
-fn exists_edge(cdt: &CdtArrangement, v1: usize, v2: usize) -> bool {
+fn exists_edge<S: CdtScalar>(cdt: &CdtArrangement<S>, v1: usize, v2: usize) -> bool {
     find_symedge_between_verts(cdt, v1, v2) != NIL
 }
 
@@ -583,13 +792,13 @@ struct SiteInfo {
     orig_index: i32,
 }
 
-fn site_lexicographic_sort(cdt: &CdtArrangement, a: &SiteInfo, b: &SiteInfo) -> std::cmp::Ordering {
-    let ca = cdt.verts[a.v].co.exact;
-    let cb = cdt.verts[b.v].co.exact;
-    ca.partial_cmp(&cb).unwrap().then(a.orig_index.cmp(&b.orig_index))
+fn site_lexicographic_sort<S: CdtScalar>(cdt: &CdtArrangement<S>, a: &SiteInfo, b: &SiteInfo) -> std::cmp::Ordering {
+    let ca = &cdt.verts[a.v].co.exact;
+    let cb = &cdt.verts[b.v].co.exact;
+    S::cmp_co(ca, cb).then(a.orig_index.cmp(&b.orig_index))
 }
 
-fn find_site_merges(cdt: &mut CdtArrangement, sites: &mut [SiteInfo]) {
+fn find_site_merges<S: CdtScalar>(cdt: &mut CdtArrangement<S>, sites: &mut [SiteInfo]) {
     let n = sites.len();
     let mut i = 0;
     while i + 1 < n {
@@ -606,19 +815,19 @@ fn find_site_merges(cdt: &mut CdtArrangement, sites: &mut [SiteInfo]) {
     }
 }
 
-fn vert_left_of_symedge(cdt: &CdtArrangement, v: usize, se: usize) -> bool {
+fn vert_left_of_symedge<S: CdtScalar>(cdt: &CdtArrangement<S>, v: usize, se: usize) -> bool {
     let a = &cdt.verts[v].co;
     let b = &cdt.verts[cdt.se(se).vert].co;
     let c = &cdt.verts[cdt.se(cdt.se(se).next).vert].co;
     filtered_orient2d(a, b, c) > 0
 }
-fn vert_right_of_symedge(cdt: &CdtArrangement, v: usize, se: usize) -> bool {
+fn vert_right_of_symedge<S: CdtScalar>(cdt: &CdtArrangement<S>, v: usize, se: usize) -> bool {
     let a = &cdt.verts[v].co;
     let b = &cdt.verts[cdt.se(cdt.se(se).next).vert].co;
     let c = &cdt.verts[cdt.se(se).vert].co;
     filtered_orient2d(a, b, c) > 0
 }
-fn dc_tri_valid(cdt: &CdtArrangement, se: usize, basel: usize, basel_sym: usize) -> bool {
+fn dc_tri_valid<S: CdtScalar>(cdt: &CdtArrangement<S>, se: usize, basel: usize, basel_sym: usize) -> bool {
     let a = &cdt.verts[cdt.se(cdt.se(se).next).vert].co;
     let b = &cdt.verts[cdt.se(basel_sym).vert].co;
     let c = &cdt.verts[cdt.se(basel).vert].co;
@@ -626,8 +835,8 @@ fn dc_tri_valid(cdt: &CdtArrangement, se: usize, basel: usize, basel_sym: usize)
 }
 
 /// `dc_tri` — Guibas-Stolfi divide & conquer merge step.
-fn dc_tri(
-    cdt: &mut CdtArrangement,
+fn dc_tri<S: CdtScalar>(
+    cdt: &mut CdtArrangement<S>,
     sites: &mut [SiteInfo],
     start: usize,
     end: usize,
@@ -753,7 +962,7 @@ fn dc_tri(
     }
 }
 
-fn dc_triangulate(cdt: &mut CdtArrangement, sites: &mut [SiteInfo]) {
+fn dc_triangulate<S: CdtScalar>(cdt: &mut CdtArrangement<S>, sites: &mut [SiteInfo]) {
     /* Compress merged verts in place. */
     let mut i = 0;
     let mut j = 0;
@@ -775,7 +984,7 @@ fn dc_triangulate(cdt: &mut CdtArrangement, sites: &mut [SiteInfo]) {
 }
 
 /// `initial_triangulation` — Delaunay triangulation of all verts.
-fn initial_triangulation(cdt: &mut CdtArrangement) {
+fn initial_triangulation<S: CdtScalar>(cdt: &mut CdtArrangement<S>) {
     let n = cdt.verts.len();
     if n <= 1 {
         return;
@@ -793,7 +1002,7 @@ fn initial_triangulation(cdt: &mut CdtArrangement) {
 
 /// `re_delaunay_triangulate` — Anglada's restricted re-triangulation of the
 /// pseudo-polygon on se's left face.
-fn re_delaunay_triangulate(cdt: &mut CdtArrangement, se: usize) {
+fn re_delaunay_triangulate<S: CdtScalar>(cdt: &mut CdtArrangement<S>, se: usize) {
     if cdt.se(se).face == cdt.outer_face || cdt.se(cdt.sym(se)).face == cdt.outer_face {
         return;
     }
@@ -843,7 +1052,7 @@ fn re_delaunay_triangulate(cdt: &mut CdtArrangement, se: usize) {
     }
 }
 
-fn tri_orient(cdt: &CdtArrangement, t: usize) -> i32 {
+fn tri_orient<S: CdtScalar>(cdt: &CdtArrangement<S>, t: usize) -> i32 {
     let a = &cdt.verts[cdt.se(t).vert].co;
     let b = &cdt.verts[cdt.se(cdt.se(t).next).vert].co;
     let c = &cdt.verts[cdt.se(cdt.se(cdt.se(t).next).next).vert].co;
@@ -851,33 +1060,35 @@ fn tri_orient(cdt: &CdtArrangement, t: usize) -> i32 {
 }
 
 /* CrossData — crossing point while inserting an edge constraint. */
-#[derive(Clone, Copy)]
-struct CrossData {
-    lambda: f64,
+#[derive(Clone)]
+struct CrossData<S: CdtScalar> {
+    lambda: S,
     vert: usize,
     se_in: usize,
     se_out: usize,
 }
-const CD_NIL: CrossData = CrossData {
-    lambda: 0.0,
-    vert: NIL,
-    se_in: NIL,
-    se_out: NIL,
-};
+fn cd_nil<S: CdtScalar>() -> CrossData<S> {
+    CrossData {
+        lambda: S::zero(),
+        vert: NIL,
+        se_in: NIL,
+        se_out: NIL,
+    }
+}
 
 /// `fill_crossdata_for_through_vert`.
-fn fill_crossdata_for_through_vert(
-    cdt: &CdtArrangement,
+fn fill_crossdata_for_through_vert<S: CdtScalar>(
+    cdt: &CdtArrangement<S>,
     v: usize,
     cd_out: usize,
-    cd: &mut CrossData,
-    cd_next: &mut CrossData,
+    cd: &mut CrossData<S>,
+    cd_next: &mut CrossData<S>,
 ) {
-    cd_next.lambda = 0.0;
+    cd_next.lambda = S::zero();
     cd_next.vert = v;
     cd_next.se_in = NIL;
     cd_next.se_out = NIL;
-    if cd.lambda == 0.0 {
+    if cd.lambda.is_zero() {
         cd.se_out = cd_out;
     } else {
         /* One of the edges in the triangle with edge sym(cd.in) contains v. */
@@ -894,49 +1105,48 @@ fn fill_crossdata_for_through_vert(
 }
 
 /// `fill_crossdata_for_intersect`.
-fn fill_crossdata_for_intersect(
-    cdt: &mut CdtArrangement,
-    curco: &FatCo,
+fn fill_crossdata_for_intersect<S: CdtScalar>(
+    cdt: &mut CdtArrangement<S>,
+    curco: &FatCo<S>,
     v2: usize,
     t: usize,
-    cd: &mut CrossData,
-    cd_next: &mut CrossData,
-    epsilon: f64,
+    cd: &mut CrossData<S>,
+    cd_next: &mut CrossData<S>,
+    epsilon: &S,
 ) {
     let va = cdt.se(t).vert;
     let vb = cdt.se(cdt.se(t).next).vert;
     let se_vcvb = cdt.sym(cdt.se(t).next);
     let se_vcva = cdt.se(cdt.se(t).next).next;
-    let isect = isect_seg_seg(
-        cdt.verts[va].co.exact,
-        cdt.verts[vb].co.exact,
-        curco.exact,
-        cdt.verts[v2].co.exact,
+    let (kind, lambda) = S::isect_seg_seg(
+        &cdt.verts[va].co.exact,
+        &cdt.verts[vb].co.exact,
+        &curco.exact,
+        &cdt.verts[v2].co.exact,
     );
-    let lambda = isect.lambda;
-    match isect.kind {
+    match kind {
         LineLineKind::Cross => {
             let len_ab = distance2(cdt.verts[va].co.approx, cdt.verts[vb].co.approx);
-            if lambda * len_ab <= epsilon {
-                fill_crossdata_for_through_vert(cdt, va, se_vcva, cd, cd_next);
-            } else if (1.0 - lambda) * len_ab <= epsilon {
-                fill_crossdata_for_through_vert(cdt, vb, se_vcvb, cd, cd_next);
-            } else {
-                *cd_next = CrossData {
-                    lambda,
-                    vert: NIL,
-                    se_in: t,
-                    se_out: NIL,
-                };
-                if cd.lambda == 0.0 {
-                    cd.se_out = se_vcva;
+            match lambda.eps_snap(len_ab, epsilon) {
+                -1 => fill_crossdata_for_through_vert(cdt, va, se_vcva, cd, cd_next),
+                1 => fill_crossdata_for_through_vert(cdt, vb, se_vcvb, cd, cd_next),
+                _ => {
+                    *cd_next = CrossData {
+                        lambda,
+                        vert: NIL,
+                        se_in: t,
+                        se_out: NIL,
+                    };
+                    if cd.lambda.is_zero() {
+                        cd.se_out = se_vcva;
+                    }
                 }
             }
         }
         LineLineKind::Exact => {
-            if lambda == 0.0 {
+            if lambda.is_zero() {
                 fill_crossdata_for_through_vert(cdt, va, se_vcva, cd, cd_next);
-            } else if lambda == 1.0 {
+            } else if lambda.is_one() {
                 fill_crossdata_for_through_vert(cdt, vb, se_vcvb, cd, cd_next);
             } else {
                 *cd_next = CrossData {
@@ -945,13 +1155,13 @@ fn fill_crossdata_for_intersect(
                     se_in: t,
                     se_out: NIL,
                 };
-                if cd.lambda == 0.0 {
+                if cd.lambda.is_zero() {
                     cd.se_out = se_vcva;
                 }
             }
         }
         LineLineKind::None => {
-            if lambda <= 0.5 {
+            if lambda.below_half() {
                 fill_crossdata_for_through_vert(cdt, va, se_vcva, cd, cd_next);
             } else {
                 fill_crossdata_for_through_vert(cdt, vb, se_vcvb, cd, cd_next);
@@ -970,10 +1180,10 @@ fn fill_crossdata_for_intersect(
 }
 
 /// `get_next_crossing_from_vert`.
-fn get_next_crossing_from_vert(
-    st: &mut CdtState,
-    cd: &mut CrossData,
-    cd_next: &mut CrossData,
+fn get_next_crossing_from_vert<S: CdtScalar>(
+    st: &mut CdtState<S>,
+    cd: &mut CrossData<S>,
+    cd_next: &mut CrossData<S>,
     v2: usize,
 ) -> bool {
     let tstart = st.cdt.verts[cd.vert].symedge;
@@ -987,7 +1197,8 @@ fn get_next_crossing_from_vert(
             &st.cdt.verts[va].co,
             &st.cdt.verts[v2].co,
         );
-        if orient1 == 0 && in_line(&st.cdt.verts[vcur].co, &st.cdt.verts[va].co, &st.cdt.verts[v2].co)
+        if orient1 == 0
+            && S::in_line(&st.cdt.verts[vcur].co.exact, &st.cdt.verts[va].co.exact, &st.cdt.verts[v2].co.exact)
         {
             fill_crossdata_for_through_vert(&st.cdt, va, t, cd, cd_next);
             return true;
@@ -1000,7 +1211,7 @@ fn get_next_crossing_from_vert(
             );
             if orient1 > 0 && orient2 < 0 {
                 let t2 = st.cdt.se(t).next;
-                let curco = st.cdt.verts[vcur].co;
+                let curco = st.cdt.verts[vcur].co.clone();
                 fill_crossdata_for_intersect(
                     &mut st.cdt,
                     &curco,
@@ -1008,7 +1219,7 @@ fn get_next_crossing_from_vert(
                     t2,
                     cd,
                     cd_next,
-                    st.epsilon,
+                    &st.epsilon,
                 );
                 return true;
             }
@@ -1022,21 +1233,21 @@ fn get_next_crossing_from_vert(
 }
 
 /// `get_next_crossing_from_edge`.
-fn get_next_crossing_from_edge(
-    st: &mut CdtState,
-    cd: &mut CrossData,
-    cd_next: &mut CrossData,
+fn get_next_crossing_from_edge<S: CdtScalar>(
+    st: &mut CdtState<S>,
+    cd: &mut CrossData<S>,
+    cd_next: &mut CrossData<S>,
     v2: usize,
-    epsilon: f64,
+    epsilon: &S,
 ) {
     let va = st.cdt.se(cd.se_in).vert;
     let vb = st.cdt.se(st.cdt.se(cd.se_in).next).vert;
-    let curco = interpolate(
-        st.cdt.verts[va].co.exact,
-        st.cdt.verts[vb].co.exact,
-        cd.lambda,
+    let curco = S::interpolate(
+        &st.cdt.verts[va].co.exact,
+        &st.cdt.verts[vb].co.exact,
+        &cd.lambda,
     );
-    let fat_curco = FatCo::new(curco);
+    let fat_curco = FatCo::<S>::new(curco);
     let se_ac = st.cdt.se(st.cdt.sym(cd.se_in)).next;
     let vc = st.cdt.se(st.cdt.se(se_ac).next).vert;
     let orient = filtered_orient2d(&fat_curco, &st.cdt.verts[v2].co, &st.cdt.verts[vc].co);
@@ -1047,7 +1258,7 @@ fn get_next_crossing_from_edge(
         fill_crossdata_for_intersect(&mut st.cdt, &fat_curco, v2, se_ac, cd, cd_next, epsilon);
     } else {
         *cd_next = CrossData {
-            lambda: 0.0,
+            lambda: S::zero(),
             vert: vc,
             se_in: st.cdt.se(se_ac).next,
             se_out: NIL,
@@ -1065,8 +1276,8 @@ fn get_two_mut<T>(v: &mut Vec<T>, a: usize, b: usize) -> (&mut T, &mut T) {
 
 /// `add_edge_constraint` — insert constrained edge v1->v2; collect generated
 /// edges (in order) into `r_edges` when requested.
-fn add_edge_constraint(
-    st: &mut CdtState,
+fn add_edge_constraint<S: CdtScalar>(
+    st: &mut CdtState<S>,
     v1: usize,
     v2: usize,
     input_id: u32,
@@ -1095,9 +1306,9 @@ fn add_edge_constraint(
         st.visit_count += 1;
         st.visit_count
     };
-    let mut crossings: Vec<CrossData> = Vec::with_capacity(128);
+    let mut crossings: Vec<CrossData<S>> = Vec::with_capacity(128);
     crossings.push(CrossData {
-        lambda: 0.0,
+        lambda: S::zero(),
         vert: v1,
         se_in: NIL,
         se_out: NIL,
@@ -1107,13 +1318,14 @@ fn add_edge_constraint(
         if n > 0 && crossings[n - 1].vert == v2 {
             break;
         }
-        crossings.push(CD_NIL);
-        let prev_lambda = crossings[n - 1].lambda;
+        crossings.push(cd_nil());
+        let prev_lambda = crossings[n - 1].lambda.clone();
         let (cd, cd_next) = get_two_mut(&mut crossings, n - 1, n);
-        let ok = if prev_lambda == 0.0 {
+        let ok = if prev_lambda.is_zero() {
             get_next_crossing_from_vert(st, cd, cd_next, v2)
         } else {
-            get_next_crossing_from_edge(st, cd, cd_next, v2, st.epsilon);
+            let eps = st.epsilon.clone();
+            get_next_crossing_from_edge(st, cd, cd_next, v2, &eps);
             true
         };
         const UNREASONABLY_LARGE_CROSSINGS: usize = 100000;
@@ -1121,7 +1333,7 @@ fn add_edge_constraint(
             debug_assert!(false);
             return;
         }
-        if crossings[n].lambda == 0.0 {
+        if crossings[n].lambda.is_zero() {
             let vv = crossings[n].vert;
             if st.cdt.verts[vv].visit_index == visit {
                 debug_assert!(false);
@@ -1134,27 +1346,27 @@ fn add_edge_constraint(
     /* Post-process crossings: mark "deleted" ones with lambda = -1. */
     let ncrossings = crossings.len();
     for i in 2..ncrossings {
-        if crossings[i].lambda == 0.0 {
+        if crossings[i].lambda.is_zero() {
             let v = crossings[i].vert;
             let mut j = i - 1;
             loop {
                 if j == 0 {
                     break;
                 }
-                let cd_prev = crossings[j];
-                let done = (cd_prev.lambda == 0.0 && cd_prev.vert != v)
-                    || (cd_prev.lambda != 0.0
+                let cd_prev = crossings[j].clone();
+                let done = (cd_prev.lambda.is_zero() && cd_prev.vert != v)
+                    || (!cd_prev.lambda.is_zero()
                         && st.cdt.se(cd_prev.se_in).vert != v
                         && st.cdt.se(st.cdt.se(cd_prev.se_in).next).vert != v);
                 if done {
                     break;
                 }
-                crossings[j].lambda = -1.0;
+                crossings[j].lambda = S::deleted();
                 j -= 1;
             }
             if j < i - 1 {
                 /* Fix in/out across the gap. */
-                if crossings[j].lambda == 0.0 {
+                if crossings[j].lambda.is_zero() {
                     let se = find_symedge_between_verts(&st.cdt, crossings[j].vert, v);
                     if se == NIL {
                         return;
@@ -1176,14 +1388,14 @@ fn add_edge_constraint(
     /* Insert intersection points on constrained edges. */
     for i in 0..ncrossings {
         let cd = &mut crossings[i];
-        if cd.lambda != 0.0
-            && cd.lambda != -1.0
+        if !cd.lambda.is_zero()
+            && !cd.lambda.is_deleted()
             && is_constrained_edge(&st.cdt, st.cdt.se(cd.se_in).edge)
         {
             let in_edge = st.cdt.se(cd.se_in).edge;
             let edge = st.cdt.split_edge(
                 cd.se_in,
-                cd.lambda,
+                cd.lambda.clone(),
                 st.edge_winding_map.as_mut(),
                 st.polygon_boundary_count_map.as_mut(),
             );
@@ -1202,8 +1414,8 @@ fn add_edge_constraint(
     /* Remove crossed, non-intersected edges. */
     for i in 0..ncrossings {
         let cd = &crossings[i];
-        if cd.lambda != 0.0
-            && cd.lambda != -1.0
+        if !cd.lambda.is_zero()
+            && !cd.lambda.is_deleted()
             && !is_constrained_edge(&st.cdt, st.cdt.se(cd.se_in).edge)
         {
             st.cdt.delete_edge(cd.se_in);
@@ -1214,12 +1426,12 @@ fn add_edge_constraint(
     let mut tstart = crossings[0].se_out;
     for i in 1..ncrossings {
         let cd = &crossings[i];
-        if cd.lambda == -1.0 {
+        if cd.lambda.is_deleted() {
             continue;
         }
         let mut t = NIL;
         let mut tnext = NIL;
-        if cd.lambda != 0.0 {
+        if !cd.lambda.is_zero() {
             if is_constrained_edge(&st.cdt, st.cdt.se(cd.se_in).edge) {
                 t = st.cdt.verts[cd.vert].symedge;
                 tnext = st.cdt.se(st.cdt.sym(t)).next;
@@ -1231,10 +1443,10 @@ fn add_edge_constraint(
                 /* Previous non-deleted crossing must also have been a vert,
                  * and segment should exist. */
                 let mut j = i - 1;
-                let mut cd_prev = crossings[0];
+                let mut cd_prev = crossings[0].clone();
                 loop {
-                    cd_prev = crossings[j];
-                    if cd_prev.lambda != -1.0 {
+                    cd_prev = crossings[j].clone();
+                    if !cd_prev.lambda.is_deleted() {
                         break;
                     }
                     if j == 0 {
@@ -1242,7 +1454,7 @@ fn add_edge_constraint(
                     }
                     j -= 1;
                 }
-                debug_assert_eq!(cd_prev.lambda, 0.0);
+                debug_assert!(cd_prev.lambda.is_zero());
                 debug_assert_eq!(st.cdt.se(st.cdt.se(cd_prev.se_out).next).vert, cd.vert);
                 let edge = st.cdt.se(cd_prev.se_out).edge;
                 st.cdt.edges[edge].input_ids.add(input_id);
@@ -1271,7 +1483,7 @@ fn add_edge_constraint(
 }
 
 /// `add_edge_constraints`.
-fn add_edge_constraints(st: &mut CdtState, input: &CdtInput) {
+fn add_edge_constraints<S: CdtScalar>(st: &mut CdtState<S>, input: &CdtInput<S>) {
     let ne = input.edge.len() as u32;
     let nv = input.vert.len() as i32;
     for i in 0..ne as usize {
@@ -1298,7 +1510,7 @@ fn id_range_in_list(id_list: &IdSet, range_start: u32, range_end: u32) -> bool {
 }
 
 /// `add_face_ids` — flood-fill face_id to interior faces.
-fn add_face_ids(st: &mut CdtState, face_symedge: usize, face_id: u32, fedge_start: u32, fedge_end: u32) {
+fn add_face_ids<S: CdtScalar>(st: &mut CdtState<S>, face_symedge: usize, face_id: u32, fedge_start: u32, fedge_end: u32) {
     st.visit_count += 1;
     let visit = st.visit_count;
     let mut stack: Vec<usize> = vec![face_symedge];
@@ -1326,9 +1538,9 @@ fn add_face_ids(st: &mut CdtState, face_symedge: usize, face_id: u32, fedge_star
 }
 
 /// `add_face_constraints` — returns number of face-edges added.
-fn add_face_constraints(
-    st: &mut CdtState,
-    input: &CdtInput,
+fn add_face_constraints<S: CdtScalar>(
+    st: &mut CdtState<S>,
+    input: &CdtInput<S>,
     output_type: CdtOutputType,
     need_winding: bool,
 ) -> i32 {
@@ -1423,7 +1635,7 @@ fn add_face_constraints(
     faces_added
 }
 
-fn vert_touches_face(cdt: &CdtArrangement, v: usize, f: usize) -> bool {
+fn vert_touches_face<S: CdtScalar>(cdt: &CdtArrangement<S>, v: usize, f: usize) -> bool {
     let mut se = cdt.verts[v].symedge;
     let start = se;
     loop {
@@ -1439,7 +1651,7 @@ fn vert_touches_face(cdt: &CdtArrangement, v: usize, f: usize) -> bool {
 }
 
 /// `dissolve_symedge` — delete_edge preserving outer face / face symedges.
-fn dissolve_symedge(st: &mut CdtState, se_in: usize) {
+fn dissolve_symedge<S: CdtScalar>(st: &mut CdtState<S>, se_in: usize) {
     let cdt = &mut st.cdt;
     let mut se = se_in;
     let mut symse = cdt.sym(se);
@@ -1472,7 +1684,7 @@ fn dissolve_symedge(st: &mut CdtState, se_in: usize) {
 }
 
 /// `remove_non_constraint_edges`.
-fn remove_non_constraint_edges(st: &mut CdtState) {
+fn remove_non_constraint_edges<S: CdtScalar>(st: &mut CdtState<S>) {
     let n = st.cdt.edges.len();
     for e in 0..n {
         if !is_deleted_edge(&st.cdt, e) && !is_constrained_edge(&st.cdt, e) {
@@ -1482,7 +1694,7 @@ fn remove_non_constraint_edges(st: &mut CdtState) {
 }
 
 /// `remove_non_constraint_edges_leave_valid_bmesh`.
-fn remove_non_constraint_edges_leave_valid_bmesh(st: &mut CdtState, use_hole_status: bool) {
+fn remove_non_constraint_edges_leave_valid_bmesh<S: CdtScalar>(st: &mut CdtState<S>, use_hole_status: bool) {
     struct EdgeToSort {
         len_squared: f64,
         e: usize,
@@ -1507,7 +1719,7 @@ fn remove_non_constraint_edges_leave_valid_bmesh(st: &mut CdtState, use_hole_sta
         if c != std::cmp::Ordering::Equal {
             return c;
         }
-        let ev = |cdt: &CdtArrangement, e: usize| -> (i32, i32) {
+        let ev = |cdt: &CdtArrangement<S>, e: usize| -> (i32, i32) {
             let v0 = cdt.verts[cdt.se(e * 2).vert].index;
             let v1 = cdt.verts[cdt.se(e * 2 + 1).vert].index;
             if v0 < v1 {
@@ -1518,7 +1730,7 @@ fn remove_non_constraint_edges_leave_valid_bmesh(st: &mut CdtState, use_hole_sta
         };
         ev(&st.cdt, a.e).cmp(&ev(&st.cdt, b.e))
     });
-    let is_output_face = |cdt: &CdtArrangement, f: usize| {
+    let is_output_face = |cdt: &CdtArrangement<S>, f: usize| {
         if use_hole_status {
             !cdt.faces[f].hole
         } else {
@@ -1556,7 +1768,7 @@ fn remove_non_constraint_edges_leave_valid_bmesh(st: &mut CdtState, use_hole_sta
 }
 
 /// `remove_outer_edges_until_constraints`.
-fn remove_outer_edges_until_constraints(st: &mut CdtState) {
+fn remove_outer_edges_until_constraints<S: CdtScalar>(st: &mut CdtState<S>) {
     st.visit_count += 1;
     let visit = st.visit_count;
     st.cdt.faces[st.cdt.outer_face].visit_index = visit;
@@ -1614,7 +1826,7 @@ fn remove_outer_edges_until_constraints(st: &mut CdtState) {
 }
 
 /// `remove_faces_in_holes`.
-fn remove_faces_in_holes(st: &mut CdtState) {
+fn remove_faces_in_holes<S: CdtScalar>(st: &mut CdtState<S>) {
     let n = st.cdt.faces.len();
     for i in 0..n {
         if !st.cdt.faces[i].deleted && st.cdt.faces[i].hole {
@@ -1681,7 +1893,7 @@ fn flood_fill_region_values<V: Copy + PartialEq>(
 }
 
 /// `detect_holes_with_fillrule_even_odd`.
-fn detect_holes_with_fillrule_even_odd(st: &mut CdtState) {
+fn detect_holes_with_fillrule_even_odd<S: CdtScalar>(st: &mut CdtState<S>) {
     debug_assert!(st.polygon_boundary_count_map.is_some());
     let boundary_count = st.polygon_boundary_count_map.take().unwrap();
 
@@ -1778,7 +1990,7 @@ fn detect_holes_with_fillrule_even_odd(st: &mut CdtState) {
 }
 
 /// `detect_holes_with_fillrule_nonzero`.
-fn detect_holes_with_fillrule_nonzero(st: &mut CdtState) {
+fn detect_holes_with_fillrule_nonzero<S: CdtScalar>(st: &mut CdtState<S>) {
     let winding_map = st.edge_winding_map.take().unwrap_or_default();
 
     let mut boundary_regions: Vec<(i32, i32)> = Vec::new();
@@ -1885,7 +2097,7 @@ fn detect_holes_with_fillrule_nonzero(st: &mut CdtState) {
 }
 
 /// `prepare_cdt_for_output`.
-fn prepare_cdt_for_output(st: &mut CdtState, output_type: CdtOutputType) {
+fn prepare_cdt_for_output<S: CdtScalar>(st: &mut CdtState<S>, output_type: CdtOutputType) {
     if st.cdt.edges.is_empty() {
         return;
     }
@@ -1928,7 +2140,7 @@ fn prepare_cdt_for_output(st: &mut CdtState, output_type: CdtOutputType) {
 }
 
 /// `get_cdt_output`.
-fn get_cdt_output(st: &mut CdtState, output_type: CdtOutputType) -> CdtResult {
+fn get_cdt_output<S: CdtScalar>(st: &mut CdtState<S>, output_type: CdtOutputType) -> CdtResult<S> {
     prepare_cdt_for_output(st, output_type);
     let mut result = CdtResult {
         face_edge_offset: st.face_edge_offset,
@@ -1970,7 +2182,7 @@ fn get_cdt_output(st: &mut CdtState, output_type: CdtOutputType) -> CdtResult {
     for i in 0..verts_size {
         let v = &st.cdt.verts[i];
         if v.merge_to_index == -1 {
-            result.vert.push(v.co.exact);
+            result.vert.push(v.co.exact.clone());
             if st.needed_ids & CDT_ORIG_VERTS != 0 {
                 if (i as i32) < st.input_vert_num {
                     result.vert_orig[i_out].push(i as u32);
@@ -2038,15 +2250,15 @@ fn get_cdt_output(st: &mut CdtState, output_type: CdtOutputType) -> CdtResult {
     result
 }
 
-fn add_input_verts(st: &mut CdtState, input: &CdtInput) {
+fn add_input_verts<S: CdtScalar>(st: &mut CdtState<S>, input: &CdtInput<S>) {
     for i in 0..st.input_vert_num as usize {
-        st.cdt.add_vert(input.vert[i]);
+        st.cdt.add_vert(input.vert[i].clone());
     }
 }
 
 /// `delaunay_calc` -> public `delaunay_2d_calc` (f64 specialization only;
 /// mpq/WITH_GMP variant is PORT_PENDING).
-pub fn delaunay_2d_calc(input: &CdtInput, output_type: CdtOutputType) -> CdtResult {
+pub fn delaunay_2d_calc<S: CdtScalar>(input: &CdtInput<S>, output_type: CdtOutputType) -> CdtResult<S> {
     let nv = input.vert.len();
     let ne = input.edge.len();
     let nf = input.face_offsets.len().saturating_sub(1);
@@ -2061,7 +2273,7 @@ pub fn delaunay_2d_calc(input: &CdtInput, output_type: CdtOutputType) -> CdtResu
         input_vert_num: nv as i32,
         visit_count: 0,
         face_edge_offset: 0,
-        epsilon: input.epsilon,
+        epsilon: input.epsilon.clone(),
         needed_ids: input.needed_ids,
         edge_winding_map: None,
         polygon_boundary_count_map: None,
@@ -2132,5 +2344,29 @@ mod tests {
             .face_orig
             .iter()
             .all(|orig| orig.contains(&0)));
+    }
+
+    #[test]
+    fn mpq_cdt_square() {
+        use blenders_math::mpq::{mpq, Mpq, Mpq2};
+        let verts = [
+            Mpq2::new(mpq(0.0), mpq(0.0)),
+            Mpq2::new(mpq(1.0), mpq(0.0)),
+            Mpq2::new(mpq(1.0), mpq(1.0)),
+            Mpq2::new(mpq(0.0), mpq(1.0)),
+        ];
+        let edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
+        let input = CdtInput::<Mpq> {
+            vert: &verts,
+            edge: &edges,
+            face_offsets: &[0],
+            face_vert_indices: &[],
+            epsilon: Mpq::default(),
+            needed_ids: CDT_NO_ORIG_IDS,
+        };
+        let out = delaunay_2d_calc(&input, CdtOutputType::Full);
+        assert_eq!(out.vert.len(), 4);
+        assert_eq!(out.edge.len(), 5);
+        assert_eq!(out.face.len(), 2);
     }
 }
