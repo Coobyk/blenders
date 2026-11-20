@@ -2,6 +2,7 @@
 //! wired into `opdefines::BMO_OPDEFINES`.
 pub mod bmo_edgenet;
 pub mod bmo_fill_attribute;
+pub mod bmo_fill_holes;
 pub mod bmo_normals;
 pub mod bmo_split_edges;
 pub mod bmo_unsubdivide;
