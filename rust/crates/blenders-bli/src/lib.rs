@@ -34,3 +34,5 @@ pub mod memarena;
 pub mod timecode;
 pub mod uuid;
 pub mod array_utils;
+pub mod fnmatch;
+pub mod mempool;
