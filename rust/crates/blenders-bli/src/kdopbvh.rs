@@ -643,6 +643,7 @@ impl<'a, 'b> OverlapCtx<'a, 'b> {
 fn tree_overlap_traverse(
     t1: &BVHTree,
     t2: &BVHTree,
+    same_tree: bool,
     ctx: &mut OverlapCtx<'_, '_>,
     start: Axis,
     stop: Axis,
@@ -652,21 +653,21 @@ fn tree_overlap_traverse(
     if tree_overlap_test(t1.bv(n1), t2.bv(n2), start, stop) {
         if t1.node_num(n1) == 0 {
             if t2.node_num(n2) == 0 {
-                if n1 == n2 {
+                if same_tree && n1 == n2 {
                     return;
                 }
                 ctx.push(t1.node_index(n1), t2.node_index(n2));
             } else {
                 for j in 0..t2.tree_type as usize {
                     if let Some(c) = t2.child(n2, j) {
-                        tree_overlap_traverse(t1, t2, ctx, start, stop, n1, c);
+                        tree_overlap_traverse(t1, t2, same_tree, ctx, start, stop, n1, c);
                     }
                 }
             }
         } else {
             for j in 0..t1.tree_type as usize {
                 if let Some(c) = t1.child(n1, j) {
-                    tree_overlap_traverse(t1, t2, ctx, start, stop, c, n2);
+                    tree_overlap_traverse(t1, t2, same_tree, ctx, start, stop, c, n2);
                 }
             }
         }
@@ -676,6 +677,7 @@ fn tree_overlap_traverse(
 fn tree_overlap_traverse_cb(
     t1: &BVHTree,
     t2: &BVHTree,
+    same_tree: bool,
     ctx: &mut OverlapCtx<'_, '_>,
     start: Axis,
     stop: Axis,
@@ -685,7 +687,7 @@ fn tree_overlap_traverse_cb(
     if tree_overlap_test(t1.bv(n1), t2.bv(n2), start, stop) {
         if t1.node_num(n1) == 0 {
             if t2.node_num(n2) == 0 {
-                if n1 == n2 {
+                if same_tree && n1 == n2 {
                     return;
                 }
                 let cb = ctx.callback.as_deref_mut().unwrap();
@@ -695,14 +697,14 @@ fn tree_overlap_traverse_cb(
             } else {
                 for j in 0..t2.tree_type as usize {
                     if let Some(c) = t2.child(n2, j) {
-                        tree_overlap_traverse_cb(t1, t2, ctx, start, stop, n1, c);
+                        tree_overlap_traverse_cb(t1, t2, same_tree, ctx, start, stop, n1, c);
                     }
                 }
             }
         } else {
             for j in 0..t1.tree_type as usize {
                 if let Some(c) = t1.child(n1, j) {
-                    tree_overlap_traverse_cb(t1, t2, ctx, start, stop, c, n2);
+                    tree_overlap_traverse_cb(t1, t2, same_tree, ctx, start, stop, c, n2);
                 }
             }
         }
@@ -712,6 +714,7 @@ fn tree_overlap_traverse_cb(
 fn tree_overlap_traverse_num(
     t1: &BVHTree,
     t2: &BVHTree,
+    same_tree: bool,
     ctx: &mut OverlapCtx<'_, '_>,
     start: Axis,
     stop: Axis,
@@ -721,7 +724,7 @@ fn tree_overlap_traverse_num(
     if tree_overlap_test(t1.bv(n1), t2.bv(n2), start, stop) {
         if t1.node_num(n1) == 0 {
             if t2.node_num(n2) == 0 {
-                if n1 == n2 {
+                if same_tree && n1 == n2 {
                     return false;
                 }
                 let hit = match ctx.callback.as_deref_mut() {
@@ -736,7 +739,7 @@ fn tree_overlap_traverse_num(
             } else {
                 for j in 0..t2.node_num(n2) {
                     let c = t2.child(n2, j).unwrap();
-                    if tree_overlap_traverse_num(t1, t2, ctx, start, stop, n1, c) {
+                    if tree_overlap_traverse_num(t1, t2, same_tree, ctx, start, stop, n1, c) {
                         return true;
                     }
                 }
@@ -745,7 +748,7 @@ fn tree_overlap_traverse_num(
             let max_i = ctx.max_interactions;
             for j in 0..t1.node_num(n1) {
                 let c = t1.child(n1, j).unwrap();
-                if tree_overlap_traverse_num(t1, t2, ctx, start, stop, c, n2) {
+                if tree_overlap_traverse_num(t1, t2, same_tree, ctx, start, stop, c, n2) {
                     ctx.max_interactions = max_i;
                 }
             }
@@ -757,6 +760,7 @@ fn tree_overlap_traverse_num(
 fn tree_overlap_invoke_traverse(
     t1: &BVHTree,
     t2: &BVHTree,
+    same_tree: bool,
     ctx: &mut OverlapCtx<'_, '_>,
     start: Axis,
     stop: Axis,
@@ -764,11 +768,11 @@ fn tree_overlap_invoke_traverse(
     n2: usize,
 ) {
     if ctx.max_interactions > 0 {
-        tree_overlap_traverse_num(t1, t2, ctx, start, stop, n1, n2);
+        tree_overlap_traverse_num(t1, t2, same_tree, ctx, start, stop, n1, n2);
     } else if ctx.callback.is_some() {
-        tree_overlap_traverse_cb(t1, t2, ctx, start, stop, n1, n2);
+        tree_overlap_traverse_cb(t1, t2, same_tree, ctx, start, stop, n1, n2);
     } else {
-        tree_overlap_traverse(t1, t2, ctx, start, stop, n1, n2);
+        tree_overlap_traverse(t1, t2, same_tree, ctx, start, stop, n1, n2);
     }
 }
 
@@ -778,7 +782,7 @@ fn tree_overlap_traverse_self_cb(t: &BVHTree, ctx: &mut OverlapCtx<'_, '_>, star
         tree_overlap_traverse_self_cb(t, ctx, start, stop, ci);
         for j in i + 1..t.node_num(n) {
             let cj = t.child(n, j).unwrap();
-            tree_overlap_traverse_cb(t, t, ctx, start, stop, ci, cj);
+            tree_overlap_traverse_cb(t, t, true, ctx, start, stop, ci, cj);
         }
     }
 }
@@ -788,7 +792,7 @@ fn tree_overlap_traverse_self(t: &BVHTree, ctx: &mut OverlapCtx<'_, '_>, start: 
         tree_overlap_traverse_self(t, ctx, start, stop, ci);
         for j in i + 1..t.node_num(n) {
             let cj = t.child(n, j).unwrap();
-            tree_overlap_traverse(t, t, ctx, start, stop, ci, cj);
+            tree_overlap_traverse(t, t, true, ctx, start, stop, ci, cj);
         }
     }
 }
@@ -854,7 +858,7 @@ pub fn bvhtree_overlap_ex(
         if use_self {
             tree_overlap_invoke_traverse_self(tree1, &mut ctx, start, stop, root1);
         } else {
-            tree_overlap_invoke_traverse(tree1, tree2, &mut ctx, start, stop, root1, root2);
+            tree_overlap_invoke_traverse(tree1, tree2, false, &mut ctx, start, stop, root1, root2);
         }
     }
     overlap_store
