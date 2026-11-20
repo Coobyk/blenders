@@ -124,3 +124,4 @@ pub mod kdtree;
 pub mod structure_of_array_conversion;
 pub mod index_mask_expression;
 pub mod expr_pylike_eval;
+pub mod scanfill;
