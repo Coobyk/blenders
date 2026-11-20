@@ -9,6 +9,7 @@
 //! Source: `source/blender/bmesh/` (`bmesh_class.hh`, `intern/*.cc`).
 
 pub mod core;
+pub mod mesh;
 pub mod structure;
 
 use blenders_math::vector::Vec3;
