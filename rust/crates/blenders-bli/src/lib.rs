@@ -75,3 +75,4 @@ pub mod implicit_sharing;
 pub mod cpp_type;
 pub mod memory_cache;
 pub mod memblock;
+pub mod resource_scope;
