@@ -25,7 +25,7 @@ pub const OPDEF_SMOOTH_VERT: BMOpDefine = BMOpDefine {
         ("use_axis_z", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_smooth_vert_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -98,7 +98,7 @@ pub const OPDEF_REGION_EXTEND: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_region_extend_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -135,7 +135,7 @@ pub const OPDEF_FLIP_QUAD_TESSELLATION: BMOpDefine = BMOpDefine {
         ("faces", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_flip_quad_tessellation_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
