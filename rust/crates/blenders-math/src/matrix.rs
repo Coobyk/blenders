@@ -497,6 +497,33 @@ impl Mat4 {
         }
     }
 
+    /// `project_point_safe` — `project_point` via safe_divide (w==0 → zeros).
+    pub fn project_point_safe(self, p: Vec3) -> Vec3 {
+        let x = self[0][0] * p.x + self[1][0] * p.y + self[2][0] * p.z + self[3][0];
+        let y = self[0][1] * p.x + self[1][1] * p.y + self[2][1] * p.z + self[3][1];
+        let z = self[0][2] * p.x + self[1][2] * p.y + self[2][2] * p.z + self[3][2];
+        let w = self[0][3] * p.x + self[1][3] * p.y + self[2][3] * p.z + self[3][3];
+        let aw = w.abs();
+        if aw != 0.0 {
+            Vec3::new(x / aw, y / aw, z / aw)
+        } else {
+            Vec3::new(0.0, 0.0, 0.0)
+        }
+    }
+
+    /// `project_point_safe` — float3x3/Vec2 variant.
+    pub fn project_point_safe_v2(m: Mat3, p: Vec2) -> Vec2 {
+        let x = m[0][0] * p.x + m[1][0] * p.y + m[2][0];
+        let y = m[0][1] * p.x + m[1][1] * p.y + m[2][1];
+        let w = m[0][2] * p.x + m[1][2] * p.y + m[2][2];
+        let aw = w.abs();
+        if aw != 0.0 {
+            Vec2::new(x / aw, y / aw)
+        } else {
+            Vec2::new(0.0, 0.0)
+        }
+    }
+
     /// `translate_m4` — post-multiply translation: `self * T(d)`.
     #[inline]
     pub fn translated(self, d: Vec3) -> Self {
