@@ -1743,3 +1743,511 @@ mod tests {
         assert!(dist_signed_squared_to_corner(outside, v1, v2, v3, Vec3::Z) > 0.0);
     }
 }
+
+/// `isect_planes_v3_fn` — calls `cb` for each common point of plane triples
+/// inside all planes; returns whether any was found.
+pub fn isect_planes_fn(
+    planes: &[Vec4],
+    eps_coplanar: f32,
+    eps_isect: f32,
+    mut cb: impl FnMut(Vec3, usize, usize, usize),
+) -> bool {
+    let mut found = false;
+    let n = planes.len();
+    for i in 0..n {
+        let n1 = planes[i];
+        for j in i + 1..n {
+            let n2 = planes[j];
+            let n1n2 = n1.xyz().cross(n2.xyz());
+            if n1n2.length_squared() <= eps_coplanar {
+                continue;
+            }
+            for k in j + 1..n {
+                let n3 = planes[k];
+                let n2n3 = n2.xyz().cross(n3.xyz());
+                if n2n3.length_squared() <= eps_coplanar {
+                    continue;
+                }
+                let n3n1 = n3.xyz().cross(n1.xyz());
+                if n3n1.length_squared() <= eps_coplanar {
+                    continue;
+                }
+                let quotient = -n1.xyz().dot(n2n3);
+                if quotient.abs() < eps_coplanar {
+                    continue;
+                }
+                let co_test = Vec3::new(
+                    (n2n3.x * n1.w + n3n1.x * n2.w + n1n2.x * n3.w) / quotient,
+                    (n2n3.y * n1.w + n3n1.y * n2.w + n1n2.y * n3.w) / quotient,
+                    (n2n3.z * n1.w + n3n1.z * n2.w + n1n2.z * n3.w) / quotient,
+                );
+                let mut ok = true;
+                for (i_test, np) in planes.iter().enumerate() {
+                    if np.xyz().dot(co_test) + np.w > eps_isect
+                        && i_test != i && i_test != j && i_test != k
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+                if ok {
+                    cb(co_test, i, j, k);
+                    found = true;
+                }
+            }
+        }
+    }
+    found
+}
+
+fn sub_v3db(a: Vec3, b: Vec3) -> [f64; 3] {
+    [
+        a.x as f64 - b.x as f64,
+        a.y as f64 - b.y as f64,
+        a.z as f64 - b.z as f64,
+    ]
+}
+fn cross_v3db(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+fn dot_v3db_v3fl(a: [f64; 3], b: Vec3) -> f64 {
+    a[0] * b.x as f64 + a[1] * b.y as f64 + a[2] * b.z as f64
+}
+
+/// `isect_tri_tri_v3_ex` — `(hit, p1, p2, tri_a_edge_isect_count)`.
+pub fn isect_tri_tri_ex(tri_a: &[Vec3; 3], tri_b: &[Vec3; 3]) -> Option<(Vec3, Vec3, i32)> {
+    struct Range {
+        min: f32,
+        max: f32,
+        loc: [Vec3; 2],
+    }
+    let mut side = [[0.0f32; 3]; 2];
+
+    let ba = sub_v3db(tri_a[0], tri_a[1]);
+    let bc = sub_v3db(tri_a[2], tri_a[1]);
+    let plane_a = cross_v3db(ba, bc);
+    let plane_a_w = -dot_v3db_v3fl(plane_a, tri_a[1]);
+    side[1][0] = (dot_v3db_v3fl(plane_a, tri_b[0]) + plane_a_w) as f32;
+    side[1][1] = (dot_v3db_v3fl(plane_a, tri_b[1]) + plane_a_w) as f32;
+    side[1][2] = (dot_v3db_v3fl(plane_a, tri_b[2]) + plane_a_w) as f32;
+
+    if side[1][0] == 0.0 && side[1][1] == 0.0 && side[1][2] == 0.0 {
+        return None; // coplanar unsupported
+    }
+    if side[1][0] != 0.0
+        && side[1][1] != 0.0
+        && side[1][2] != 0.0
+        && (side[1][0] < 0.0) == (side[1][1] < 0.0)
+        && (side[1][0] < 0.0) == (side[1][2] < 0.0)
+    {
+        return None;
+    }
+
+    let ba = sub_v3db(tri_b[0], tri_b[1]);
+    let bc = sub_v3db(tri_b[2], tri_b[1]);
+    let plane_b = cross_v3db(ba, bc);
+    let plane_b_w = -dot_v3db_v3fl(plane_b, tri_b[1]);
+    side[0][0] = (dot_v3db_v3fl(plane_b, tri_a[0]) + plane_b_w) as f32;
+    side[0][1] = (dot_v3db_v3fl(plane_b, tri_a[1]) + plane_b_w) as f32;
+    side[0][2] = (dot_v3db_v3fl(plane_b, tri_a[2]) + plane_b_w) as f32;
+
+    if side[0][0] != 0.0
+        && side[0][1] != 0.0
+        && side[0][2] != 0.0
+        && (side[0][0] < 0.0) == (side[0][1] < 0.0)
+        && (side[0][0] < 0.0) == (side[0][2] < 0.0)
+    {
+        return None;
+    }
+
+    let isect_dir = cross_v3db(plane_a, plane_b);
+    let mut range = [
+        Range {
+            min: 0.0,
+            max: 0.0,
+            loc: [Vec3::ZERO; 2],
+        },
+        Range {
+            min: 0.0,
+            max: 0.0,
+            loc: [Vec3::ZERO; 2],
+        },
+    ];
+
+    for i in 0..2 {
+        let tri = if i == 0 { tri_a } else { tri_b };
+        let mut tri_i = if side[i][0] != 0.0
+            && side[i][1] != 0.0
+            && (side[i][0] < 0.0) == (side[i][1] < 0.0)
+        {
+            [1usize, 2, 0]
+        } else if side[i][1] != 0.0
+            && side[i][2] != 0.0
+            && (side[i][1] < 0.0) == (side[i][2] < 0.0)
+        {
+            [2usize, 0, 1]
+        } else {
+            [0usize, 1, 2]
+        };
+
+        let dot_b = dot_v3db_v3fl(isect_dir, tri[tri_i[1]]);
+        let sidec = side[i][tri_i[1]];
+        if sidec != 0.0 {
+            let dot_a = dot_v3db_v3fl(isect_dir, tri[tri_i[0]]);
+            let dot_c = dot_v3db_v3fl(isect_dir, tri[tri_i[2]]);
+            let mut fac0 = sidec / (sidec - side[i][tri_i[0]]);
+            let mut fac1 = sidec / (sidec - side[i][tri_i[2]]);
+            let mut offset0 = fac0 as f64 * (dot_a - dot_b);
+            let mut offset1 = fac1 as f64 * (dot_c - dot_b);
+            if offset0 > offset1 {
+                std::mem::swap(&mut offset0, &mut offset1);
+                std::mem::swap(&mut fac0, &mut fac1);
+                tri_i.swap(0, 2);
+            }
+            range[i].min = (dot_b + offset0) as f32;
+            range[i].max = (dot_b + offset1) as f32;
+            range[i].loc[0] = tri[tri_i[1]] * (1.0 - fac0) + tri[tri_i[0]] * fac0;
+            range[i].loc[1] = tri[tri_i[1]] * (1.0 - fac1) + tri[tri_i[2]] * fac1;
+        } else {
+            range[i].min = dot_b as f32;
+            range[i].max = dot_b as f32;
+            range[i].loc[0] = tri[tri_i[1]];
+            range[i].loc[1] = tri[tri_i[1]];
+        }
+    }
+
+    if range[0].max > range[1].min && range[0].min < range[1].max {
+        let (i1, i2, cnt);
+        if range[0].min >= range[1].min {
+            i1 = range[0].loc[0];
+            if range[0].max <= range[1].max {
+                i2 = range[0].loc[1];
+                cnt = 2;
+            } else {
+                i2 = range[1].loc[1];
+                cnt = 1;
+            }
+        } else if range[0].max <= range[1].max {
+            i1 = range[0].loc[1];
+            i2 = range[1].loc[0];
+            cnt = 1;
+        } else {
+            i1 = range[1].loc[0];
+            i2 = range[1].loc[1];
+            cnt = 0;
+        }
+        return Some((i1, i2, cnt));
+    }
+    None
+}
+
+/// `isect_tri_tri_v3` — segment endpoints of the tri/tri intersection.
+pub fn isect_tri_tri(tri_a: &[Vec3; 3], tri_b: &[Vec3; 3]) -> Option<(Vec3, Vec3)> {
+    isect_tri_tri_ex(tri_a, tri_b).map(|(a, b, _)| (a, b))
+}
+
+/* Tri-tri isect 2D (Guigue & Devillers orientation predicates). */
+
+fn tri_tri_v2_impl_vert(a0: Vec2, a1: Vec2, a2: Vec2, b0: Vec2, b1: Vec2, b2: Vec2) -> bool {
+    let s = line_point_side_v2;
+    if s(b2, b0, a1) >= 0.0 {
+        if s(b2, b1, a1) <= 0.0 {
+            if s(a0, b0, a1) > 0.0 {
+                return s(a0, b1, a1) <= 0.0;
+            }
+            if s(a0, b0, a2) >= 0.0 {
+                return s(a1, a2, b0) >= 0.0;
+            }
+            return false;
+        }
+        if s(a0, b1, a1) <= 0.0 {
+            if s(b2, b1, a2) <= 0.0 {
+                return s(a1, a2, b1) >= 0.0;
+            }
+            return false;
+        }
+        return false;
+    }
+    if s(b2, b0, a2) >= 0.0 {
+        if s(a1, a2, b2) >= 0.0 {
+            return s(a0, b0, a2) >= 0.0;
+        }
+        if s(a1, a2, b1) >= 0.0 {
+            return s(b2, a2, b1) >= 0.0;
+        }
+        return false;
+    }
+    false
+}
+
+fn tri_tri_v2_impl_edge(a0: Vec2, a1: Vec2, a2: Vec2, b0: Vec2, b2: Vec2) -> bool {
+    let s = line_point_side_v2;
+    if s(b2, b0, a1) >= 0.0 {
+        if s(a0, b0, a1) >= 0.0 {
+            return s(a0, a1, b2) >= 0.0;
+        }
+        if s(a1, a2, b0) >= 0.0 {
+            return s(a2, a0, b0) >= 0.0;
+        }
+        return false;
+    }
+    if s(b2, b0, a2) >= 0.0 {
+        if s(a0, b0, a2) >= 0.0 {
+            return s(a0, a2, b2) >= 0.0 || s(a1, a2, b2) >= 0.0;
+        }
+        return false;
+    }
+    false
+}
+
+fn tri_tri_impl_ccw_v2(a0: Vec2, a1: Vec2, a2: Vec2, b0: Vec2, b1: Vec2, b2: Vec2) -> bool {
+    let s = line_point_side_v2;
+    if s(b0, b1, a0) >= 0.0 {
+        if s(b1, b2, a0) >= 0.0 {
+            if s(b2, b0, a0) >= 0.0 {
+                return true;
+            }
+            return tri_tri_v2_impl_edge(a0, a1, a2, b0, b2);
+        }
+        if s(b2, b0, a0) >= 0.0 {
+            return tri_tri_v2_impl_edge(a0, a1, a2, b2, b0);
+        }
+        return tri_tri_v2_impl_vert(a0, a1, a2, b0, b1, b2);
+    }
+    if s(b1, b2, a0) >= 0.0 {
+        if s(b2, b0, a0) >= 0.0 {
+            return tri_tri_v2_impl_edge(a0, a1, a2, b1, b2);
+        }
+        return tri_tri_v2_impl_vert(a0, a1, a2, b1, b2, b0);
+    }
+    tri_tri_v2_impl_vert(a0, a1, a2, b2, b0, b1)
+}
+
+/// `isect_tri_tri_v2`.
+pub fn isect_tri_tri_v2(a0: Vec2, a1: Vec2, a2: Vec2, b0: Vec2, b1: Vec2, b2: Vec2) -> bool {
+    let s = line_point_side_v2;
+    if s(a0, a1, a2) < 0.0 {
+        if s(b0, b1, b2) < 0.0 {
+            return tri_tri_impl_ccw_v2(a0, a2, a1, b0, b2, b1);
+        }
+        return tri_tri_impl_ccw_v2(a0, a2, a1, b0, b1, b2);
+    }
+    if s(b0, b1, b2) < 0.0 {
+        return tri_tri_impl_ccw_v2(a0, a1, a2, b0, b2, b1);
+    }
+    tri_tri_impl_ccw_v2(a0, a1, a2, b0, b1, b2)
+}
+
+/* Sphere sweep (Fauerby "Improved Collision Detection and Response"). */
+
+fn get_lowest_root(a: f32, b: f32, c: f32, max_r: f32) -> Option<f32> {
+    let determinant = b * b - 4.0 * a * c;
+    if determinant < 0.0 {
+        return None;
+    }
+    let sqrt_d = determinant.sqrt();
+    let mut r1 = (-b - sqrt_d) / (2.0 * a);
+    let mut r2 = (-b + sqrt_d) / (2.0 * a);
+    if r1 > r2 {
+        std::mem::swap(&mut r1, &mut r2);
+    }
+    if r1 > 0.0 && r1 < max_r {
+        return Some(r1);
+    }
+    if r2 > 0.0 && r2 < max_r {
+        return Some(r2);
+    }
+    None
+}
+
+/// `isect_aabb_planes_v3` — ISECT_AABB_PLANE_* result.
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AabbPlaneIsect {
+    /// `ISECT_AABB_PLANE_BEHIND_ANY`.
+    BehindAny = 0,
+    /// `ISECT_AABB_PLANE_CROSS_ANY`.
+    CrossAny = 1,
+    /// `ISECT_AABB_PLANE_IN_FRONT_ALL`.
+    InFrontAll = 2,
+}
+
+/// `isect_aabb_planes_v3`.
+pub fn isect_aabb_planes(planes: &[Vec4], bbmin: Vec3, bbmax: Vec3) -> AabbPlaneIsect {
+    let mut ret = AabbPlaneIsect::InFrontAll;
+    for plane in planes {
+        let (bb_near, bb_far) = aabb_get_near_far_from_plane(plane.xyz(), bbmin, bbmax);
+        if plane_point_side(*plane, bb_far) < 0.0 {
+            return AabbPlaneIsect::BehindAny;
+        }
+        if ret != AabbPlaneIsect::CrossAny && plane_point_side(*plane, bb_near) < 0.0 {
+            ret = AabbPlaneIsect::CrossAny;
+        }
+    }
+    ret
+}
+
+/// `isect_sweeping_sphere_tri_v3` — `(lambda, impact_point)`.
+pub fn isect_sweeping_sphere_tri(
+    p1: Vec3,
+    p2: Vec3,
+    radius: f32,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<(f32, Vec3)> {
+    let radius2 = radius * radius;
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let vel = p2 - p1;
+
+    // test plane of tri
+    let mut nor = e1.cross(e2);
+    nor.normalize();
+    if nor.dot(vel) > 0.0 {
+        nor = -nor;
+    }
+    let mut a = p1.dot(nor) - v0.dot(nor);
+    let nordotv = nor.dot(vel);
+    if nordotv.abs() < 0.000001 {
+        if a.abs() >= radius {
+            return None;
+        }
+    } else {
+        let mut t0 = (-a + radius) / nordotv;
+        let mut t1 = (-a - radius) / nordotv;
+        if t0 > t1 {
+            std::mem::swap(&mut t0, &mut t1);
+        }
+        if t0 > 1.0 || t1 < 0.0 {
+            return None;
+        }
+        let t0 = t0.clamp(0.0, 1.0);
+        let point = p1 + vel * t0 - nor * radius;
+
+        // is the point in the tri?
+        a = e1.dot(e1);
+        let b = e1.dot(e2);
+        let c = e2.dot(e2);
+        let temp = point - v0;
+        let d = temp.dot(e1);
+        let e = temp.dot(e2);
+        let x = d * c - e * b;
+        let y = e * a - d * b;
+        let z = x + y - (a * c - b * b);
+        if z <= 0.0 && x >= 0.0 && y >= 0.0 {
+            return Some((t0, point));
+        }
+    }
+
+    let mut lambda = 1.0f32;
+    let mut ipoint = Vec3::ZERO;
+    let mut found = false;
+
+    // test points
+    let va = vel.dot(vel);
+    for v in [v0, v1, v2] {
+        let temp = p1 - v;
+        let b = 2.0 * vel.dot(temp);
+        let c = temp.dot(temp) - radius2;
+        if let Some(root) = get_lowest_root(va, b, c, lambda) {
+            lambda = root;
+            ipoint = v;
+            found = true;
+        }
+    }
+
+    // test edges
+    let e3 = v2 - v1;
+    // e1, e2 share bv = v0 - p1
+    for (edge, origin) in [(e1, v0), (e2, v0)] {
+        let bv = v0 - p1;
+        let elen2 = edge.dot(edge);
+        let edotv = edge.dot(vel);
+        let edotbv = edge.dot(bv);
+        let a = elen2 * -vel.dot(vel) + edotv * edotv;
+        let b = 2.0 * (elen2 * vel.dot(bv) - edotv * edotbv);
+        let c = elen2 * (radius2 - bv.dot(bv)) + edotbv * edotbv;
+        if let Some(new_lambda) = get_lowest_root(a, b, c, lambda) {
+            let e = (edotv * new_lambda - edotbv) / elen2;
+            if (0.0..=1.0).contains(&e) {
+                lambda = new_lambda;
+                ipoint = edge * e + origin;
+                found = true;
+            }
+        }
+    }
+    {
+        let bv = v1 - p1;
+        let elen2 = e3.dot(e3);
+        let edotv = e3.dot(vel);
+        let edotbv = e3.dot(bv);
+        let a = elen2 * -vel.dot(vel) + edotv * edotv;
+        let b = 2.0 * (elen2 * vel.dot(bv) - edotv * edotbv);
+        let c = elen2 * (radius2 - bv.dot(bv)) + edotbv * edotbv;
+        if let Some(new_lambda) = get_lowest_root(a, b, c, lambda) {
+            let e = (edotv * new_lambda - edotbv) / elen2;
+            if (0.0..=1.0).contains(&e) {
+                lambda = new_lambda;
+                ipoint = e3 * e + v1;
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        Some((lambda, ipoint))
+    } else {
+        None
+    }
+}
+
+/// `isect_axial_line_segment_tri_v3`.
+pub fn isect_axial_line_segment_tri(
+    axis: usize,
+    p1: Vec3,
+    p2: Vec3,
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+) -> Option<f32> {
+    const EPSILON: f32 = 0.000001;
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let p = v0 - p1;
+    let a0 = axis;
+    let a1 = (axis + 1) % 3;
+    let a2 = (axis + 2) % 3;
+
+    let mut f = e2[a1] * e1[a2] - e2[a2] * e1[a1];
+    if f > -EPSILON && f < EPSILON {
+        return None;
+    }
+    let v = (p[a2] * e1[a1] - p[a1] * e1[a2]) / f;
+    if !(0.0..=1.0).contains(&v) {
+        return None;
+    }
+    f = e1[a1];
+    let u;
+    if f > -EPSILON && f < EPSILON {
+        f = e1[a2];
+        if f > -EPSILON && f < EPSILON {
+            return None;
+        }
+        u = (-p[a2] - v * e2[a2]) / f;
+    } else {
+        u = (-p[a1] - v * e2[a1]) / f;
+    }
+    if u < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let lambda = (p[a0] + u * e1[a0] + v * e2[a0]) / (p2[a0] - p1[a0]);
+    if !(0.0..=1.0).contains(&lambda) {
+        return None;
+    }
+    Some(lambda)
+}
