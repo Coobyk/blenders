@@ -18,3 +18,4 @@ pub mod bmo_poke;
 pub mod bmo_connect;
 pub mod bmo_extrude;
 pub mod bmo_flatten;
+pub mod bmo_rotate_edges;

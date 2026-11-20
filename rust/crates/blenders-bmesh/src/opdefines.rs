@@ -112,7 +112,7 @@ pub const OPDEF_ROTATE_EDGES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_rotate_edges::bmo_rotate_edges_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
