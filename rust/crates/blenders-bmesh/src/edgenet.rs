@@ -53,7 +53,7 @@ fn api_test(bm: &BMesh, htype: u8, i: usize, bit: u8) -> bool {
 
 /// `BM_edge_is_wire` — no face uses this edge.
 #[inline]
-fn edge_is_wire(bm: &BMesh, e: usize) -> bool {
+pub fn edge_is_wire(bm: &BMesh, e: usize) -> bool {
     bm.edge(e).l == BM_NIL
 }
 

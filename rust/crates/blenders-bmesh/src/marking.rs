@@ -710,3 +710,15 @@ pub fn bm_mesh_elem_hflag_disable_all(bm: &mut BMesh, htype: u8, hflag: u8) {
         for f in 0..bm.totface as usize { bm.fpool[f].head.hflag &= !hflag; }
     }
 }
+
+/// `BM_elem_flag_merge_into` — merge hflag of two elems into a third.
+pub fn bm_elem_flag_merge_into(bm: &mut BMesh, elem: (u8, usize), a: (u8, usize), b: (u8, usize)) {
+    let fa = crate::hflag_of(bm, a);
+    let fb = crate::hflag_of(bm, b);
+    match elem.0 {
+        crate::BM_VERT => bm.vpool[elem.1].head.hflag |= fa | fb,
+        crate::BM_EDGE => bm.epool[elem.1].head.hflag |= fa | fb,
+        crate::BM_LOOP => bm.lpool[elem.1].head.hflag |= fa | fb,
+        _ => bm.fpool[elem.1].head.hflag |= fa | fb,
+    }
+}

@@ -1563,3 +1563,14 @@ pub fn bm_face_exists_subset_from_face(bm: &BMesh, l_a: usize, l_b: usize, f_len
     }
     BM_NIL
 }
+
+/// `BM_face_exists_multi_edge` — a face exists containing ALL of earr.
+pub fn bm_face_exists_multi_edge(bm: &BMesh, earr: &[usize]) -> bool {
+    if earr.is_empty() { return false; }
+    for f in FacesOfEdge::new(bm, earr[0]) {
+        if earr[1..].iter().all(|&e| bm_edge_in_face(bm, e, f)) {
+            return true;
+        }
+    }
+    false
+}

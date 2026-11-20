@@ -373,3 +373,14 @@ pub mod callbacks {
     /* type refs to satisfy the generic-callback signature parity */
     const _: Option<fn(&BMesh, &BMVert, &BMEdge, &BMLoop, &BMFace)> = None;
 }
+
+/// hflag accessor for `bm_elem_flag_merge_into`.
+pub fn hflag_of(bm: &BMesh, elem: (u8, usize)) -> u8 {
+    match elem.0 {
+        BM_VERT => bm.vpool[elem.1].head.hflag,
+        BM_EDGE => bm.epool[elem.1].head.hflag,
+        BM_LOOP => bm.lpool[elem.1].head.hflag,
+        _ => bm.fpool[elem.1].head.hflag,
+    }
+}
+pub mod tools;
