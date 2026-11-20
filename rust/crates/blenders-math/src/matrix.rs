@@ -5,7 +5,7 @@
 //! Blender's `MatBase` and the C `float m[4][4]` API (translation at
 //! `mat[3]` of a `Mat4`).
 
-use std::ops::{Index, IndexMut, Mul, Neg};
+use std::ops::{Add, Index, IndexMut, Mul, Neg, Sub};
 
 use crate::vector::{Vec2, Vec3, Vec4};
 
@@ -265,6 +265,22 @@ impl Mul<f32> for Mat3 {
     #[inline]
     fn mul(self, s: f32) -> Mat3 {
         Mat3::from_cols(self[0] * s, self[1] * s, self[2] * s)
+    }
+}
+
+impl Add for Mat3 {
+    type Output = Mat3;
+    #[inline]
+    fn add(self, rhs: Mat3) -> Mat3 {
+        Mat3::from_cols(self[0] + rhs[0], self[1] + rhs[1], self[2] + rhs[2])
+    }
+}
+
+impl Sub for Mat3 {
+    type Output = Mat3;
+    #[inline]
+    fn sub(self, rhs: Mat3) -> Mat3 {
+        Mat3::from_cols(self[0] - rhs[0], self[1] - rhs[1], self[2] - rhs[2])
     }
 }
 

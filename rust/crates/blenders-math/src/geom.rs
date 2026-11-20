@@ -3376,3 +3376,745 @@ pub fn interp_bilinear_quad_v3(data: &[Vec3; 4], u: f32, v: f32) -> Vec3 {
 pub fn interp_barycentric_tri(data: &[Vec3; 3], u: f32, v: f32) -> Vec3 {
     data[0] * u + data[1] * v + data[2] * (1.0 - u - v)
 }
+
+/* -------------------------------------------------------------------- */
+/* View & Projection                                                     */
+/* -------------------------------------------------------------------- */
+
+/// `window_translate_m4` — shift a window matrix by `(x, y)`.
+pub fn window_translate_m4(winmat: &mut Mat4, perspmat: &Mat4, x: f32, y: f32) {
+    if winmat[2][3] == -1.0 {
+        // win-matrix is always perspective here
+        let v1 = Vec3::new(perspmat[0][0], perspmat[1][0], perspmat[2][0]);
+        let v2 = Vec3::new(perspmat[0][1], perspmat[1][1], perspmat[2][1]);
+        let len1 = 1.0 / v1.length();
+        let len2 = 1.0 / v2.length();
+        winmat[2][0] -= len1 * winmat[0][0] * x;
+        winmat[2][1] -= len2 * winmat[1][1] * y;
+    } else {
+        winmat[3][0] += x;
+        winmat[3][1] += y;
+    }
+}
+
+/// `planes_from_projmat` — extract frustum planes; each `Option` slot is
+/// filled when `Some`. Order: left, right, bottom, top, near, far.
+pub fn planes_from_projmat(mat: &Mat4) -> [Vec4; 6] {
+    let col3 = mat[3];
+    let mut planes = [Vec4::ZERO; 6];
+    for i in 0..4 {
+        planes[0][i] = col3[i] + mat[i][0]; // left
+        planes[1][i] = col3[i] - mat[i][0]; // right
+        planes[2][i] = col3[i] + mat[i][1]; // bottom
+        planes[3][i] = col3[i] - mat[i][1]; // top
+        planes[4][i] = col3[i] + mat[i][2]; // near
+        planes[5][i] = col3[i] - mat[i][2]; // far
+    }
+    planes
+}
+
+/// `projmat_dimensions` — `(left, right, bottom, top, near, far)`.
+pub fn projmat_dimensions(winmat: &Mat4) -> [f32; 6] {
+    if winmat[3][3] == 0.0 {
+        // perspective
+        let near = winmat[3][2] / (winmat[2][2] - 1.0);
+        let far = if winmat[2][2] == -1.0 {
+            near + 1e9 // infinite projection matrix
+        } else {
+            winmat[3][2] / (winmat[2][2] + 1.0)
+        };
+        [
+            near * ((winmat[2][0] - 1.0) / winmat[0][0]),
+            near * ((winmat[2][0] + 1.0) / winmat[0][0]),
+            near * ((winmat[2][1] - 1.0) / winmat[1][1]),
+            near * ((winmat[2][1] + 1.0) / winmat[1][1]),
+            near,
+            far,
+        ]
+    } else {
+        [
+            (-winmat[3][0] - 1.0) / winmat[0][0],
+            (-winmat[3][0] + 1.0) / winmat[0][0],
+            (-winmat[3][1] - 1.0) / winmat[1][1],
+            (-winmat[3][1] + 1.0) / winmat[1][1],
+            (winmat[3][2] + 1.0) / winmat[2][2],
+            (winmat[3][2] - 1.0) / winmat[2][2],
+        ]
+    }
+}
+
+/// `projmat_dimensions_db`.
+pub fn projmat_dimensions_db(winmat_fl: &Mat4) -> [f64; 6] {
+    let w = |i: usize, j: usize| winmat_fl[i][j] as f64;
+    if w(3, 3) == 0.0 {
+        let near = w(3, 2) / (w(2, 2) - 1.0);
+        [
+            near * ((w(2, 0) - 1.0) / w(0, 0)),
+            near * ((w(2, 0) + 1.0) / w(0, 0)),
+            near * ((w(2, 1) - 1.0) / w(1, 1)),
+            near * ((w(2, 1) + 1.0) / w(1, 1)),
+            near,
+            w(3, 2) / (w(2, 2) + 1.0),
+        ]
+    } else {
+        [
+            (-w(3, 0) - 1.0) / w(0, 0),
+            (-w(3, 0) + 1.0) / w(0, 0),
+            (-w(3, 1) - 1.0) / w(1, 1),
+            (-w(3, 1) + 1.0) / w(1, 1),
+            (w(3, 2) + 1.0) / w(2, 2),
+            (w(3, 2) - 1.0) / w(2, 2),
+        ]
+    }
+}
+
+/// `projmat_from_subregion`.
+pub fn projmat_from_subregion(
+    projmat: &Mat4,
+    win_size: [i32; 2],
+    x_min: i32,
+    x_max: i32,
+    y_min: i32,
+    y_max: i32,
+) -> Mat4 {
+    let rect_width = (x_max - x_min) as f32;
+    let rect_height = (y_max - y_min) as f32;
+    let x_sca = win_size[0] as f32 / rect_width;
+    let y_sca = win_size[1] as f32 / rect_height;
+    let x_fac = ((x_min + x_max) - win_size[0]) as f32 / rect_width;
+    let y_fac = ((y_min + y_max) - win_size[1]) as f32 / rect_height;
+    let mut r = *projmat;
+    r[0][0] *= x_sca;
+    r[1][1] *= y_sca;
+    if projmat[3][3] == 0.0 {
+        r[2][0] = r[2][0] * x_sca + x_fac;
+        r[2][1] = r[2][1] * y_sca + y_fac;
+    } else {
+        r[3][0] = r[3][0] * x_sca - x_fac;
+        r[3][1] = r[3][1] * y_sca - y_fac;
+    }
+    r
+}
+
+fn axis_angle_to_mat4(axis: usize, angle: f32) -> Mat4 {
+    let (s, c) = angle.sin_cos();
+    let mut m = Mat4::IDENTITY;
+    match axis {
+        0 => {
+            m[1][1] = c;
+            m[1][2] = s;
+            m[2][1] = -s;
+            m[2][2] = c;
+        }
+        1 => {
+            m[0][0] = c;
+            m[0][2] = -s;
+            m[2][0] = s;
+            m[2][2] = c;
+        }
+        _ => {
+            m[0][0] = c;
+            m[0][1] = s;
+            m[1][0] = -s;
+            m[1][1] = c;
+        }
+    }
+    m
+}
+
+fn translate_m4_in_place(mat: &mut Mat4, x: f32, y: f32, z: f32) {
+    mat[3][0] += mat[0][0] * x + mat[1][0] * y + mat[2][0] * z;
+    mat[3][1] += mat[0][1] * x + mat[1][1] * y + mat[2][1] * z;
+    mat[3][2] += mat[0][2] * x + mat[1][2] * y + mat[2][2] * z;
+    mat[3][3] += mat[0][3] * x + mat[1][3] * y + mat[2][3] * z;
+}
+
+fn rotate_m4_in_place(mat: &mut Mat4, axis: usize, angle: f32) {
+    let rot = axis_angle_to_mat4(axis, angle);
+    *mat = *mat * rot;
+}
+
+/// `polarview_m4` — orbit camera matrix (dist, azimuth, incidence, twist).
+pub fn polarview_m4(dist: f32, azimuth: f32, incidence: f32, twist: f32) -> Mat4 {
+    let mut mat = Mat4::IDENTITY;
+    translate_m4_in_place(&mut mat, 0.0, 0.0, -dist);
+    rotate_m4_in_place(&mut mat, 2, -twist);
+    rotate_m4_in_place(&mut mat, 0, -incidence);
+    rotate_m4_in_place(&mut mat, 2, -azimuth);
+    mat
+}
+
+fn i_multmatrix(icand: &Mat4, mat: &mut Mat4) {
+    let mut temp = Mat4::IDENTITY;
+    for row in 0..4 {
+        for col in 0..4 {
+            temp[row][col] = icand[row][0] * mat[0][col]
+                + icand[row][1] * mat[1][col]
+                + icand[row][2] * mat[2][col]
+                + icand[row][3] * mat[3][col];
+        }
+    }
+    *mat = temp;
+}
+
+/// `lookat_m4` — view matrix looking from `v` to `p` with `twist`.
+pub fn lookat_m4(v: Vec3, p: Vec3, twist: f32) -> Mat4 {
+    let mut mat1 = Mat4::IDENTITY;
+    let mut mat = axis_angle_to_mat4(2, -twist);
+
+    let dx = p.x - v.x;
+    let dy = p.y - v.y;
+    let dz = p.z - v.z;
+    let mut hyp = dx * dx + dz * dz;
+    let hyp1 = (dy * dy + hyp).sqrt();
+    hyp = hyp.sqrt();
+
+    let (sine, cosine) = if hyp1 != 0.0 {
+        (-dy / hyp1, hyp / hyp1)
+    } else {
+        (0.0, 1.0)
+    };
+    mat1[1][1] = cosine;
+    mat1[1][2] = sine;
+    mat1[2][1] = -sine;
+    mat1[2][2] = cosine;
+    i_multmatrix(&mat1, &mut mat);
+
+    mat1[1][1] = 1.0;
+    mat1[2][2] = 1.0;
+    mat1[1][2] = 0.0;
+    mat1[2][1] = 0.0;
+
+    let (sine, cosine) = if hyp != 0.0 {
+        (dx / hyp, -dz / hyp)
+    } else {
+        (0.0, 1.0)
+    };
+    mat1[0][0] = cosine;
+    mat1[0][2] = -sine;
+    mat1[2][0] = sine;
+    mat1[2][2] = cosine;
+    i_multmatrix(&mat1, &mut mat);
+    translate_m4_in_place(&mut mat, -v.x, -v.y, -v.z);
+    mat
+}
+
+/// `box_clip_bounds_m4` — clip boundbox against `bounds` (or unit cube when
+/// `bounds` is `None`); returns the shared out-flags (0 = visible).
+pub fn box_clip_bounds_m4(
+    boundbox: &[Vec3; 2],
+    bounds: Option<Vec4>,
+    winmat: &Mat4,
+) -> i32 {
+    let mut flag = -1i32;
+    for a in 0..8 {
+        let vec = Vec4::new(
+            if a & 1 != 0 { boundbox[0].x } else { boundbox[1].x },
+            if a & 2 != 0 { boundbox[0].y } else { boundbox[1].y },
+            if a & 4 != 0 { boundbox[0].z } else { boundbox[1].z },
+            1.0,
+        );
+        let vec = *winmat * vec;
+        let mut fl = 0;
+        match bounds {
+            Some(b) => {
+                if vec.x > b.y * vec.w {
+                    fl |= 1;
+                }
+                if vec.x < b.x * vec.w {
+                    fl |= 2;
+                }
+                if vec.y > b.w * vec.w {
+                    fl |= 4;
+                }
+                if vec.y < b.z * vec.w {
+                    fl |= 8;
+                }
+            }
+            None => {
+                if vec.x < -vec.w {
+                    fl |= 1;
+                }
+                if vec.x > vec.w {
+                    fl |= 2;
+                }
+                if vec.y < -vec.w {
+                    fl |= 4;
+                }
+                if vec.y > vec.w {
+                    fl |= 8;
+                }
+            }
+        }
+        if vec.z < -vec.w {
+            fl |= 16;
+        }
+        if vec.z > vec.w {
+            fl |= 32;
+        }
+        flag &= fl;
+        if flag == 0 {
+            return 0;
+        }
+    }
+    flag
+}
+
+/// `box_minmax_bounds_m4` — expand `min`/`max` by the 8 boundbox corners
+/// transformed by `mat`.
+pub fn box_minmax_bounds_m4(
+    min: &mut Vec3,
+    max: &mut Vec3,
+    boundbox: &[Vec3; 2],
+    mat: &Mat4,
+) {
+    let mut mn = *min;
+    let mut mx = *max;
+    for a in 0..8 {
+        let v = Vec3::new(
+            if a & 1 != 0 { boundbox[0].x } else { boundbox[1].x },
+            if a & 2 != 0 { boundbox[0].y } else { boundbox[1].y },
+            if a & 4 != 0 { boundbox[0].z } else { boundbox[1].z },
+        );
+        let vec = *mat * v;
+        for i in 0..3 {
+            mn[i] = mn[i].min(vec[i]);
+            mx[i] = mx[i].max(vec[i]);
+        }
+    }
+    *min = mn;
+    *max = mx;
+}
+
+/* -------------------------------------------------------------------- */
+/* Mapping                                                               */
+/* -------------------------------------------------------------------- */
+
+/// `snap_coordinate` — snap `u` inside [0,1] with texel epsilon.
+fn snap_coordinate(mut u: f32) -> f32 {
+    if u < 0.0 {
+        u += 1.0;
+    }
+    const EPSILON: f32 = 0.25 / 65536.0;
+    if u < EPSILON {
+        return 0.0;
+    }
+    if 1.0 - EPSILON < u {
+        return 1.0;
+    }
+    u
+}
+
+/// `map_to_tube` — `(u, v, regular)`.
+pub fn map_to_tube(x: f32, y: f32, z: f32) -> (f32, f32, bool) {
+    let regular = x * x + y * y >= 1e-6 * 1e-6;
+    let u = if regular {
+        snap_coordinate(x.atan2(-y) / (2.0 * std::f32::consts::PI))
+    } else {
+        0.5
+    };
+    (u, (z + 1.0) / 2.0, regular)
+}
+
+/// `angle_normalized_v3v3` — angle between two unit vectors (accurate form).
+pub fn angle_normalized_v3v3(v1: Vec3, v2: Vec3) -> f32 {
+    if v1.dot(v2) >= 0.0 {
+        2.0 * ((v1 - v2).length() / 2.0).clamp(-1.0, 1.0).asin()
+    } else {
+        std::f32::consts::PI
+            - 2.0 * ((v1 + v2).length() / 2.0).clamp(-1.0, 1.0).asin()
+    }
+}
+
+/// `rotate_normalized_v3_v3v3fl` — Rodrigues rotation of `p` around unit `axis`.
+pub fn rotate_normalized(p: Vec3, axis: Vec3, angle: f32) -> Vec3 {
+    let costheta = angle.cos();
+    let sintheta = angle.sin();
+    Vec3::new(
+        ((costheta + (1.0 - costheta) * axis.x * axis.x) * p.x)
+            + (((1.0 - costheta) * axis.x * axis.y - axis.z * sintheta) * p.y)
+            + (((1.0 - costheta) * axis.x * axis.z + axis.y * sintheta) * p.z),
+        (((1.0 - costheta) * axis.x * axis.y + axis.z * sintheta) * p.x)
+            + ((costheta + (1.0 - costheta) * axis.y * axis.y) * p.y)
+            + (((1.0 - costheta) * axis.y * axis.z - axis.x * sintheta) * p.z),
+        (((1.0 - costheta) * axis.x * axis.z - axis.y * sintheta) * p.x)
+            + (((1.0 - costheta) * axis.y * axis.z + axis.x * sintheta) * p.y)
+            + ((costheta + (1.0 - costheta) * axis.z * axis.z) * p.z),
+    )
+}
+
+/// `map_to_plane_axis_angle_v2_v3v3fl` — rotate `co` by `angle` around `axis`, keep xy.
+pub fn map_to_plane_axis_angle_v2(co: Vec3, axis: Vec3, angle: f32) -> Vec2 {
+    rotate_normalized(co, axis, angle).xy()
+}
+
+/// `map_to_plane_v2_v3v3` — project `co` into the plane with normal `no` (unit).
+pub fn map_to_plane_v2(co: Vec3, no: Vec3) -> Vec2 {
+    let target = Vec3::new(0.0, 0.0, 1.0);
+    let mut axis = no.cross(target);
+    axis.normalize();
+    map_to_plane_axis_angle_v2(co, axis, angle_normalized_v3v3(no, target))
+}
+
+/* -------------------------------------------------------------------- */
+/* Normals                                                               */
+/* -------------------------------------------------------------------- */
+
+/// `math::safe_acos_approx` — fast acos, max error 4.5e-5.
+pub fn safe_acos_approx(x: f32) -> f32 {
+    let f = x.abs();
+    let m = if f < 1.0 { 1.0 - (1.0 - f) } else { 1.0 };
+    let a = (1.0 - m).sqrt()
+        * (1.5707963267 + m * (-0.213300989 + m * (0.077980478 + m * -0.02164095)));
+    if x < 0.0 {
+        std::f32::consts::PI - a
+    } else {
+        a
+    }
+}
+
+/// `accumulate_vertex_normals_tri_v3` — add angle-weighted `f_no` to n1..n3.
+pub fn accumulate_vertex_normals_tri(
+    n: [&mut Vec3; 3],
+    f_no: Vec3,
+    co1: Vec3,
+    co2: Vec3,
+    co3: Vec3,
+) {
+    let mut vdiffs = [co2 - co1, co3 - co2, co1 - co3];
+    for d in vdiffs.iter_mut() {
+        d.normalize();
+    }
+    let mut prev_edge = vdiffs[2];
+    for (i, vn) in n.into_iter().enumerate() {
+        let cur_edge = vdiffs[i];
+        let fac = safe_acos_approx(-cur_edge.dot(prev_edge));
+        *vn += f_no * fac;
+        prev_edge = cur_edge;
+    }
+}
+
+/// `accumulate_vertex_normals_v3` — tri or quad variant.
+pub fn accumulate_vertex_normals(
+    n: [&mut Vec3; 4],
+    f_no: Vec3,
+    co1: Vec3,
+    co2: Vec3,
+    co3: Vec3,
+    co4: Option<Vec3>,
+) {
+    let nverts = if co4.is_some() { 4 } else { 3 };
+    let mut vdiffs = [Vec3::ZERO; 4];
+    vdiffs[0] = co2 - co1;
+    vdiffs[1] = co3 - co2;
+    if nverts == 3 {
+        vdiffs[2] = co1 - co3;
+    } else {
+        vdiffs[2] = co4.unwrap() - co3;
+        vdiffs[3] = co1 - co4.unwrap();
+        vdiffs[3].normalize();
+    }
+    vdiffs[0].normalize();
+    vdiffs[1].normalize();
+    vdiffs[2].normalize();
+
+    let mut prev_edge = vdiffs[nverts - 1];
+    for i in 0..nverts {
+        let cur_edge = vdiffs[i];
+        let fac = safe_acos_approx(-cur_edge.dot(prev_edge));
+        // n[i] may be a null-equivalent only upstream; here all four exist.
+        *n[i] += f_no * fac;
+        prev_edge = cur_edge;
+    }
+}
+
+/// `accumulate_vertex_normals_poly_v3` — `vertnos` accumulates per-vertex,
+/// `vdiffs` is scratch of the same length.
+pub fn accumulate_vertex_normals_poly(
+    vertnos: &mut [Vec3],
+    polyno: Vec3,
+    vertcos: &[Vec3],
+    vdiffs: &mut [Vec3],
+) {
+    let nverts = vertcos.len();
+    for i in 0..nverts {
+        vdiffs[i] = vertcos[(i + 1) % nverts] - vertcos[i];
+        vdiffs[i].normalize();
+    }
+    let mut prev_edge = vdiffs[nverts - 1];
+    for i in 0..nverts {
+        let cur_edge = vdiffs[i];
+        let fac = safe_acos_approx(-cur_edge.dot(prev_edge));
+        vertnos[i] += polyno * fac;
+        prev_edge = cur_edge;
+    }
+}
+
+/* -------------------------------------------------------------------- */
+/* Tangents                                                              */
+/* -------------------------------------------------------------------- */
+
+/// `tangent_from_uv_v3`.
+pub fn tangent_from_uv(uv1: Vec2, uv2: Vec2, uv3: Vec2, co1: Vec3, co2: Vec3, co3: Vec3, n: Vec3) -> Vec3 {
+    let s1 = uv2.x - uv1.x;
+    let s2 = uv3.x - uv1.x;
+    let t1 = uv2.y - uv1.y;
+    let t2 = uv3.y - uv1.y;
+    let mut det = s1 * t2 - s2 * t1;
+    if det == 0.0 {
+        return Vec3::ZERO;
+    }
+    det = 1.0 / det;
+    let e1 = co1 - co2;
+    let e2 = co1 - co3;
+    let mut r_tang = Vec3::new(
+        (t2 * e1.x - t1 * e2.x) * det,
+        (t2 * e1.y - t1 * e2.y) * det,
+        (t2 * e1.z - t1 * e2.z) * det,
+    );
+    let tangv = Vec3::new(
+        (s1 * e2.x - s2 * e1.x) * det,
+        (s1 * e2.y - s2 * e1.y) * det,
+        (s1 * e2.z - s2 * e1.z) * det,
+    );
+    let ct = r_tang.cross(tangv);
+    if ct.dot(n) < 0.0 {
+        r_tang = -r_tang;
+    }
+    r_tang
+}
+
+/* -------------------------------------------------------------------- */
+/* Vector clouds                                                         */
+/* -------------------------------------------------------------------- */
+
+/// `vcloud_estimate_transform_v3` — estimate transform between two point
+/// clouds. Returns `(lloc, rloc, lrot, lscale)`.
+pub fn vcloud_estimate_transform(
+    pos: &[Vec3],
+    weight: Option<&[f32]>,
+    rpos: &[Vec3],
+    rweight: Option<&[f32]>,
+) -> (Vec3, Vec3, Mat3, Mat3) {
+    let list_size = pos.len();
+    let mut accu_com = Vec3::ZERO;
+    let mut accu_rcom = Vec3::ZERO;
+    let mut accu_weight = 0.0;
+    let mut accu_rweight = 0.0;
+    let eps = 1e-6f32;
+
+    for a in 0..list_size {
+        match weight {
+            Some(w) => {
+                accu_com += pos[a] * w[a];
+                accu_weight += w[a];
+            }
+            None => accu_com += pos[a],
+        }
+        match rweight {
+            Some(w) => {
+                accu_rcom += rpos[a] * w[a];
+                accu_rweight += w[a];
+            }
+            None => accu_rcom += rpos[a],
+        }
+    }
+    if weight.is_none() || rweight.is_none() {
+        accu_weight = list_size as f32;
+        accu_rweight = list_size as f32;
+    }
+    accu_com *= 1.0 / accu_weight;
+    accu_rcom *= 1.0 / accu_rweight;
+
+    let mut lrot = Mat3::IDENTITY;
+    let mut lscale = Mat3::IDENTITY;
+
+    // polar-decompose rotation from scale (Higham's thesis)
+    let mut m = Mat3::ZERO;
+    let mut mr = Mat3::ZERO;
+    for a in 0..list_size {
+        let va = rpos[a] - accu_rcom;
+        let vb = pos[a] - accu_com;
+        for i in 0..3 {
+            for j in 0..3 {
+                m[i][j] += va[i] * vb[j];
+                mr[i][j] += va[i] * va[j];
+            }
+        }
+    }
+    let mut q = m;
+    let stunt = Vec3::new(q[0][0], q[1][1], q[2][2]);
+    q = q * (1.0 / stunt.length());
+
+    let mut odet = 0.0;
+    let mut ndet = q.determinant();
+    let mut i = 0;
+    while (odet - ndet) * (odet - ndet) > eps && i < 15 {
+        let mut qi = q.inverted().unwrap_or(q);
+        qi = qi.transposed();
+        q = (q + qi) * 0.5;
+        odet = ndet;
+        ndet = q.determinant();
+        i += 1;
+    }
+
+    if i > 0 {
+        lrot = q;
+        let irot = q.inverted().unwrap_or(Mat3::IDENTITY);
+        let qi = mr.inverted().unwrap_or(Mat3::IDENTITY);
+        let q2 = m * qi;
+        let scale = irot * q2;
+        lscale = scale;
+    }
+
+    (accu_com, accu_rcom, lrot, lscale)
+}
+
+/// `is_edge_convex_v3`.
+pub fn is_edge_convex(v1: Vec3, v2: Vec3, f1_no: Vec3, f2_no: Vec3) -> bool {
+    if f1_no != f2_no {
+        let cross = f1_no.cross(f2_no);
+        let l_dir = v2 - v1;
+        return l_dir.dot(cross) > 0.0;
+    }
+    false
+}
+
+/// `project_plane_v3_v3v3` — project `p` onto the plane through origin with
+/// (unnormalized) normal `v_plane`.
+pub fn project_plane(p: Vec3, v_plane: Vec3) -> Vec3 {
+    p - v_plane * (p.dot(v_plane) / v_plane.length_squared())
+}
+
+/// `is_quad_convex_v3`.
+pub fn is_quad_convex(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> bool {
+    let plane = (v1 - v3).cross(v2 - v4);
+    let eps_sq = 1e-8f32 * 1e-8;
+    if plane.length_squared() < eps_sq {
+        return false;
+    }
+    let coords = [v1, v2, v3, v4];
+    let mut proj = [Vec3::ZERO; 4];
+    for i in 0..4 {
+        proj[i] = project_plane(coords[i], plane);
+    }
+    let mut dirs = [Vec3::ZERO; 4];
+    let mut j = 3;
+    for i in 0..4 {
+        dirs[i] = proj[i] - proj[j];
+        j = i;
+    }
+    let sign = |a: Vec3, b: Vec3| plane.dot(a.cross(b)) > 0.0;
+    sign(dirs[0], dirs[1]) && sign(dirs[1], dirs[2]) && sign(dirs[2], dirs[3]) && sign(dirs[3], dirs[0])
+}
+
+/// `is_quad_convex_v2` — diagonals must intersect.
+pub fn is_quad_convex_v2(v1: Vec2, v2: Vec2, v3: Vec2, v4: Vec2) -> bool {
+    matches!(
+        isect_seg_seg_v2(v1, v3, v2, v4),
+        Isect::Exact | Isect::Cross
+    )
+}
+
+/// `is_poly_convex_v2`.
+pub fn is_poly_convex_v2(verts: &[Vec2]) -> bool {
+    let nr = verts.len();
+    let mut sign_flag = 0u32;
+    let mut co_prev = verts[nr - 1];
+    let mut co_curr = verts[0];
+    let mut dir_prev = verts[nr - 2] - co_prev;
+    for a in 0..nr {
+        let dir_curr = co_prev - co_curr;
+        let cross = dir_prev.cross(dir_curr);
+        if cross < 0.0 {
+            sign_flag |= 1;
+        } else if cross > 0.0 {
+            sign_flag |= 2;
+        }
+        if sign_flag == 3 {
+            return false;
+        }
+        dir_prev = dir_curr;
+        co_prev = co_curr;
+        co_curr = verts[(a + 1) % nr];
+    }
+    true
+}
+
+/// `is_quad_flip_v3` — bitmask: bit0 v1v3 flip, bit1 v2v4 flip.
+pub fn is_quad_flip(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> i32 {
+    let d_12 = v1 - v2;
+    let d_23 = v2 - v3;
+    let d_34 = v3 - v4;
+    let d_41 = v4 - v1;
+    let mut ret = 0;
+    let cross_a = d_12.cross(d_23);
+    let cross_b = d_34.cross(d_41);
+    ret |= ((cross_a.dot(cross_b) < 0.0) as i32) << 0;
+    let cross_a = d_23.cross(d_34);
+    let cross_b = d_41.cross(d_12);
+    ret |= ((cross_a.dot(cross_b) < 0.0) as i32) << 1;
+    ret
+}
+
+/// `is_quad_flip_v3_first_third_fast`.
+pub fn is_quad_flip_first_third_fast(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> bool {
+    let d_12 = v2 - v1;
+    let d_13 = v3 - v1;
+    let d_14 = v4 - v1;
+    let cross_a = d_12.cross(d_13);
+    let cross_b = d_14.cross(d_13);
+    cross_a.dot(cross_b) > 0.0
+}
+
+/// `cubic_tangent_factor_circle_v3`.
+pub fn cubic_tangent_factor_circle(tan_l: Vec3, tan_r: Vec3) -> f32 {
+    const EPS: f32 = 1e-5;
+    let tan_dot = tan_l.dot(tan_r);
+    if tan_dot > 1.0 - EPS {
+        return (1.0 / 3.0) * 0.75;
+    }
+    if tan_dot < -1.0 + EPS {
+        return 1.0 / 2.0;
+    }
+    let angle = tan_dot.acos() / 2.0;
+    let angle_sin = angle.sin();
+    let angle_cos = angle.cos();
+    ((1.0 - angle_cos) / (angle_sin * 2.0)) / angle_sin
+}
+
+/// `geodesic_distance_propagate_across_triangle`.
+pub fn geodesic_distance_propagate_across_triangle(
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+    dist1: f32,
+    dist2: f32,
+) -> f32 {
+    let v10 = v0 - v1;
+    let v12 = v2 - v1;
+    if dist1 != 0.0 && dist2 != 0.0 {
+        let mut u = v12;
+        let d12 = u.normalize_and_get_length();
+        if d12 * d12 > 0.0 {
+            let mut n = v12.cross(v10);
+            n.normalize();
+            let v = n.cross(u);
+            let v0_ = Vec2::new(v10.dot(u), v10.dot(v).abs());
+            let a = 0.5 * (1.0 + (dist1 * dist1 - dist2 * dist2) / (d12 * d12));
+            let hh = dist1 * dist1 - a * a * d12 * d12;
+            if hh > 0.0 {
+                let h = hh.sqrt();
+                let s_ = Vec2::new(a * d12, -h);
+                let x_intercept = s_.x + h * (v0_.x - s_.x) / (v0_.y + h);
+                if (0.0..=d12).contains(&x_intercept) {
+                    let dist0 = (s_ - v0_).length();
+                    if dist0 >= min_ff(dist1, dist2) {
+                        return dist0;
+                    }
+                }
+            }
+        }
+    }
+    min_ff(dist1 + v10.length(), dist2 + (v0 - v2).length())
+}
