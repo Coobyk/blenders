@@ -1,5 +1,6 @@
 //! Port of `source/blender/blenlib` (non-math modules).
 
+pub mod bits;
 pub mod hash_mm2a;
 pub mod hash_md5;
 pub mod hash_mm3;
