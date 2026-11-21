@@ -296,3 +296,4 @@ pub mod lib_override;
 pub mod grease_pencil;
 pub mod scene;
 pub mod mesh;
+pub mod node;
