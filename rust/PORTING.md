@@ -33,3 +33,4 @@ Crate: `crates/blenders-bmesh`. Index-arena model: pools are `Vec`, links are `u
 - Remaining: query, marking, interp, mesh_convert, mesh_normals, operators/opdefines, walkers, uvselect, polygon(+edgenet), log, mods, edgeloop, callback_generic, kernel splits/joins in core.
 
 - bmesh_bevel.cc -> `tools/bmesh_bevel.rs` FULL port (6.7k lines): BM_mesh_bevel wired in bmo_bevel
+- makesdna DNA headers underway in `blenders-dna`: DNA_ID.h, DNA_ID_enums.h, DNA_vec_types.h, DNA_customdata_types.h, DNA_meshdata_types.h, DNA_mesh_types.h, DNA_object_types.h, DNA_object_enums.h, DNA_collection_types.h, DNA_layer_types.h, DNA_{world,colorband,text,packedFile,uuid,image_enums,gpu,session_uid,view3d_enums,attribute}_types.h ported
