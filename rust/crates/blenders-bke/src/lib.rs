@@ -240,3 +240,4 @@ pub mod ocean;
 pub mod boids;
 pub mod mesh_normals;
 pub mod deform;
+pub mod pbvh_uv_islands;
