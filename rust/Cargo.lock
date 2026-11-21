@@ -613,6 +613,7 @@ dependencies = [
  "blenders-bli",
  "blenders-bmesh",
  "blenders-core",
+ "blenders-dna",
  "blenders-math",
 ]
 
