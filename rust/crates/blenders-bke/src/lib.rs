@@ -139,6 +139,7 @@ pub mod armature_deform;
 pub mod compute_contexts;
 pub mod curve_legacy_convert;
 pub mod light;
+pub mod lib_id_delete;
 pub mod lightprobe;
 pub mod volume_to_mesh;
 pub mod world;
