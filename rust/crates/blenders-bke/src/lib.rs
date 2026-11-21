@@ -187,3 +187,4 @@ pub mod workspace;
 pub mod crazyspace;
 pub mod bvh;
 pub mod preferences;
+pub mod multires_reshape_util;
