@@ -11,6 +11,7 @@ pub mod speaker;
 pub mod action_bones;
 pub mod addon;
 pub mod anim_data_bmain_utils;
+pub mod appdir;
 pub mod armature_selection;
 pub mod bake_data_block_map;
 pub mod autoexec;
