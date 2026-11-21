@@ -1914,3 +1914,252 @@ fn snap_to_superellipsoid(co: &mut Vec3, super_r: f32, midline: bool) {
     co.y = y;
     co.z = z;
 }
+
+/* ===== seam / sharp propagation (C ~2851-3250) ===== */
+
+/// `HASNOT_SEAMSHARP` — edge lacks the flag (seam absent / sharp absent).
+fn hasnot_seamsharp(bm: &BMesh, eh: &EdgeHalf, flag: u8) -> bool {
+    const SEAM: u8 = crate::BM_ELEM_SEAM;
+    const SMOOTH: u8 = crate::BM_ELEM_SMOOTH;
+    (flag == SEAM && bm.edge(eh.e).head.hflag & SEAM == 0)
+        || (flag == SMOOTH && bm.edge(eh.e).head.hflag & SMOOTH != 0)
+}
+
+/// `check_edge_data_seam_sharp_edges` — record run lengths on boundverts.
+fn check_edge_data_seam_sharp_edges(bm: &BMesh, bp: &mut BevelParams, bvi: usize, flag: u8) {
+    const SEAM: u8 = crate::BM_ELEM_SEAM;
+    const SMOOTH: u8 = crate::BM_ELEM_SMOOTH;
+    let mut e = 0usize;
+    let efirst0 = 0usize;
+    loop {
+        if !hasnot_seamsharp(bm, &bp.bverts[bvi].edges[e], flag) {
+            break;
+        }
+        e = bp.bverts[bvi].edges[e].next;
+        if e == efirst0 {
+            break;
+        }
+    }
+    if hasnot_seamsharp(bm, &bp.bverts[bvi].edges[e], flag) {
+        return;
+    }
+    let efirst = e;
+    loop {
+        let mut flag_count = 0i32;
+        let mut ne = bp.bverts[bvi].edges[e].next;
+        while hasnot_seamsharp(bm, &bp.bverts[bvi].edges[ne], flag) && ne != efirst {
+            if bp.bverts[bvi].edges[ne].is_bev {
+                flag_count += 1;
+            }
+            ne = bp.bverts[bvi].edges[ne].next;
+        }
+        if ne == e || (ne == efirst && hasnot_seamsharp(bm, &bp.bverts[bvi].edges[efirst], flag)) {
+            break;
+        }
+        let rightv = bp.bverts[bvi].edges[e].rightv;
+        if rightv != BM_NIL {
+            if flag == SEAM {
+                bp.boundverts[rightv].seam_len = flag_count;
+            } else if flag == SMOOTH {
+                bp.boundverts[rightv].sharp_len = flag_count;
+            }
+        }
+        e = ne;
+        if e == efirst {
+            break;
+        }
+    }
+}
+
+/// `bevel_extend_edge_data_ex` — extend seam/sharp flags onto bevel edges.
+fn bevel_extend_edge_data_ex(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize, flag: u8) {
+    const SEAM: u8 = crate::BM_ELEM_SEAM;
+    const SMOOTH: u8 = crate::BM_ELEM_SMOOTH;
+    debug_assert!(flag == SEAM || flag == SMOOTH);
+    let vm_kind;
+    let (vm_seg, vm_count, boundstart);
+    {
+        let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+        vm_kind = vm.mesh_kind;
+        vm_seg = vm.seg;
+        vm_count = vm.count;
+        boundstart = vm.boundstart;
+    }
+    let _ = vm_kind;
+    let mut bcur = boundstart;
+    let mut start = bcur;
+    loop {
+        let extend_len = if flag == SEAM {
+            bp.boundverts[bcur].seam_len
+        } else {
+            bp.boundverts[bcur].sharp_len
+        };
+        if extend_len != 0 {
+            if bp.boundverts[boundstart].seam_len == 0 && start == boundstart {
+                start = bcur;
+            }
+            let idx_end = bp.boundverts[bcur].index + extend_len;
+            for i in bp.boundverts[bcur].index..idx_end {
+                let ni = (i % vm_count) as usize;
+                let vm_ref = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                let mut v1 = vm_ref.mesh[mesh_vert(vm_ref, ni as i32, 0, 0)].v;
+                for k in 1..vm_seg {
+                    let vm_ref = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                    let v2 = vm_ref.mesh[mesh_vert(vm_ref, ni as i32, 0, k)].v;
+                    let mut e = bm.vert(v1).e;
+                    while e != BM_NIL && bm.edge(e).v1 != v2 && bm.edge(e).v2 != v2 {
+                        e = crate::structure::bmesh_disk_edge_next(bm, e, v1);
+                    }
+                    if e != BM_NIL {
+                        if flag == SEAM {
+                            bm.epool[e].head.hflag |= SEAM;
+                        } else {
+                            bm.epool[e].head.hflag &= !SMOOTH;
+                        }
+                    }
+                    v1 = v2;
+                }
+                let vm_ref = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                let v3 = vm_ref.mesh[mesh_vert(vm_ref, ((i + 1) % vm_count) as i32, 0, 0)].v;
+                let mut e = bm.vert(v1).e;
+                while e != BM_NIL && bm.edge(e).v1 != v3 && bm.edge(e).v2 != v3 {
+                    e = crate::structure::bmesh_disk_edge_next(bm, e, v1);
+                }
+                if e != BM_NIL {
+                    if flag == SEAM {
+                        bm.epool[e].head.hflag |= SEAM;
+                    } else {
+                        bm.epool[e].head.hflag &= !SMOOTH;
+                    }
+                }
+                bcur = bp.boundverts[bcur].next;
+            }
+        } else {
+            bcur = bp.boundverts[bcur].next;
+        }
+        if bcur == start {
+            break;
+        }
+    }
+}
+
+/// `bevel_extend_edge_data`.
+fn bevel_extend_edge_data(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) {
+    let (kind, selcount) = {
+        let bv = &bp.bverts[bvi];
+        (bv.vmesh.as_ref().map(|v| v.mesh_kind).unwrap_or_default(), bv.selcount)
+    };
+    if kind == MeshKind::TriFan || selcount < 2 {
+        return;
+    }
+    bevel_extend_edge_data_ex(bm, bp, bvi, crate::BM_ELEM_SEAM);
+    bevel_extend_edge_data_ex(bm, bp, bvi, crate::BM_ELEM_SMOOTH);
+}
+
+/// `bevel_edges_sharp_boundary` — un-smooth edges between recon and bevel faces.
+fn bevel_edges_sharp_boundary(bm: &mut BMesh, bp: &BevelParams) {
+    const SMOOTH: u8 = crate::BM_ELEM_SMOOTH;
+    for f in FacesOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.face(f).head.hflag & SMOOTH == 0 {
+            continue;
+        }
+        if get_face_kind(bp, f) != F_RECON {
+            continue;
+        }
+        for l in LoopsOfFace::new(bm, f).collect::<Vec<_>>() {
+            let lother = bm.lpool[l].radial_next;
+            if lother != l && lother != BM_NIL {
+                let fother = bm.lpool[lother].f;
+                let fkind = get_face_kind(bp, fother);
+                if fkind == F_EDGE || fkind == F_VERT {
+                    bm.epool[bm.lpool[l].e].head.hflag &= !SMOOTH;
+                }
+            }
+        }
+    }
+}
+
+/// `bevel_harden_normals` — custom split normals for bevel faces.
+/// PORT_PENDING: custom-normal CD layer + lnor space; does the mesh-normal
+/// update and sharp boundary pass, skips the clnor write.
+fn bevel_harden_normals(bm: &mut BMesh, bp: &BevelParams) {
+    if bp.offset == 0.0 || !bp.harden_normals {
+        return;
+    }
+    crate::normals::bm_mesh_normals_update(bm);
+    /* no `custom_normal` ldata layer in this port → act as offset == -1 */
+    bevel_edges_sharp_boundary(bm, bp);
+    crate::normals::bm_lnorspace_update(bm);
+    /* clnor write: PORT_PENDING (CustomData). */
+}
+
+/// `bevel_set_weighted_normal_face_strength` — PORT_PENDING (CD int layer).
+fn bevel_set_weighted_normal_face_strength(_bm: &mut BMesh, _bp: &BevelParams) {
+    /* writes to `MOD_WEIGHTEDNORMALS_FACEWEIGHT_CDLAYER_ID`; no pdata layers. */
+}
+
+/// `set_bound_vert_seams` — propagate `is_seam` to boundverts, run-length tag.
+fn set_bound_vert_seams(bp: &mut BevelParams, bm: &BMesh, bvi: usize, mark_seam: bool, mark_sharp: bool) {
+    bp.bverts[bvi].any_seam = false;
+    let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let mut v = boundstart;
+    loop {
+        bp.boundverts[v].any_seam = false;
+        let mut e = bp.boundverts[v].efirst;
+        while e != BM_NIL {
+            bp.boundverts[v].any_seam |= bp.bverts[bvi].edges[e].is_seam;
+            if e == bp.boundverts[v].elast {
+                break;
+            }
+            e = bp.bverts[bvi].edges[e].next;
+        }
+        let vs = bp.boundverts[v].any_seam;
+        bp.bverts[bvi].any_seam |= vs;
+        v = bp.boundverts[v].next;
+        if v == boundstart {
+            break;
+        }
+    }
+    if mark_seam {
+        check_edge_data_seam_sharp_edges(bm, bp, bvi, crate::BM_ELEM_SEAM);
+    }
+    if mark_sharp {
+        check_edge_data_seam_sharp_edges(bm, bp, bvi, crate::BM_ELEM_SMOOTH);
+    }
+}
+
+/// `eh_on_plane` — edge's two faces coplanar (same or opposite normal)?
+fn eh_on_plane(bm: &BMesh, eh: &EdgeHalf) -> bool {
+    if eh.fprev != BM_NIL && eh.fnext != BM_NIL {
+        let dot = bm.face(eh.fprev).no.dot(bm.face(eh.fnext).no);
+        if (dot + 1.0).abs() <= BEVEL_EPSILON_BIG || (dot - 1.0).abs() <= BEVEL_EPSILON_BIG {
+            return true;
+        }
+    }
+    false
+}
+
+/// `calculate_vm_profiles` — set + calculate profiles for all boundverts.
+fn calculate_vm_profiles(bm: &BMesh, bp: &mut BevelParams, bvi: usize) {
+    let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let mut bndv = boundstart;
+    loop {
+        if !bp.boundverts[bndv].profile.special_params {
+            set_profile_params(bm, bp, bndv);
+        }
+        let mut miter_profile = false;
+        let mut reverse_profile = false;
+        if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+            miter_profile =
+                bp.boundverts[bndv].is_arc_start || bp.boundverts[bndv].is_patch_start;
+            reverse_profile = !bp.boundverts[bndv].is_profile_start && !miter_profile;
+        }
+        let mut bndv_tmp = bp.boundverts[bndv].clone();
+        calculate_profile(bp, &mut bndv_tmp, reverse_profile, miter_profile);
+        bp.boundverts[bndv].profile = bndv_tmp.profile;
+        bndv = bp.boundverts[bndv].next;
+        if bndv == boundstart {
+            break;
+        }
+    }
+}
