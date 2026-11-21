@@ -221,3 +221,4 @@ pub mod curveprofile;
 pub mod effect;
 pub mod geometry_compare;
 pub mod curve_to_mesh_convert;
+pub mod node_tree_structure_type_inferencing;
