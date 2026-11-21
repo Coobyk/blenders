@@ -167,3 +167,4 @@ pub mod node_tree_zones;
 pub mod cryptomatte;
 pub mod mball;
 pub mod texture;
+pub mod attribute_storage;
