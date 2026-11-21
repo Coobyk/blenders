@@ -62,6 +62,7 @@ pub mod colorband;
 pub mod curve_convert;
 pub mod curve_catmull_rom;
 pub mod curve_nurbs;
+pub mod curve_deform;
 pub mod curves;
 pub mod customdata_file;
 pub mod curve_bevel;
