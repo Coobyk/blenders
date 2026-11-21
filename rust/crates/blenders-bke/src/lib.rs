@@ -6,6 +6,7 @@
 pub mod anonymous_attribute_id;
 pub mod geometry_components;
 pub mod icons_rasterize;
+pub mod idprop;
 pub mod idtype;
 pub mod speaker;
 pub mod action_bones;
