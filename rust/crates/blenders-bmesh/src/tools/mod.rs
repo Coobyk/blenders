@@ -13,3 +13,4 @@ pub mod bmesh_boolean;
 pub mod bmesh_decimate_collapse;
 pub mod bmesh_path_uv;
 pub mod bmesh_path_region_uv;
+pub mod bmesh_region_match;
