@@ -5140,3 +5140,423 @@ fn edge_face_angle(bm: &BMesh, bp: &BevelParams, e: EHRef) -> f32 {
     }
     0.0
 }
+
+/* ===== edge order + BevVert construction (C ~6600-7118) ===== */
+
+const FLAG_OVERLAP: u8 = 1 << 2;
+
+#[inline]
+fn bevel_edge_tag_enable(bm: &mut BMesh, e: usize) {
+    bm.epool[e].head.api_flag |= FLAG_OVERLAP;
+}
+#[inline]
+fn bevel_edge_tag_disable(bm: &mut BMesh, e: usize) {
+    bm.epool[e].head.api_flag &= !FLAG_OVERLAP;
+}
+#[inline]
+fn bevel_edge_tag_test(bm: &BMesh, e: usize) -> bool {
+    bm.edge(e).head.api_flag & FLAG_OVERLAP != 0
+}
+
+/// `bevel_edge_order_extend` — DFS fill of `bv->edges[]` in face order.
+fn bevel_edge_order_extend(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize, i: usize) -> usize {
+    let mut sucs: Vec<usize> = Vec::new();
+    let mut save_path: Vec<usize> = Vec::new();
+    let bme = bp.bverts[bvi].edges[i].e;
+    let l0 = bm.edge(bme).l;
+    let mut l = l0;
+    while l != BM_NIL {
+        let bme2 = if bm.lpool[l].v == bp.bverts[bvi].v {
+            bm.lpool[bm.lpool[l].prev].e
+        } else {
+            bm.lpool[bm.lpool[l].next].e
+        };
+        if !bevel_edge_tag_test(bm, bme2) {
+            sucs.push(bme2);
+        }
+        l = bm.lpool[l].radial_next;
+        if l == l0 {
+            break;
+        }
+    }
+    let nsucs = sucs.len();
+    let mut bestj = i;
+    let j = i;
+    for sucindex in 0..nsucs {
+        let nextbme = sucs[sucindex];
+        debug_assert!(nextbme != BM_NIL);
+        debug_assert!(!bevel_edge_tag_test(bm, nextbme));
+        debug_assert!(j + 1 < bp.bverts[bvi].edgecount as usize);
+        bp.bverts[bvi].edges[j + 1].e = nextbme;
+        bevel_edge_tag_enable(bm, nextbme);
+        let tryj = bevel_edge_order_extend(bm, bp, bvi, j + 1);
+        if tryj > bestj
+            || (tryj == bestj
+                && edges_face_connected_at_vert(
+                    bm,
+                    bp.bverts[bvi].edges[tryj].e,
+                    bp.bverts[bvi].edges[0].e,
+                ))
+        {
+            bestj = tryj;
+            save_path.clear();
+            for k in j + 1..=bestj {
+                save_path.push(bp.bverts[bvi].edges[k].e);
+            }
+        }
+        for k in j + 1..=tryj {
+            let e = bp.bverts[bvi].edges[k].e;
+            bevel_edge_tag_disable(bm, e);
+            bp.bverts[bvi].edges[k].e = BM_NIL;
+        }
+    }
+    if bestj > j {
+        for k in j + 1..=bestj {
+            debug_assert!(save_path[k - (j + 1)] != BM_NIL);
+            bp.bverts[bvi].edges[k].e = save_path[k - (j + 1)];
+            bevel_edge_tag_enable(bm, bp.bverts[bvi].edges[k].e);
+        }
+    }
+    bestj
+}
+
+/// `fast_bevel_edge_order` (non-FASTER_FASTORDER variant).
+fn fast_bevel_edge_order(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) -> bool {
+    let ntot = bp.bverts[bvi].edgecount as usize;
+    let mut bme = bp.bverts[bvi].edges[0].e;
+    if bm.edge(bme).l == BM_NIL {
+        return false;
+    }
+    for i in 1..ntot {
+        let mut num_shared_face = 0;
+        let mut first_suc = BM_NIL;
+        for bme2 in EdgesOfVert::new(bm, bp.bverts[bvi].v).collect::<Vec<_>>() {
+            if bevel_edge_tag_test(bm, bme2) {
+                continue;
+            }
+            for f in FacesOfEdge::new(bm, bme2).collect::<Vec<_>>() {
+                if crate::query::bm_face_edge_share_loop(bm, f, bme) != BM_NIL {
+                    num_shared_face += 1;
+                    if first_suc == BM_NIL {
+                        first_suc = bme2;
+                    }
+                }
+            }
+            if num_shared_face >= 3 {
+                break;
+            }
+        }
+        if num_shared_face == 1 || (i == 1 && num_shared_face == 2) {
+            bp.bverts[bvi].edges[i].e = first_suc;
+            bme = first_suc;
+            bevel_edge_tag_enable(bm, bme);
+        } else {
+            for k in 1..i {
+                let e = bp.bverts[bvi].edges[k].e;
+                bevel_edge_tag_disable(bm, e);
+                bp.bverts[bvi].edges[k].e = BM_NIL;
+            }
+            return false;
+        }
+    }
+    true
+}
+
+/// `find_bevel_edge_order`.
+fn find_bevel_edge_order(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize, first_bme_in: usize) {
+    let ntot = bp.bverts[bvi].edgecount as usize;
+    let mut first_bme = first_bme_in;
+    let mut i = 0usize;
+    loop {
+        debug_assert!(first_bme != BM_NIL);
+        bp.bverts[bvi].edges[i].e = first_bme;
+        bevel_edge_tag_enable(bm, first_bme);
+        if i == 0 && fast_bevel_edge_order(bm, bp, bvi) {
+            break;
+        }
+        i = bevel_edge_order_extend(bm, bp, bvi, i);
+        i += 1;
+        if i >= ntot {
+            break;
+        }
+        first_bme = BM_NIL;
+        for bme in EdgesOfVert::new(bm, bp.bverts[bvi].v).collect::<Vec<_>>() {
+            if bevel_edge_tag_test(bm, bme) {
+                continue;
+            }
+            if first_bme == BM_NIL {
+                first_bme = bme;
+            }
+            if crate::query::bm_edge_face_count(bm, bme) == 1 {
+                first_bme = bme;
+                break;
+            }
+        }
+    }
+    for i in 0..ntot {
+        let e2i = if i == ntot - 1 { 0 } else { i + 1 };
+        let bme = bp.bverts[bvi].edges[i].e;
+        let bme2 = bp.bverts[bvi].edges[e2i].e;
+        debug_assert!(bme != BM_NIL);
+        if bp.bverts[bvi].edges[i].fnext != BM_NIL || bp.bverts[bvi].edges[e2i].fprev != BM_NIL {
+            continue;
+        }
+        let mut bestf = BM_NIL;
+        let l0 = bm.edge(bme).l;
+        let mut l = l0;
+        while l != BM_NIL {
+            let f = bm.lpool[l].f;
+            if bm.lpool[bm.lpool[l].prev].e == bme2 || bm.lpool[bm.lpool[l].next].e == bme2 {
+                if bestf == BM_NIL || bm.lpool[l].v == bp.bverts[bvi].v {
+                    bestf = f;
+                }
+            }
+            if bestf != BM_NIL {
+                bp.bverts[bvi].edges[i].fnext = bestf;
+                bp.bverts[bvi].edges[e2i].fprev = bestf;
+            }
+            l = bm.lpool[l].radial_next;
+            if l == l0 {
+                break;
+            }
+        }
+    }
+}
+
+/// `bevel_vert_construct` — build the BevVert for vert `v`, or None.
+fn bevel_vert_construct(bm: &mut BMesh, bp: &mut BevelParams, v: usize) -> usize {
+    const TAG: u8 = crate::BM_ELEM_TAG;
+    let mut nsel = 0i32;
+    let mut tot_edges = 0i32;
+    let mut tot_wire = 0i32;
+    let mut first_bme = BM_NIL;
+    for bme in EdgesOfVert::new(bm, v).collect::<Vec<_>>() {
+        let face_count = crate::query::bm_edge_face_count(bm, bme);
+        bevel_edge_tag_disable(bm, bme);
+        if bm.edge(bme).head.hflag & TAG != 0 && bp.affect_type != BEVEL_AFFECT_VERTICES {
+            debug_assert!(face_count == 2);
+            nsel += 1;
+            if first_bme == BM_NIL {
+                first_bme = bme;
+            }
+        }
+        if face_count == 1 {
+            first_bme = bme;
+        }
+        if face_count > 0 || bp.affect_type == BEVEL_AFFECT_VERTICES {
+            tot_edges += 1;
+        }
+        if bm.edge(bme).l == BM_NIL {
+            tot_wire += 1;
+            if bp.affect_type != BEVEL_AFFECT_VERTICES {
+                bevel_edge_tag_enable(bm, bme);
+            }
+        }
+    }
+    if first_bme == BM_NIL {
+        first_bme = bm.vert(v).e;
+    }
+    if (nsel == 0 && bp.affect_type != BEVEL_AFFECT_VERTICES)
+        || (tot_edges < 2 && bp.affect_type == BEVEL_AFFECT_VERTICES)
+    {
+        bm.vpool[v].head.hflag &= !TAG;
+        return BM_NIL;
+    }
+    let bvi = bp.bverts.len();
+    bp.bverts.push(BevVert {
+        v,
+        edgecount: tot_edges,
+        selcount: nsel,
+        wirecount: tot_wire,
+        offset: bp.offset,
+        edges: vec![EdgeHalf::default(); tot_edges as usize],
+        wire_edges: vec![BM_NIL; tot_wire as usize],
+        vmesh: Some(VMesh {
+            mesh: Vec::new(),
+            boundstart: BM_NIL,
+            count: 0,
+            seg: bp.seg,
+            mesh_kind: MeshKind::None,
+        }),
+        ..BevVert::default()
+    });
+    bp.vert_hash.insert(v, bvi);
+    find_bevel_edge_order(bm, bp, bvi, first_bme);
+    for i in 0..tot_edges as usize {
+        let bme = bp.bverts[bvi].edges[i].e;
+        if bm.edge(bme).head.hflag & TAG != 0 && bp.affect_type != BEVEL_AFFECT_VERTICES {
+            bp.bverts[bvi].edges[i].is_bev = true;
+            bp.bverts[bvi].edges[i].seg = bp.seg;
+        } else {
+            bp.bverts[bvi].edges[i].is_bev = false;
+            bp.bverts[bvi].edges[i].seg = 0;
+        }
+        bp.bverts[bvi].edges[i].is_rev = bm.edge(bme).v2 == v;
+        bp.bverts[bvi].edges[i].leftv = BM_NIL;
+        bp.bverts[bvi].edges[i].rightv = BM_NIL;
+        bp.bverts[bvi].edges[i].profile_index = 0;
+    }
+    for bme in EdgesOfVert::new(bm, v).collect::<Vec<_>>() {
+        bevel_edge_tag_disable(bm, bme);
+    }
+    if tot_edges > 1 {
+        let mut ccw_test_sum = 0;
+        for i in 0..tot_edges as usize {
+            ccw_test_sum += bev_ccw_test(
+                bm,
+                bp.bverts[bvi].edges[i].e,
+                bp.bverts[bvi].edges[(i + 1) % tot_edges as usize].e,
+                bp.bverts[bvi].edges[i].fnext,
+            );
+        }
+        if ccw_test_sum < 0 {
+            for i in 0..=(tot_edges as usize / 2).wrapping_sub(1) {
+                bp.bverts[bvi].edges.swap(i, tot_edges as usize - i - 1);
+                let (a, b) = (i, tot_edges as usize - i - 1);
+                let fa = bp.bverts[bvi].edges[a].fprev;
+                bp.bverts[bvi].edges[a].fprev = bp.bverts[bvi].edges[a].fnext;
+                bp.bverts[bvi].edges[a].fnext = fa;
+                let fb = bp.bverts[bvi].edges[b].fprev;
+                bp.bverts[bvi].edges[b].fprev = bp.bverts[bvi].edges[b].fnext;
+                bp.bverts[bvi].edges[b].fnext = fb;
+            }
+            if tot_edges % 2 == 1 {
+                let i = tot_edges as usize / 2;
+                let f = bp.bverts[bvi].edges[i].fprev;
+                bp.bverts[bvi].edges[i].fprev = bp.bverts[bvi].edges[i].fnext;
+                bp.bverts[bvi].edges[i].fnext = f;
+            }
+        }
+    }
+    let mut vert_axis = Vec3::ZERO;
+    if bp.affect_type == BEVEL_AFFECT_VERTICES {
+        /* dvert / bweight_offset_vert CustomData: PORT_PENDING → weight 1.0 */
+        if bp.offset_type == BEVEL_AMT_WIDTH || bp.offset_type == BEVEL_AMT_DEPTH {
+            for i in 0..tot_edges as usize {
+                let e = bp.bverts[bvi].edges[i].e;
+                let v2 = other_vert(bm, e, v);
+                let mut edge_dir = bm.vert(v).co - bm.vert(v2).co;
+                edge_dir.normalize();
+                vert_axis += edge_dir;
+            }
+        }
+    }
+    for i in 0..tot_edges as usize {
+        let tn = tot_edges as usize;
+        bp.bverts[bvi].edges[i].next = (i + 1) % tn;
+        bp.bverts[bvi].edges[i].prev = (i + tn - 1) % tn;
+        if bp.bverts[bvi].edges[i].is_bev {
+            match bp.offset_type {
+                BEVEL_AMT_OFFSET => {
+                    bp.bverts[bvi].edges[i].offset_l_spec = bp.offset;
+                }
+                BEVEL_AMT_WIDTH => {
+                    let z = (2.0 * (edge_face_angle(bm, bp, (bvi, i)) / 2.0).sin()).abs();
+                    bp.bverts[bvi].edges[i].offset_l_spec = if z < BEVEL_EPSILON {
+                        0.01 * bp.offset
+                    } else {
+                        bp.offset / z
+                    };
+                }
+                BEVEL_AMT_DEPTH => {
+                    let z = (edge_face_angle(bm, bp, (bvi, i)) / 2.0).cos().abs();
+                    bp.bverts[bvi].edges[i].offset_l_spec = if z < BEVEL_EPSILON {
+                        0.01 * bp.offset
+                    } else {
+                        bp.offset / z
+                    };
+                }
+                BEVEL_AMT_PERCENT => {
+                    let pe = bp.bverts[bvi].edges[i].prev;
+                    let ne = bp.bverts[bvi].edges[i].next;
+                    bp.bverts[bvi].edges[i].offset_l_spec =
+                        crate::query::bm_edge_calc_length(bm, bp.bverts[bvi].edges[pe].e)
+                            * bp.offset
+                            / 100.0;
+                    bp.bverts[bvi].edges[i].offset_r_spec =
+                        crate::query::bm_edge_calc_length(bm, bp.bverts[bvi].edges[ne].e)
+                            * bp.offset
+                            / 100.0;
+                }
+                BEVEL_AMT_ABSOLUTE => {
+                    bp.bverts[bvi].edges[i].offset_l_spec = bp.offset;
+                    bp.bverts[bvi].edges[i].offset_r_spec = bp.offset;
+                }
+                _ => {
+                    debug_assert!(false, "bad bevel offset kind");
+                    bp.bverts[bvi].edges[i].offset_l_spec = bp.offset;
+                }
+            }
+            if bp.offset_type != BEVEL_AMT_PERCENT && bp.offset_type != BEVEL_AMT_ABSOLUTE {
+                bp.bverts[bvi].edges[i].offset_r_spec = bp.bverts[bvi].edges[i].offset_l_spec;
+            }
+            if bp.use_weights {
+                /* bweight_offset_edge CustomData: PORT_PENDING → weight 0.0 like C -1 default? C uses layer only when != -1; absent → w=0? C: bp->bweight_offset_edge==-1 ? 0.0f : get. Offsets spec scaled by 0 → C faithfully zeroes when layer missing? No: guarded by use_weights which is only true when modifier passes it; weight layer absent yields 0.0. Keep faithful: use 0.0. */
+                let weight = 0.0f32;
+                bp.bverts[bvi].edges[i].offset_l_spec *= weight;
+                bp.bverts[bvi].edges[i].offset_r_spec *= weight;
+            }
+        } else if bp.affect_type == BEVEL_AFFECT_VERTICES {
+            match bp.offset_type {
+                BEVEL_AMT_OFFSET => {
+                    bp.bverts[bvi].edges[i].offset_l_spec = bp.bverts[bvi].offset;
+                }
+                BEVEL_AMT_WIDTH => {
+                    let e = bp.bverts[bvi].edges[i].e;
+                    let v2 = other_vert(bm, e, v);
+                    let edge_dir = bm.vert(v).co - bm.vert(v2).co;
+                    let z = (2.0 * angle_v3v3(vert_axis, edge_dir).sin()).abs();
+                    bp.bverts[bvi].edges[i].offset_l_spec = if z < BEVEL_EPSILON {
+                        0.01 * bp.offset
+                    } else {
+                        bp.offset / z
+                    };
+                }
+                BEVEL_AMT_DEPTH => {
+                    let e = bp.bverts[bvi].edges[i].e;
+                    let v2 = other_vert(bm, e, v);
+                    let edge_dir = bm.vert(v).co - bm.vert(v2).co;
+                    let z = angle_v3v3(vert_axis, edge_dir).cos().abs();
+                    bp.bverts[bvi].edges[i].offset_l_spec = if z < BEVEL_EPSILON {
+                        0.01 * bp.offset
+                    } else {
+                        bp.offset / z
+                    };
+                }
+                BEVEL_AMT_PERCENT => {
+                    let e = bp.bverts[bvi].edges[i].e;
+                    bp.bverts[bvi].edges[i].offset_l_spec =
+                        crate::query::bm_edge_calc_length(bm, e) * bp.bverts[bvi].offset / 100.0;
+                }
+                BEVEL_AMT_ABSOLUTE => {
+                    bp.bverts[bvi].edges[i].offset_l_spec = bp.bverts[bvi].offset;
+                }
+                _ => {}
+            }
+            bp.bverts[bvi].edges[i].offset_r_spec = bp.bverts[bvi].edges[i].offset_l_spec;
+        } else {
+            bp.bverts[bvi].edges[i].offset_l_spec = 0.0;
+            bp.bverts[bvi].edges[i].offset_r_spec = 0.0;
+        }
+        bp.bverts[bvi].edges[i].offset_l = bp.bverts[bvi].edges[i].offset_l_spec;
+        bp.bverts[bvi].edges[i].offset_r = bp.bverts[bvi].edges[i].offset_r_spec;
+        if bp.bverts[bvi].edges[i].fprev != BM_NIL && bp.bverts[bvi].edges[i].fnext != BM_NIL {
+            /* contig_ldata_across_edge → no ldata → true → is_seam=false */
+            bp.bverts[bvi].edges[i].is_seam = false;
+        } else {
+            bp.bverts[bvi].edges[i].is_seam = true;
+        }
+    }
+    if tot_wire != 0 {
+        let mut i = 0usize;
+        for bme in EdgesOfVert::new(bm, v).collect::<Vec<_>>() {
+            if bm.edge(bme).l == BM_NIL {
+                debug_assert!(i < bp.bverts[bvi].wirecount as usize);
+                bp.bverts[bvi].wire_edges[i] = bme;
+                i += 1;
+            }
+        }
+        debug_assert!(i == bp.bverts[bvi].wirecount as usize);
+    }
+    bvi
+}
