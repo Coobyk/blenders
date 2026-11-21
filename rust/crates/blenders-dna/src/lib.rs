@@ -26,6 +26,8 @@ pub mod camera_types;
 pub mod light_types;
 pub mod lightprobe_types;
 pub mod view2d_types;
+pub mod workspace_types;
+pub mod xr_types;
 pub mod mask_types;
 pub mod nla_types;
 pub mod id_enums;
