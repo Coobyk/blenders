@@ -265,3 +265,4 @@ pub mod anim_sys;
 pub mod constraint;
 pub mod unit;
 pub mod text;
+pub mod material;
