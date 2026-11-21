@@ -10,3 +10,4 @@ pub mod customdata_types;
 pub mod meshdata_types;
 pub mod mesh_types;
 pub mod object_types;
+pub mod small_types;
