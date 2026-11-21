@@ -28,19 +28,22 @@ pub const MASK_HIDE_VIEW: i8 = 1 << 0;
 pub const MASK_HIDE_SELECT: i8 = 1 << 1;
 pub const MASK_HIDE_RENDER: i8 = 1 << 2;
 
-/// `MaskDrawFlag`.
-pub const MASK_DRAWFLAG_SMOOTH_DEPRECATED: i8 = 1 << 0;
+/// `eMaskDrawFlag`.
+pub type MaskDrawFlag = i8;
+pub const MASK_DRAWFLAG_SMOOTH_DEPRECATED: MaskDrawFlag = 1 << 0;
 pub const MASK_DRAWFLAG_OVERLAY: i8 = 1 << 1;
 pub const MASK_DRAWFLAG_SPLINE: i8 = 1 << 2;
 
-/// `MaskDrawType`.
-pub const MASK_DT_OUTLINE: i8 = 0;
+/// `eMaskDrawType`.
+pub type MaskDrawType = i8;
+pub const MASK_DT_OUTLINE: MaskDrawType = 0;
 pub const MASK_DT_DASH: i8 = 1;
 pub const MASK_DT_BLACK: i8 = 2;
 pub const MASK_DT_WHITE: i8 = 3;
 
-/// `MaskOverlayMode`.
-pub const MASK_OVERLAY_ALPHACHANNEL: i8 = 0;
+/// `eMaskOverlayMode`.
+pub type MaskOverlayMode = i8;
+pub const MASK_OVERLAY_ALPHACHANNEL: MaskOverlayMode = 0;
 pub const MASK_OVERLAY_COMBINED: i8 = 1;
 
 /// `MaskLayerBlend`.

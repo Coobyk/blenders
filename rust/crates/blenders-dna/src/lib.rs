@@ -66,6 +66,7 @@ pub mod material_types;
 pub mod scene_enums;
 pub mod screen_types;
 pub mod sound_types;
+pub mod space_types;
 pub mod speaker_types;
 pub mod space_enums;
 pub mod movieclip_types;

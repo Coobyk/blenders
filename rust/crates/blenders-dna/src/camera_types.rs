@@ -28,6 +28,8 @@ pub const CAM_CUSTOM_SHADER_INTERNAL: i32 = 0;
 pub const CAM_CUSTOM_SHADER_EXTERNAL: i32 = 1;
 
 /// `eCompositionGuideFlags`.
+/// `eCompositionGuideFlags`.
+pub type Compositionguideflags = i16;
 pub const COMPOSITION_GUIDES_CENTER: i16 = 1 << 0;
 pub const COMPOSITION_GUIDES_CENTER_DIAG: i16 = 1 << 1;
 pub const COMPOSITION_GUIDES_THIRDS: i16 = 1 << 2;
