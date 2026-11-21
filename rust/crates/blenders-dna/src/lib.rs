@@ -58,6 +58,7 @@ pub mod node_tree_interface_types;
 pub mod packedfile_types;
 pub mod particle_types;
 pub mod session_uid_types;
+pub mod userdef_types;
 pub mod uuid_types;
 pub mod vec_defaults;
 pub mod id_enums;
