@@ -201,3 +201,4 @@ pub mod undo_system;
 pub mod studiolight;
 pub mod type_conversions;
 pub mod image_format;
+pub mod armature_update;
