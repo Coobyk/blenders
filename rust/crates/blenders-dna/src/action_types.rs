@@ -596,9 +596,7 @@ pub struct BItasc {
     pub dampeps: f32,
 }
 
-/// `ThemeWireColor` (DNA_color_types.h) placeholder.
-#[derive(Clone, Copy, Default)]
-pub struct ThemeWireColor(pub u64);
+pub use crate::theme_types::ThemeWireColor;
 
 /// `bActionGroup`.
 #[derive(Clone)]

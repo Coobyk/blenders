@@ -246,3 +246,4 @@ pub mod mask;
 pub mod key;
 pub mod screen;
 pub mod movieclip;
+pub mod action;

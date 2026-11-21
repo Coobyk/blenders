@@ -119,7 +119,7 @@ pub const BONE_COLLECTION_SOLO: BoneCollectionFlag = 1 << 4;
 pub const BONE_COLLECTION_EXPANDED: BoneCollectionFlag = 1 << 5;
 
 /// `BoneColor`.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct BoneColor {
     pub palette_index: i8,
     pub custom: ThemeWireColor,
