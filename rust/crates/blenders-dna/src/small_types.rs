@@ -318,9 +318,10 @@ pub struct Text {
     /// `void *compiled` — opaque.
     pub compiled: usize,
     pub flags: i32,
-    /// `ListBaseT<TextLine>`.
-    pub lines: blenders_bli::listbase::ListBase,
-    /// `TextLine *curl`, `*sell`.
+    /// `ListBaseT<TextLine>` — embedded lines (Rust: `Vec`).
+    pub lines: Vec<TextLine>,
+    /// `TextLine *curl`, `*sell` — line indices
+    /// (`usize::MAX` = none).
     pub curl: usize,
     pub sell: usize,
     pub curc: i32,
@@ -334,7 +335,7 @@ impl Default for Text {
             filepath: None,
             compiled: crate::id::NIL,
             flags: 0,
-            lines: blenders_bli::listbase::ListBase::new(),
+            lines: Vec::new(),
             curl: crate::id::NIL,
             sell: crate::id::NIL,
             curc: 0,
