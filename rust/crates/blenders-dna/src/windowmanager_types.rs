@@ -1,239 +1,161 @@
-//! Port of `DNA_windowmanager_types.h` — wmWindowManager/wmWindow/keymap/operator.
+//! Port of `DNA_windowmanager_types.h` — window manager, keymap and
+//! operator types.
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
+
 use crate::id::{ID, NIL};
-use crate::screen_types::ScrAreaMap;
-use crate::windowmanager_enums::OperatorFlag;
-use crate::xr_types::*;
 use blenders_bli::listbase::ListBase;
-/// `eWM_ExtensionsUpdates`.
-pub type WmExtensionsupdates = i32;
-pub const WM_EXTENSIONS_UPDATE_UNSET: WmExtensionsupdates = -2;
-pub const WM_EXTENSIONS_UPDATE_CHECKING: WmExtensionsupdates = -1;
 
-/// `eWM_InitFlag`.
-pub type WmInitflag = u8;
-pub const WM_INIT_FLAG_WINDOW: WmInitflag = 1 << 0;
-pub const WM_INIT_FLAG_KEYCONFIG: WmInitflag = 1 << 1;
-
-/// `eWM_OutlinerSyncSelectDirty`.
-pub type WmOutlinersyncselectdirty = i16;
-pub const WM_OUTLINER_SYNC_SELECT_FROM_OBJECT: WmOutlinersyncselectdirty = 1 << 0;
-pub const WM_OUTLINER_SYNC_SELECT_FROM_EDIT_BONE: WmOutlinersyncselectdirty = 1 << 1;
-pub const WM_OUTLINER_SYNC_SELECT_FROM_POSE_BONE: WmOutlinersyncselectdirty = 1 << 2;
-pub const WM_OUTLINER_SYNC_SELECT_FROM_SEQUENCE: WmOutlinersyncselectdirty = 1 << 3;
-pub const WM_OUTLINER_SYNC_SELECT_FROM_COLLECTION: WmOutlinersyncselectdirty = 1 << 4;
-
-/// `eKMI_Flag`.
-pub type KmiFlag = u8;
-pub const KMI_INACTIVE: KmiFlag = 1 << 0;
-pub const KMI_EXPANDED: KmiFlag = 1 << 1;
-pub const KMI_USER_MODIFIED: KmiFlag = 1 << 2;
-pub const KMI_UPDATE: KmiFlag = 1 << 3;
-pub const KMI_REPEAT_IGNORE: KmiFlag = 1 << 4;
-
-/// `eKMI_MapType`.
-pub type KmiMaptype = u8;
-pub const KMI_TYPE_KEYBOARD: KmiMaptype = 0;
-pub const KMI_TYPE_MOUSE: KmiMaptype = 1;
-pub const KMI_TYPE_TEXTINPUT: KmiMaptype = 3;
-pub const KMI_TYPE_TIMER: KmiMaptype = 4;
-pub const KMI_TYPE_NDOF: KmiMaptype = 5;
-
-/// `eKeyMap_Flag`.
-pub type KeymapFlag = i16;
-pub const KEYMAP_MODAL: KeymapFlag = 1 << 0;
-pub const KEYMAP_USER: KeymapFlag = 1 << 1;
-pub const KEYMAP_EXPANDED: KeymapFlag = 1 << 2;
-pub const KEYMAP_CHILDREN_EXPANDED: KeymapFlag = 1 << 3;
-pub const KEYMAP_DIFF: KeymapFlag = 1 << 4;
-pub const KEYMAP_USER_MODIFIED: KeymapFlag = 1 << 5;
-pub const KEYMAP_UPDATE: KeymapFlag = 1 << 6;
-pub const KEYMAP_TOOL: KeymapFlag = 1 << 7;
-
-/// `eKeyConf_Flag`.
-pub type KeyconfFlag = i16;
-pub const KEYCONF_USER: KeyconfFlag = 1 << 1;
-pub const KEYCONF_INIT_DEFAULT: KeyconfFlag = 1 << 2;
-
+pub const OP_MAX_TYPENAME: usize = 64;
+pub const KMAP_MAX_NAME: usize = 64;
 
 /// `ReportTimerInfo`.
-#[derive(Clone)]
+#[derive(Clone, Copy, Default)]
 pub struct ReportTimerInfo {
-    /// `float widthfac`
     pub widthfac: f32,
-    /// `float flash_progress`
     pub flash_progress: f32,
 }
-impl Default for ReportTimerInfo {
-    fn default() -> Self {
-        Self {
-            widthfac: 0.0,
-            flash_progress: 0.0,
-        }
-    }
+
+/// `wmXrData` (WITH_XR_OPENXR member of `wmWindowManager`).
+#[derive(Clone, Default)]
+pub struct WmXrData {
+    /// `wmXrRuntimeData *runtime`.
+    pub runtime: usize,
+    /// `XrSessionSettings session_settings` — opaque, un-ported (xr session
+    /// settings struct lives in `wm_xr.hh`, not DNA).
+    pub session_settings: usize,
 }
 
-/// `wmXrData`.
-#[derive(Clone)]
-pub struct wmXrData {
-    /// `wmXrRuntimeData *runtime`
-    pub runtime: usize,
-    pub session_settings: XrSessionSettings,
-}
-impl Default for wmXrData {
-    fn default() -> Self {
-        Self {
-            runtime: NIL,
-            session_settings: Default::default(),
-        }
-    }
-}
+/// `eWM_ExtensionsUpdates`.
+pub type EWmExtensionsupdates = i32;
+pub const WM_EXTENSIONS_UPDATE_UNSET: EWmExtensionsupdates = -2;
+pub const WM_EXTENSIONS_UPDATE_CHECKING: EWmExtensionsupdates = -1;
+
+/// `eWM_InitFlag`.
+pub type EWmInitflag = u8;
+pub const WM_INIT_FLAG_WINDOW: EWmInitflag = 1 << 0;
+pub const WM_INIT_FLAG_KEYCONFIG: EWmInitflag = 1 << 1;
+
+/// `eWM_OutlinerSyncSelectDirty`.
+pub type EWmOutlinersyncselectdirty = i16;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_OBJECT: EWmOutlinersyncselectdirty = 1 << 0;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_EDIT_BONE: EWmOutlinersyncselectdirty = 1 << 1;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_POSE_BONE: EWmOutlinersyncselectdirty = 1 << 2;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_SEQUENCE: EWmOutlinersyncselectdirty = 1 << 3;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_COLLECTION: EWmOutlinersyncselectdirty = 1 << 4;
+pub const WM_OUTLINER_SYNC_SELECT_FROM_ALL: EWmOutlinersyncselectdirty =
+    WM_OUTLINER_SYNC_SELECT_FROM_OBJECT | WM_OUTLINER_SYNC_SELECT_FROM_EDIT_BONE
+        | WM_OUTLINER_SYNC_SELECT_FROM_POSE_BONE | WM_OUTLINER_SYNC_SELECT_FROM_SEQUENCE;
 
 /// `wmWindowManager`.
 #[derive(Clone)]
-pub struct wmWindowManager {
+pub struct WmWindowManager {
     pub id: ID,
-    /// `ListBaseT<wmWindow>`
+    /// `ListBaseT<wmWindow> windows`.
     pub windows: ListBase,
-    /// `eWM_InitFlag init_flag`
-    pub init_flag: WmInitflag,
-    /// `short file_saved`
+    pub init_flag: EWmInitflag,
     pub file_saved: i16,
-    /// `short op_undo_depth`
     pub op_undo_depth: i16,
-    /// `eWM_OutlinerSyncSelectDirty outliner_sync_select_dirty`
-    pub outliner_sync_select_dirty: WmOutlinersyncselectdirty,
-    /// `eWM_ExtensionsUpdates extensions_updates`
-    pub extensions_updates: WmExtensionsupdates,
-    /// `int extensions_blocked`
+    pub outliner_sync_select_dirty: EWmOutlinersyncselectdirty,
+    pub extensions_updates: EWmExtensionsupdates,
     pub extensions_blocked: i32,
-    /// `wmTimer *autosavetimer`
+    /// `wmTimer *autosavetimer`.
     pub autosavetimer: usize,
-    /// `char autosave_scheduled`
     pub autosave_scheduled: i8,
-    pub xr: wmXrData,
-    /// `bke::WindowManagerRuntime *runtime`
+    pub xr: WmXrData,
+    /// `bke::WindowManagerRuntime *runtime`.
     pub runtime: usize,
 }
-impl Default for wmWindowManager {
+impl Default for WmWindowManager {
     fn default() -> Self {
         Self {
-            id: Default::default(),
+            id: ID::default(),
             windows: ListBase::default(),
-            init_flag: Default::default(),
+            init_flag: 0,
             file_saved: 0,
             op_undo_depth: 0,
-            outliner_sync_select_dirty: Default::default(),
-            extensions_updates: Default::default(),
+            outliner_sync_select_dirty: 0,
+            extensions_updates: 0,
             extensions_blocked: 0,
             autosavetimer: NIL,
             autosave_scheduled: 0,
-            xr: Default::default(),
+            xr: WmXrData::default(),
             runtime: NIL,
         }
     }
+}
+
+/// `ScrAreaMap` (screen types — global area list of a window).
+#[derive(Clone, Default)]
+pub struct ScrAreaMap {
+    /// `ListBaseT<ScrArea> vertbase/horizbase/areabase` packed in C;
+    /// arena handles here (layout fields come with the screen port).
+    pub vertbase: ListBase,
+    pub horizbase: ListBase,
+    pub areabase: ListBase,
 }
 
 /// `wmWindow`.
 #[derive(Clone)]
-pub struct wmWindow {
-    /// `wmWindow *next`
+pub struct WmWindow {
     pub next: usize,
-    /// `wmWindow *prev`
     pub prev: usize,
-    /// `wmWindow *parent`
+    /// `wmWindow *parent`.
     pub parent: usize,
-    /// `Scene *scene`
+    /// `Scene *scene` / `new_scene` / `unpinned_scene`.
     pub scene: usize,
-    /// `Scene *new_scene`
     pub new_scene: usize,
-    /// `char view_layer_name[64]`
     pub view_layer_name: [u8; 64],
-    /// `Scene *unpinned_scene`
     pub unpinned_scene: usize,
-    /// `WorkSpaceInstanceHook *workspace_hook`
+    /// `WorkSpaceInstanceHook *workspace_hook`.
     pub workspace_hook: usize,
     pub global_areas: ScrAreaMap,
-    /// `bScreen *screen`
+    /// `bScreen *screen` (DNA_DEPRECATED).
     pub screen: usize,
-    /// `int winid`
     pub winid: i32,
-    /// `short posx`
     pub posx: i16,
-    /// `short posy`
     pub posy: i16,
-    /// `short sizex`
     pub sizex: i16,
-    /// `short sizey`
     pub sizey: i16,
-    /// `char windowstate`
     pub windowstate: i8,
-    /// `char active`
     pub active: i8,
-    /// `short cursor`
     pub cursor: i16,
-    /// `short lastcursor`
     pub lastcursor: i16,
-    /// `short modalcursor`
     pub modalcursor: i16,
-    /// `short grabcursor`
     pub grabcursor: i16,
-    /// `short pie_event_type_lock`
     pub pie_event_type_lock: i16,
-    /// `short pie_event_type_last`
     pub pie_event_type_last: i16,
-    /// `char tag_cursor_refresh`
     pub tag_cursor_refresh: i8,
-    /// `char event_queue_check_click`
     pub event_queue_check_click: i8,
-    /// `char event_queue_check_drag`
     pub event_queue_check_drag: i8,
-    /// `char event_queue_check_drag_handled`
     pub event_queue_check_drag_handled: i8,
-    /// `short event_queue_consecutive_gesture_type`
     pub event_queue_consecutive_gesture_type: i16,
-    /// `int event_queue_consecutive_gesture_xy[2]`
     pub event_queue_consecutive_gesture_xy: [i32; 2],
-    /// `wmEvent_ConsecutiveData *event_queue_consecutive_gesture_data`
+    /// `wmEvent_ConsecutiveData *event_queue_consecutive_gesture_data`.
     pub event_queue_consecutive_gesture_data: usize,
-    /// `char addmousemove`
     pub addmousemove: i8,
-    /// `Stereo3dFormat *stereo3d_format`
+    /// `Stereo3dFormat *stereo3d_format`.
     pub stereo3d_format: usize,
-    /// `bke::WindowRuntime *runtime`
+    /// `bke::WindowRuntime *runtime`.
     pub runtime: usize,
 }
-impl Default for wmWindow {
+impl Default for WmWindow {
     fn default() -> Self {
         Self {
-            next: NIL,
-            prev: NIL,
-            parent: NIL,
-            scene: NIL,
-            new_scene: NIL,
+            next: NIL, prev: NIL, parent: NIL,
+            scene: NIL, new_scene: NIL,
             view_layer_name: [0; 64],
             unpinned_scene: NIL,
             workspace_hook: NIL,
-            global_areas: Default::default(),
+            global_areas: ScrAreaMap::default(),
             screen: NIL,
             winid: 0,
-            posx: 0,
-            posy: 0,
-            sizex: 0,
-            sizey: 0,
-            windowstate: 0,
-            active: 0,
-            cursor: 0,
-            lastcursor: 0,
-            modalcursor: 0,
-            grabcursor: 0,
-            pie_event_type_lock: 0,
-            pie_event_type_last: 0,
+            posx: 0, posy: 0, sizex: 0, sizey: 0,
+            windowstate: 0, active: 0,
+            cursor: 0, lastcursor: 0, modalcursor: 0, grabcursor: 0,
+            pie_event_type_lock: 0, pie_event_type_last: 0,
             tag_cursor_refresh: 0,
-            event_queue_check_click: 0,
-            event_queue_check_drag: 0,
-            event_queue_check_drag_handled: 0,
+            event_queue_check_click: 0, event_queue_check_drag: 0, event_queue_check_drag_handled: 0,
             event_queue_consecutive_gesture_type: 0,
             event_queue_consecutive_gesture_xy: [0; 2],
             event_queue_consecutive_gesture_data: NIL,
@@ -246,91 +168,85 @@ impl Default for wmWindow {
 
 /// `wmOperatorTypeMacro`.
 #[derive(Clone)]
-pub struct wmOperatorTypeMacro {
-    /// `wmOperatorTypeMacro *next`
+pub struct WmOperatorTypeMacro {
     pub next: usize,
-    /// `wmOperatorTypeMacro *prev`
     pub prev: usize,
-    /// `char idname[64]`
-    pub idname: [u8; 64],
-    /// `IDProperty *properties`
+    pub idname: [u8; OP_MAX_TYPENAME],
+    /// `IDProperty *properties`.
     pub properties: usize,
-    /// `PointerRNA *ptr`
+    /// `PointerRNA *ptr`.
     pub ptr: usize,
 }
-impl Default for wmOperatorTypeMacro {
+impl Default for WmOperatorTypeMacro {
     fn default() -> Self {
-        Self {
-            next: NIL,
-            prev: NIL,
-            idname: [0; 64],
-            properties: NIL,
-            ptr: NIL,
-        }
+        Self { next: NIL, prev: NIL, idname: [0; OP_MAX_TYPENAME], properties: NIL, ptr: NIL }
     }
 }
 
+/// `eKMI_Flag` (`#wmKeyMapItem.flag`).
+pub type EKmiFlag = u8;
+pub const KMI_INACTIVE: EKmiFlag = 1 << 0;
+pub const KMI_EXPANDED: EKmiFlag = 1 << 1;
+pub const KMI_USER_MODIFIED: EKmiFlag = 1 << 2;
+pub const KMI_UPDATE: EKmiFlag = 1 << 3;
+pub const KMI_REPEAT_IGNORE: EKmiFlag = 1 << 4;
+
+/// `eKMI_MapType` (`#wmKeyMapItem.maptype`).
+pub type EKmiMaptype = u8;
+pub const KMI_TYPE_KEYBOARD: EKmiMaptype = 0;
+pub const KMI_TYPE_MOUSE: EKmiMaptype = 1;
+pub const KMI_TYPE_TEXTINPUT: EKmiMaptype = 3;
+pub const KMI_TYPE_TIMER: EKmiMaptype = 4;
+pub const KMI_TYPE_NDOF: EKmiMaptype = 5;
+
+/// `eKeyMap_Flag` (`#wmKeyMap.flag`).
+pub type EKeymapFlag = i16;
+pub const KEYMAP_MODAL: EKeymapFlag = 1 << 0;
+pub const KEYMAP_USER: EKeymapFlag = 1 << 1;
+pub const KEYMAP_EXPANDED: EKeymapFlag = 1 << 2;
+pub const KEYMAP_CHILDREN_EXPANDED: EKeymapFlag = 1 << 3;
+pub const KEYMAP_DIFF: EKeymapFlag = 1 << 4;
+pub const KEYMAP_USER_MODIFIED: EKeymapFlag = 1 << 5;
+pub const KEYMAP_UPDATE: EKeymapFlag = 1 << 6;
+pub const KEYMAP_TOOL: EKeymapFlag = 1 << 7;
+
 /// `wmKeyMapItem`.
 #[derive(Clone)]
-pub struct wmKeyMapItem {
-    /// `wmKeyMapItem *next`
+pub struct WmKeyMapItem {
     pub next: usize,
-    /// `wmKeyMapItem *prev`
     pub prev: usize,
-    /// `char idname[64]`
     pub idname: [u8; 64],
-    /// `IDProperty *properties`
+    /// `IDProperty *properties`.
     pub properties: usize,
-    /// `char propvalue_str[64]`
     pub propvalue_str: [u8; 64],
-    /// `short propvalue`
     pub propvalue: i16,
-    /// `short type`
     pub type_: i16,
-    /// `int8_t val`
     pub val: i8,
-    /// `int8_t direction`
     pub direction: i8,
-    /// `int8_t shift`
     pub shift: i8,
-    /// `int8_t ctrl`
     pub ctrl: i8,
-    /// `int8_t alt`
     pub alt: i8,
-    /// `int8_t oskey`
     pub oskey: i8,
-    /// `int8_t hyper`
     pub hyper: i8,
-    /// `short keymodifier`
     pub keymodifier: i16,
-    /// `eKMI_Flag flag`
-    pub flag: KmiFlag,
-    /// `eKMI_MapType maptype`
-    pub maptype: KmiMaptype,
-    /// `short id`
+    pub flag: EKmiFlag,
+    pub maptype: EKmiMaptype,
     pub id: i16,
-    /// `PointerRNA *ptr`
+    /// `PointerRNA *ptr`.
     pub ptr: usize,
 }
-impl Default for wmKeyMapItem {
+impl Default for WmKeyMapItem {
     fn default() -> Self {
         Self {
-            next: NIL,
-            prev: NIL,
+            next: NIL, prev: NIL,
             idname: [0; 64],
             properties: NIL,
             propvalue_str: [0; 64],
             propvalue: 0,
-            type_: 0,
-            val: 0,
-            direction: 0,
-            shift: 0,
-            ctrl: 0,
-            alt: 0,
-            oskey: 0,
-            hyper: 0,
+            type_: 0, val: 0, direction: 0,
+            shift: 0, ctrl: 0, alt: 0, oskey: 0, hyper: 0,
             keymodifier: 0,
-            flag: Default::default(),
+            flag: 0,
             maptype: KMI_TYPE_KEYBOARD,
             id: 0,
             ptr: NIL,
@@ -338,171 +254,144 @@ impl Default for wmKeyMapItem {
     }
 }
 
-/// `wmKeyMapDiffItem`.
+/// `wmKeyMapDiffItem` — used instead of `wmKeyMapItem` for diff keymaps.
 #[derive(Clone)]
-pub struct wmKeyMapDiffItem {
-    /// `wmKeyMapDiffItem *next`
+pub struct WmKeyMapDiffItem {
     pub next: usize,
-    /// `wmKeyMapDiffItem *prev`
     pub prev: usize,
-    /// `wmKeyMapItem *remove_item`
+    /// `wmKeyMapItem *remove_item` / `*add_item` — arena handles.
     pub remove_item: usize,
-    /// `wmKeyMapItem *add_item`
     pub add_item: usize,
 }
-impl Default for wmKeyMapDiffItem {
+impl Default for WmKeyMapDiffItem {
     fn default() -> Self {
-        Self {
-            next: NIL,
-            prev: NIL,
-            remove_item: NIL,
-            add_item: NIL,
-        }
+        Self { next: NIL, prev: NIL, remove_item: NIL, add_item: NIL }
     }
 }
 
 /// `wmKeyMap`.
 #[derive(Clone)]
-pub struct wmKeyMap {
-    /// `wmKeyMap *next`
+pub struct WmKeyMap {
     pub next: usize,
-    /// `wmKeyMap *prev`
     pub prev: usize,
-    /// `ListBaseT<wmKeyMapItem>`
+    /// `ListBaseT<wmKeyMapItem> items` / `ListBaseT<wmKeyMapDiffItem> diff_items`.
     pub items: ListBase,
-    /// `ListBaseT<wmKeyMapDiffItem>`
     pub diff_items: ListBase,
-    /// `char idname[64]`
-    pub idname: [u8; 64],
-    /// `short spaceid`
+    pub idname: [u8; KMAP_MAX_NAME],
     pub spaceid: i16,
-    /// `short regionid`
     pub regionid: i16,
-    /// `char owner_id[128]`
     pub owner_id: [u8; 128],
-    /// `eKeyMap_Flag flag`
-    pub flag: KeymapFlag,
-    /// `short kmi_id`
+    pub flag: EKeymapFlag,
     pub kmi_id: i16,
+    /// `bool (*poll)(bContext *)` — function pointers stay handles.
+    pub poll: usize,
+    /// `bool (*poll_modal_item)(const wmOperator *, int)`.
+    pub poll_modal_item: usize,
+    /// `const void *modal_items`.
+    pub modal_items: usize,
 }
-impl Default for wmKeyMap {
+impl Default for WmKeyMap {
     fn default() -> Self {
         Self {
-            next: NIL,
-            prev: NIL,
+            next: NIL, prev: NIL,
             items: ListBase::default(),
             diff_items: ListBase::default(),
-            idname: [0; 64],
-            spaceid: 0,
-            regionid: 0,
+            idname: [0; KMAP_MAX_NAME],
+            spaceid: 0, regionid: 0,
             owner_id: [0; 128],
-            flag: Default::default(),
-            kmi_id: 0,
+            flag: 0, kmi_id: 0,
+            poll: NIL, poll_modal_item: NIL,
+            modal_items: NIL,
         }
     }
 }
 
 /// `wmKeyConfigPref`.
 #[derive(Clone)]
-pub struct wmKeyConfigPref {
-    /// `wmKeyConfigPref *next`
+pub struct WmKeyConfigPref {
     pub next: usize,
-    /// `wmKeyConfigPref *prev`
     pub prev: usize,
-    /// `char idname[64]`
     pub idname: [u8; 64],
-    /// `IDProperty *prop`
+    /// `IDProperty *prop` — group.
     pub prop: usize,
 }
-impl Default for wmKeyConfigPref {
+impl Default for WmKeyConfigPref {
     fn default() -> Self {
-        Self {
-            next: NIL,
-            prev: NIL,
-            idname: [0; 64],
-            prop: NIL,
-        }
+        Self { next: NIL, prev: NIL, idname: [0; 64], prop: NIL }
     }
 }
+
+/// `eKeyConf_Flag`.
+pub type EKeyconfFlag = i16;
+pub const KEYCONF_USER: EKeyconfFlag = 1 << 1;
+pub const KEYCONF_INIT_DEFAULT: EKeyconfFlag = 1 << 2;
 
 /// `wmKeyConfig`.
 #[derive(Clone)]
-pub struct wmKeyConfig {
-    /// `wmKeyConfig *next`
+pub struct WmKeyConfig {
     pub next: usize,
-    /// `wmKeyConfig *prev`
     pub prev: usize,
-    /// `char idname[64]`
     pub idname: [u8; 64],
-    /// `char basename[64]`
     pub basename: [u8; 64],
-    /// `ListBaseT<wmKeyMap>`
+    /// `ListBaseT<wmKeyMap> keymaps`.
     pub keymaps: ListBase,
-    /// `int actkeymap`
     pub actkeymap: i32,
-    /// `eKeyConf_Flag flag`
-    pub flag: KeyconfFlag,
+    pub flag: EKeyconfFlag,
 }
-impl Default for wmKeyConfig {
+impl Default for WmKeyConfig {
     fn default() -> Self {
         Self {
-            next: NIL,
-            prev: NIL,
-            idname: [0; 64],
-            basename: [0; 64],
+            next: NIL, prev: NIL,
+            idname: [0; 64], basename: [0; 64],
             keymaps: ListBase::default(),
             actkeymap: 0,
-            flag: Default::default(),
+            flag: 0,
         }
     }
 }
 
+/// `eOperator_Flag` (from `WM_types.hh`, referenced by `wmOperator.flag`).
+pub type EOperatorFlag = i16;
+
 /// `wmOperator`.
 #[derive(Clone)]
-pub struct wmOperator {
-    /// `wmOperator *next`
+pub struct WmOperator {
     pub next: usize,
-    /// `wmOperator *prev`
     pub prev: usize,
-    /// `char idname[64]`
-    pub idname: [u8; 64],
-    /// `IDProperty *properties`
+    pub idname: [u8; OP_MAX_TYPENAME],
+    /// `IDProperty *properties`.
     pub properties: usize,
-    /// `wmOperatorType *type`
+    /// `wmOperatorType *type`.
     pub type_: usize,
-    /// `void *customdata`
+    /// `void *customdata` / `py_instance`.
     pub customdata: usize,
-    /// `void *py_instance`
     pub py_instance: usize,
-    /// `PointerRNA *ptr`
+    /// `PointerRNA *ptr`.
     pub ptr: usize,
-    /// `ReportList *reports`
+    /// `ReportList *reports`.
     pub reports: usize,
-    /// `ListBaseT<wmOperator>`
+    /// `ListBaseT<wmOperator> macro`.
     pub macro_: ListBase,
-    /// `wmOperator *opm`
+    /// `wmOperator *opm`.
     pub opm: usize,
-    /// `ui::Layout *layout`
+    /// `ui::Layout *layout`.
     pub layout: usize,
-    /// `eOperator_Flag flag`
-    pub flag: OperatorFlag,
+    pub flag: EOperatorFlag,
 }
-impl Default for wmOperator {
+impl Default for WmOperator {
     fn default() -> Self {
         Self {
-            next: NIL,
-            prev: NIL,
-            idname: [0; 64],
+            next: NIL, prev: NIL,
+            idname: [0; OP_MAX_TYPENAME],
             properties: NIL,
             type_: NIL,
-            customdata: NIL,
-            py_instance: NIL,
+            customdata: NIL, py_instance: NIL,
             ptr: NIL,
             reports: NIL,
             macro_: ListBase::default(),
             opm: NIL,
             layout: NIL,
-            flag: Default::default(),
+            flag: 0,
         }
     }
 }
