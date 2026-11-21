@@ -77,7 +77,7 @@ fn read_mask_grid(mask_grid: &GridPaintMask, grid_u: f32, grid_v: f32) -> f32 {
     if mask_grid.data.is_empty() {
         return 0.0;
     }
-    let grid_size = grid_size_from_level(mask_grid.level) as usize;
+    let grid_size = grid_size_from_level(mask_grid.level as i32) as usize;
     let x = (grid_u * (grid_size - 1) as f32).round() as usize;
     let y = (grid_v * (grid_size - 1) as f32).round() as usize;
     mask_grid.data[y * grid_size + x]
