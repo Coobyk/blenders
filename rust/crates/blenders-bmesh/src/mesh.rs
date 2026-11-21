@@ -206,3 +206,26 @@ pub fn bm_mesh_vert_coords_apply_to_marked(
         }
     }
 }
+
+/// `BM_mesh_debug_info` — Python-dict-style debug dump of the mesh
+/// (CustomData layer sections are PORT_PENDING: no CustomData).
+pub fn bm_mesh_debug_info(bm: &BMesh) -> String {
+    let mut s = String::new();
+    s.push_str("{\n");
+    s.push_str(&format!("    'ptr': '{:p}',\n", bm as *const BMesh));
+    s.push_str(&format!("    'totvert': {},\n", bm.totvert));
+    s.push_str(&format!("    'totedge': {},\n", bm.totedge));
+    s.push_str(&format!("    'totface': {},\n", bm.totface));
+    for name in ["vert_layers", "edge_layers", "loop_layers", "poly_layers"] {
+        s.push_str(&format!("    '{}': (\n", name));
+        /* PORT_PENDING: CustomData_debug_info_from_layers(&bm->?data). */
+        s.push_str("    ),\n");
+    }
+    s.push_str("}\n");
+    s
+}
+
+/// `BM_mesh_debug_print`.
+pub fn bm_mesh_debug_print(bm: &BMesh) {
+    print!("{}", bm_mesh_debug_info(bm));
+}
