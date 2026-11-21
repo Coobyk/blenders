@@ -186,7 +186,7 @@ pub const OPDEF_FIND_DOUBLES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("targetmap.out", BMOSlotType::Map)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_find_doubles_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -199,7 +199,7 @@ pub const OPDEF_REMOVE_DOUBLES: BMOpDefine = BMOpDefine {
         ("dist", BMOSlotType::Flt)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_remove_doubles_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -251,7 +251,7 @@ pub const OPDEF_COLLAPSE: BMOpDefine = BMOpDefine {
         ("uvs", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_collapse_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -263,7 +263,7 @@ pub const OPDEF_POINTMERGE_FACEDATA: BMOpDefine = BMOpDefine {
         ("vert_target", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_pointmerge_facedata_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -274,7 +274,7 @@ pub const OPDEF_AVERAGE_VERT_FACEDATA: BMOpDefine = BMOpDefine {
         ("verts", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_average_vert_facedata_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -287,7 +287,7 @@ pub const OPDEF_POINTMERGE: BMOpDefine = BMOpDefine {
         ("vert_target", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_pointmerge_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -298,7 +298,7 @@ pub const OPDEF_COLLAPSE_UVS: BMOpDefine = BMOpDefine {
         ("edges", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_removedoubles::bmo_collapse_uvs_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
