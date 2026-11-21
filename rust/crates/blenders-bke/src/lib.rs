@@ -35,4 +35,6 @@ pub mod node_enum_definition;
 pub mod node_tree_dot_export;
 pub mod paint_runtime;
 pub mod scene_context;
+pub mod sound_reader_cache;
+pub mod volume_grid_fields;
 pub mod view3d_runtime;
