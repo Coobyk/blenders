@@ -272,3 +272,4 @@ pub mod collection;
 pub mod main_registry;
 pub mod curves_geometry;
 pub mod pbvh;
+pub mod object_dupli;
