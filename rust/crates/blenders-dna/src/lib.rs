@@ -78,6 +78,7 @@ pub mod theme_types;
 pub mod tracking_types;
 pub mod userdef_enums;
 pub mod windowmanager_enums;
+pub mod windowmanager_types;
 pub mod world_types;
 pub mod customdata_types;
 pub mod meshdata_types;
