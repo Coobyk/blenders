@@ -287,3 +287,4 @@ pub mod blendfile;
 pub mod node_tree_update;
 pub mod dynamicpaint;
 pub mod image;
+pub mod fluid;
