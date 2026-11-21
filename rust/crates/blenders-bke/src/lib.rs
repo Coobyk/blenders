@@ -230,3 +230,4 @@ pub mod mesh_data_update;
 pub mod multires_unsubdivide;
 pub mod fcurve_driver;
 pub mod tracking_stabilize;
+pub mod shrinkwrap;
