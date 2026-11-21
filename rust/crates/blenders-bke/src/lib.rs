@@ -100,6 +100,7 @@ pub mod editmesh;
 pub mod displist;
 pub mod editmesh_tangent;
 pub mod mesh_flip_faces;
+pub mod mesh_fair;
 pub mod main_idmap;
 pub mod mesh_tessellate;
 pub mod mesh_topology_state;
