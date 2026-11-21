@@ -83,6 +83,7 @@ pub mod mesh_tessellate;
 pub mod mesh_topology_state;
 pub mod node_enum_definition;
 pub mod paint_canvas;
+pub mod pointcloud_attributes;
 pub mod pose_backup;
 pub mod node_tree_dot_export;
 pub mod paint_runtime;
