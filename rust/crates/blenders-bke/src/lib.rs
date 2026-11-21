@@ -283,3 +283,4 @@ pub mod layer;
 pub mod lib_id;
 pub mod softbody;
 pub mod tracking;
+pub mod blendfile;
