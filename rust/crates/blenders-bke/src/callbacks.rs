@@ -1,22 +1,13 @@
-//! Port of `intern/callbacks.cc` — the global `BKE_callback_*` registry.
+//! Port of `intern/callbacks.cc` — the global `callback_slots`
+//! registry (`bCallbackFuncStore` per `eCbEvent`).
 //!
-//! `Main`/`PointerRNA`/`ID`/`Depsgraph` are opaque `usize` handles until those
-//! modules land; the slot machinery (add/remove/exec/finalize) is ported
-//! faithfully — removal by store identity, mutable iteration semantics.
+//! `PointerRNA` payloads are `usize` handles; `Main *` likewise
+//! (PORT_PENDING RNA). Slot storage is a `Mutex<Vec>` per event —
+//! `BLI_addtail` order preserved; `funcstore->alloc` → owned flag.
 
-/// `bCallbackFuncStore` (DNA_camera? actually BKE_callbacks.hh):
-/// `{next, prev, func, arg, alloc}` — modeled as a registry entry.
-pub type BCallbackFunc = fn(bmain: usize, pointers: &mut [usize], arg: usize);
+use std::sync::Mutex;
 
-/// `bCallbackFuncStore`.
-pub struct BCallbackFuncStore {
-    pub func: BCallbackFunc,
-    pub arg: usize,
-    /// `alloc` — was the store MEM_alloc'd (and so freed on remove/finalize).
-    pub alloc: bool,
-}
-
-/// `eCbEvent` — from BKE_callbacks.hh (order preserved).
+/// `eCbEvent` (BKE_callbacks.hh) — indices into `CALLBACK_SLOTS`.
 pub const BKE_CB_EVT_FRAME_CHANGE_PRE: usize = 0;
 pub const BKE_CB_EVT_FRAME_CHANGE_POST: usize = 1;
 pub const BKE_CB_EVT_RENDER_PRE: usize = 2;
@@ -60,86 +51,107 @@ pub const BKE_CB_EVT_EXTENSION_REPOS_FILES_CLEAR: usize = 39;
 pub const BKE_CB_EVT_BLENDIMPORT_PRE: usize = 40;
 pub const BKE_CB_EVT_BLENDIMPORT_POST: usize = 41;
 pub const BKE_CB_EVT_EXIT_PRE: usize = 42;
+/// `BKE_CB_EVT_TOT`.
 pub const BKE_CB_EVT_TOT: usize = 43;
 
-/// `callback_slots[BKE_CB_EVT_TOT]` — the global registry.
-pub struct CallbackRegistry {
-    slots: Vec<Vec<BCallbackFuncStore>>,
-    initialized: bool,
+/// `bCallbackFunc` signature — `(main, pointers, arg)`.
+pub type BCallbackFunc = fn(usize, &[usize], usize);
+
+/// `bCallbackFuncStore`.
+pub struct BCallbackFuncStore {
+    pub func: BCallbackFunc,
+    /// `void *arg`.
+    pub arg: usize,
+    /// `short alloc` — whether the store was heap-allocated.
+    pub alloc: bool,
 }
 
-impl Default for CallbackRegistry {
-    fn default() -> Self {
-        Self::new()
+struct Slots(Mutex<Vec<Vec<BCallbackFuncStore>>>);
+static CALLBACK_SLOTS: Slots = Slots(Mutex::new(Vec::new()));
+static INITIALIZED: Mutex<bool> = Mutex::new(false);
+
+fn with_slots<R>(f: impl FnOnce(&mut Vec<Vec<BCallbackFuncStore>>) -> R) -> R {
+    let mut slots = CALLBACK_SLOTS.0.lock().unwrap();
+    if slots.is_empty() {
+        *slots = (0..BKE_CB_EVT_TOT).map(|_| Vec::new()).collect();
+    }
+    f(&mut slots)
+}
+
+/// `BKE_callback_exec` — runs each store's func in list order.
+/// Callback fns are `fn` pointers (not `FnMut`), so stores are copied
+/// out first to avoid holding the lock across calls.
+pub fn bke_callback_exec(bmain: usize, pointers: &[usize], evt: usize) {
+    debug_assert!(*INITIALIZED.lock().unwrap(), "BKE_callback_global_init() first");
+    /* Snapshot fn/arg pairs; stores may add/remove during exec in C
+     * via deferred lists — simple snapshot here. */
+    let snapshot: Vec<(BCallbackFunc, usize)> = with_slots(|s| {
+        s[evt].iter().map(|fs| (fs.func, fs.arg)).collect()
+    });
+    for (func, arg) in snapshot {
+        func(bmain, pointers, arg);
     }
 }
 
-impl CallbackRegistry {
-    pub fn new() -> Self {
-        Self { slots: (0..BKE_CB_EVT_TOT).map(|_| Vec::new()).collect(), initialized: false }
-    }
+/// `BKE_callback_exec_null`.
+pub fn bke_callback_exec_null(bmain: usize, evt: usize) {
+    bke_callback_exec(bmain, &[], evt);
+}
 
-    /// `BKE_callback_global_init`.
-    pub fn init(&mut self) {
-        self.initialized = true;
-    }
+/// `BKE_callback_exec_id` — `pointers[0]` is the ID's PointerRNA.
+pub fn bke_callback_exec_id(bmain: usize, id_ptr: usize, evt: usize) {
+    bke_callback_exec(bmain, &[id_ptr], evt);
+}
 
-    /// `BKE_callback_exec` — mutable iteration (handlers may self-remove is
-    /// modeled by re-checking bounds each step).
-    pub fn exec(&mut self, bmain: usize, pointers: &mut [usize], evt: usize) {
-        debug_assert!(self.initialized);
-        for store in &self.slots[evt] {
-            (store.func)(bmain, pointers, store.arg);
+/// `BKE_callback_exec_id_depsgraph` — `{id_ptr, depsgraph_ptr}`.
+pub fn bke_callback_exec_id_depsgraph(bmain: usize, id_ptr: usize, depsgraph_ptr: usize, evt: usize) {
+    bke_callback_exec(bmain, &[id_ptr, depsgraph_ptr], evt);
+}
+
+/// `BKE_callback_exec_boolean` — the bool's `PrimitiveBoolean` RNA ptr.
+pub fn bke_callback_exec_boolean(bmain: usize, boolean_ptr: usize, evt: usize) {
+    bke_callback_exec(bmain, &[boolean_ptr], evt);
+}
+
+/// `BKE_callback_exec_string`.
+pub fn bke_callback_exec_string(bmain: usize, str_ptr: usize, evt: usize) {
+    bke_callback_exec(bmain, &[str_ptr], evt);
+}
+
+/// `BKE_callback_add` (`BLI_addtail`).
+pub fn bke_callback_add(funcstore: BCallbackFuncStore, evt: usize) {
+    debug_assert!(*INITIALIZED.lock().unwrap(), "BKE_callback_global_init() first");
+    with_slots(|s| s[evt].push(funcstore));
+}
+
+/// `BKE_callback_remove` — by identity of `func`+`arg`; removes the
+/// first match (`BLI_remlink`), returns whether it was found.
+pub fn bke_callback_remove(func: BCallbackFunc, arg: usize, evt: usize) -> bool {
+    if !*INITIALIZED.lock().unwrap() {
+        return false;
+    }
+    with_slots(|s| {
+        if let Some(i) = s[evt].iter().position(|fs| fs.func == func && fs.arg == arg) {
+            let _fs = s[evt].remove(i);
+            /* `if (funcstore->alloc) MEM_delete` — dropped. */
+            true
+        } else {
+            false
         }
-    }
+    })
+}
 
-    /// `BKE_callback_exec_null`.
-    pub fn exec_null(&mut self, bmain: usize, evt: usize) {
-        self.exec(bmain, &mut [], evt);
-    }
+/// `BKE_callback_global_init`.
+pub fn bke_callback_global_init() {
+    *INITIALIZED.lock().unwrap() = true;
+}
 
-    /// `BKE_callback_exec_id` — wraps the ID in a PointerRNA slot (handle).
-    pub fn exec_id(&mut self, bmain: usize, id_ptr: usize, evt: usize) {
-        self.exec(bmain, &mut [id_ptr], evt);
-    }
-
-    /// `BKE_callback_exec_id_depsgraph`.
-    pub fn exec_id_depsgraph(&mut self, bmain: usize, id_ptr: usize, depsgraph_ptr: usize, evt: usize) {
-        self.exec(bmain, &mut [id_ptr, depsgraph_ptr], evt);
-    }
-
-    /// `BKE_callback_exec_boolean` — PrimitiveBooleanRNA value slot; PORT_PENDING
-    /// until RNA pointer create exists, value passed through.
-    pub fn exec_boolean(&mut self, bmain: usize, value_ptr: usize, evt: usize) {
-        self.exec(bmain, &mut [value_ptr], evt);
-    }
-
-    /// `BKE_callback_exec_string` — PrimitiveStringRNA slot.
-    pub fn exec_string(&mut self, bmain: usize, str_ptr: usize, evt: usize) {
-        self.exec(bmain, &mut [str_ptr], evt);
-    }
-
-    /// `BKE_callback_add` — `BLI_addtail`.
-    pub fn add(&mut self, funcstore: BCallbackFuncStore, evt: usize) -> usize {
-        debug_assert!(self.initialized);
-        self.slots[evt].push(funcstore);
-        self.slots[evt].len() - 1
-    }
-
-    /// `BKE_callback_remove` — remove by index (store identity).
-    pub fn remove(&mut self, index: usize, evt: usize) {
-        if !self.initialized {
-            return;
+/// `BKE_callback_global_finalize` — remove every store in every slot.
+pub fn bke_callback_global_finalize() {
+    with_slots(|s| {
+        for slot in s.iter_mut() {
+            slot.clear();
         }
-        debug_assert!(index < self.slots[evt].len(), "To-be-removed callback not found");
-        self.slots[evt].remove(index);
-    }
-
-    /// `BKE_callback_global_finalize` — clear every slot.
-    pub fn finalize(&mut self) {
-        for lb in self.slots.iter_mut() {
-            lb.clear();
-        }
-        self.initialized = false;
-    }
+    });
+    *INITIALIZED.lock().unwrap() = false;
 }
