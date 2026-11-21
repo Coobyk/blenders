@@ -9,6 +9,7 @@ pub mod icons_rasterize;
 pub mod idtype;
 pub mod speaker;
 pub mod action_bones;
+pub mod action_mirror;
 pub mod addon;
 pub mod anim_data_bmain_utils;
 pub mod appdir;
