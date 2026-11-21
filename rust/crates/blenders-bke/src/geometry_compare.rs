@@ -533,7 +533,7 @@ fn update_set_ids_usize(
 
 /// `ignored_attribute`.
 pub fn ignored_attribute(name: &str) -> bool {
-    crate::attribute_access::attribute_name_is_anonymous(name)
+    crate::anonymous_attribute_id::attribute_name_is_anonymous(name)
         || name.starts_with(".pn.")
         || name == ".uv_select_vert"
         || name == ".uv_select_edge"
