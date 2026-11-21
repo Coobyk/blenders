@@ -137,6 +137,7 @@ pub mod sound_reader_cache;
 pub mod volume_grid_fields;
 pub mod blender_cli_command;
 pub mod view3d_runtime;
+pub mod viewer_path;
 pub mod vfontdata_freetype;
 pub mod anim_visualization;
 pub mod annotations;
