@@ -6,10 +6,12 @@
 pub mod anonymous_attribute_id;
 pub mod idtype;
 pub mod speaker;
+pub mod addon;
 pub mod armature_selection;
 pub mod bake_data_block_map;
 pub mod autoexec;
 pub mod bake_items_paths;
+pub mod blender_user_menu;
 pub mod callbacks;
 pub mod subdiv_stats;
 pub mod editlattice;
