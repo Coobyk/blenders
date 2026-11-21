@@ -145,12 +145,12 @@ pub struct Collection {
     /// `ID *owner_id`.
     pub owner_id: usize,
     /// `ListBaseT<CollectionObject>`.
-    pub gobject: ListBase,
+    pub gobject: Vec<CollectionObject>,
     /// `ListBaseT<CollectionChild>`.
-    pub children: ListBase,
+    pub children: Vec<CollectionChild>,
     pub active_exporter_index: i32,
     /// `ListBaseT<CollectionExport>`.
-    pub exporters: ListBase,
+    pub exporters: Vec<CollectionExport>,
     /// `CollectionImport *importer`.
     pub importer: usize,
     /// `PreviewImage *preview`.
@@ -174,10 +174,10 @@ impl Default for Collection {
         Self {
             id: ID::default(),
             owner_id: NIL,
-            gobject: ListBase::new(),
-            children: ListBase::new(),
+            gobject: Vec::new(),
+            children: Vec::new(),
             active_exporter_index: 0,
-            exporters: ListBase::new(),
+            exporters: Vec::new(),
             importer: NIL,
             preview: NIL,
             layer: 0,
