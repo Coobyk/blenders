@@ -1049,7 +1049,7 @@ pub const OPDEF_CREATE_GRID: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_grid_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1066,7 +1066,7 @@ pub const OPDEF_CREATE_QUADSPHERE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_quadsphere_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1083,7 +1083,7 @@ pub const OPDEF_CREATE_UVSPHERE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_uvsphere_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1099,7 +1099,7 @@ pub const OPDEF_CREATE_ICOSPHERE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_icosphere_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1113,7 +1113,7 @@ pub const OPDEF_CREATE_MONKEY: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_monkey_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1133,7 +1133,7 @@ pub const OPDEF_CREATE_CONE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_cone_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1151,7 +1151,7 @@ pub const OPDEF_CREATE_CIRCLE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_circle_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1166,7 +1166,7 @@ pub const OPDEF_CREATE_CUBE: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("verts.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_primitive::bmo_create_cube_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
