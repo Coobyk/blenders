@@ -12,6 +12,7 @@ pub mod grease_pencil_attributes;
 pub mod geometry_component_grease_pencil;
 pub mod geometry_component_instances;
 pub mod geometry_component_mesh;
+pub mod geometry_component_curves;
 pub mod geometry_component_pointcloud;
 pub mod geometry_component_volume;
 pub mod geometry_set_instances;
