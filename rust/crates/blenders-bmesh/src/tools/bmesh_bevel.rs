@@ -2636,3 +2636,345 @@ fn build_boundary(bm: &BMesh, bp: &mut BevelParams, bvi: usize, construct: bool)
         bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = kind;
     }
 }
+
+/* ===== offset adjustment via least squares (C ~3850-4345) ===== */
+
+/// Tiny dense least-squares solver standing in for `EIG_linear_least_squares_solver`.
+struct LinearSolver {
+    a: Vec<Vec<f64>>,
+    b: Vec<f64>,
+    np: usize,
+    x: Vec<f64>,
+}
+
+impl LinearSolver {
+    fn new(nrows: usize, np: usize) -> Self {
+        Self {
+            a: vec![vec![0.0; np]; nrows],
+            b: vec![0.0; nrows],
+            np,
+            x: vec![0.0; np],
+        }
+    }
+    fn matrix_add(&mut self, row: usize, col: usize, v: f64) {
+        self.a[row][col] += v;
+    }
+    fn rhs_add(&mut self, i: usize, v: f64) {
+        self.b[i] += v;
+    }
+    /// Solve via normal equations + Gaussian elimination w/ partial pivoting.
+    fn solve(&mut self) {
+        let n = self.np;
+        let mut ata = vec![vec![0.0f64; n]; n];
+        let mut atb = vec![0.0f64; n];
+        for r in 0..self.a.len() {
+            for i in 0..n {
+                let ari = self.a[r][i];
+                if ari == 0.0 {
+                    continue;
+                }
+                for j in 0..n {
+                    ata[i][j] += ari * self.a[r][j];
+                }
+                atb[i] += ari * self.b[r];
+            }
+        }
+        for col in 0..n {
+            let mut piv = col;
+            for r in col + 1..n {
+                if ata[r][col].abs() > ata[piv][col].abs() {
+                    piv = r;
+                }
+            }
+            ata.swap(col, piv);
+            atb.swap(col, piv);
+            if ata[col][col] == 0.0 {
+                continue;
+            }
+            for r in col + 1..n {
+                let f = ata[r][col] / ata[col][col];
+                if f == 0.0 {
+                    continue;
+                }
+                for c in col..n {
+                    ata[r][c] -= f * ata[col][c];
+                }
+                atb[r] -= f * atb[col];
+            }
+        }
+        for i in (0..n).rev() {
+            let mut s = atb[i];
+            for j in i + 1..n {
+                s -= ata[i][j] * self.x[j];
+            }
+            self.x[i] = if ata[i][i] != 0.0 { s / ata[i][i] } else { 0.0 };
+        }
+    }
+    fn variable_get(&self, i: usize) -> f64 {
+        self.x[i]
+    }
+}
+
+/// `adjust_the_cycle_or_chain` — LLS over the weld chain/cycle offsets.
+fn adjust_the_cycle_or_chain(bp: &mut BevelParams, vstart: usize, iscycle: bool) {
+    let mut np = 0usize;
+    let mut v = vstart;
+    loop {
+        np += 1;
+        v = bp.boundverts[v].adjchain;
+        if v == BM_NIL || v == vstart {
+            break;
+        }
+    }
+    let nrows = if iscycle { 3 * np } else { 3 * np - 3 };
+    let mut solver = LinearSolver::new(nrows, np);
+    v = vstart;
+    let mut i = 0usize;
+    let weight = BEVEL_MATCH_SPEC_WEIGHT;
+    loop {
+        let bvi = bp.boundverts[v].bv;
+        if iscycle || i < np - 1 {
+            let eright = bp.boundverts[v].efirst;
+            let eleft = bp.boundverts[v].elast;
+            let enextleft = bp.boundverts[bp.boundverts[v].adjchain].elast;
+            let (off_r, off_l, sinratio, sinratio_next) = (
+                bp.bverts[bvi].edges[eright].offset_r,
+                bp.bverts[bvi].edges[enextleft].offset_l,
+                bp.boundverts[v].sinratio,
+                bp.boundverts[bp.boundverts[v].adjchain].sinratio,
+            );
+            let _ = eleft;
+            solver.matrix_add(i, i, 1.0);
+            solver.rhs_add(i, 0.0);
+            if iscycle {
+                solver.matrix_add(if i > 0 { i - 1 } else { np - 1 }, i, -sinratio as f64);
+            } else if i > 0 {
+                solver.matrix_add(i - 1, i, -sinratio as f64);
+            }
+            let mut row = if iscycle { np + 2 * i } else { np - 1 + 2 * i };
+            solver.matrix_add(row, i, weight);
+            solver.rhs_add(row, weight * off_r as f64);
+            row += 1;
+            solver.matrix_add(row, if i == np - 1 { 0 } else { i + 1 }, weight * sinratio_next as f64);
+            solver.rhs_add(row, weight * off_l as f64);
+        } else {
+            solver.matrix_add(i - 1, i, -1.0);
+        }
+        i += 1;
+        v = bp.boundverts[v].adjchain;
+        if v == BM_NIL || v == vstart {
+            break;
+        }
+    }
+    solver.solve();
+    v = vstart;
+    i = 0;
+    loop {
+        let bvi = bp.boundverts[v].bv;
+        let val = solver.variable_get(i);
+        if iscycle || i < np - 1 {
+            let eright = bp.boundverts[v].efirst;
+            let eleft = bp.boundverts[v].elast;
+            bp.bverts[bvi].edges[eright].offset_r = val as f32;
+            if iscycle || v != vstart {
+                bp.bverts[bvi].edges[eleft].offset_l = (bp.boundverts[v].sinratio as f64 * val) as f32;
+            }
+        } else {
+            let eleft = bp.boundverts[v].elast;
+            bp.bverts[bvi].edges[eleft].offset_l = val as f32;
+        }
+        i += 1;
+        v = bp.boundverts[v].adjchain;
+        if v == BM_NIL || v == vstart {
+            break;
+        }
+    }
+}
+
+/// `next_edgehalf_bev` — most-parallel beveled EdgeHalf along a path.
+fn next_edgehalf_bev(bm: &BMesh, bp: &BevelParams, start_edge: EHRef, toward_bv: bool, r_bv: &mut usize) -> EHRef {
+    if !toward_bv {
+        let (e2, bvo) = find_other_end_edge_half(bm, bp, start_edge);
+        *r_bv = bvo;
+        return e2;
+    }
+    let bv = *r_bv;
+    if bp.bverts[bv].selcount == 1 {
+        return EH_NIL;
+    }
+    if bp.bverts[bv].selcount == 2 {
+        let mut new_edge = bp.eh(start_edge).next;
+        while !bp.bverts[bv].edges[new_edge].is_bev {
+            new_edge = bp.bverts[bv].edges[new_edge].next;
+        }
+        return (bv, new_edge);
+    }
+    let se = bp.eh(start_edge);
+    let mut dir_start = if bm.edge(se.e).v1 == bp.bverts[bv].v {
+        bm.vert(bm.edge(se.e).v1).co - bm.vert(bm.edge(se.e).v2).co
+    } else {
+        bm.vert(bm.edge(se.e).v2).co - bm.vert(bm.edge(se.e).v1).co
+    };
+    dir_start.normalize();
+    let mut new_edge = bp.eh(start_edge).next;
+    let mut second_best_dot = 0.0f32;
+    let mut best_dot = 0.0f32;
+    let mut next_edge = EH_NIL;
+    while new_edge != start_edge.1 {
+        if !bp.bverts[bv].edges[new_edge].is_bev {
+            new_edge = bp.bverts[bv].edges[new_edge].next;
+            continue;
+        }
+        let ne = &bp.bverts[bv].edges[new_edge];
+        let mut dir_new = if bm.edge(ne.e).v2 == bp.bverts[bv].v {
+            bm.vert(bm.edge(ne.e).v1).co - bm.vert(bm.edge(ne.e).v2).co
+        } else {
+            bm.vert(bm.edge(ne.e).v2).co - bm.vert(bm.edge(ne.e).v1).co
+        };
+        dir_new.normalize();
+        let new_dot = dir_new.dot(dir_start);
+        if new_dot > best_dot {
+            second_best_dot = best_dot;
+            best_dot = new_dot;
+            next_edge = (bv, new_edge);
+        } else if new_dot > second_best_dot {
+            second_best_dot = new_dot;
+        }
+        new_edge = bp.bverts[bv].edges[new_edge].next;
+    }
+    if next_edge != EH_NIL
+        && blenders_math::base::compare_ff(best_dot, second_best_dot, BEVEL_SMALL_ANG_DOT)
+    {
+        return EH_NIL;
+    }
+    next_edge
+}
+
+/// `regularize_profile_orientation`.
+fn regularize_profile_orientation(bm: &BMesh, bp: &mut BevelParams, bme: usize) {
+    let start_bv = find_bevvert(bp, bm.edge(bme).v1);
+    if start_bv == BM_NIL {
+        return;
+    }
+    let start_edgehalf = find_edge_half(bp, start_bv, bme);
+    if start_edgehalf == EH_NIL
+        || !bp.eh(start_edgehalf).is_bev
+        || bp.eh(start_edgehalf).visited_rpo
+    {
+        return;
+    }
+    let right_highest = bp.boundverts[bp.eh(start_edgehalf).leftv].nv.co.z
+        < bp.boundverts[bp.eh(start_edgehalf).rightv].nv.co.z;
+    let leftv = bp.eh(start_edgehalf).leftv;
+    bp.boundverts[leftv].is_profile_start = right_highest;
+    bp.bverts[start_bv].edges[start_edgehalf.1].visited_rpo = true;
+    for i in 0..2 {
+        let mut edgehalf = start_edgehalf;
+        let mut bv = start_bv;
+        let mut toward_bv = i == 0;
+        edgehalf = next_edgehalf_bev(bm, bp, edgehalf, toward_bv, &mut bv);
+        while edgehalf != EH_NIL && !bp.eh(edgehalf).visited_rpo {
+            let leftv = bp.eh(edgehalf).leftv;
+            bp.boundverts[leftv].is_profile_start = if i == 0 {
+                toward_bv ^ right_highest
+            } else {
+                (!toward_bv) ^ right_highest
+            };
+            toward_bv = !toward_bv;
+            bp.bverts[bv].edges[edgehalf.1].visited_rpo = true;
+            edgehalf = next_edgehalf_bev(bm, bp, edgehalf, toward_bv, &mut bv);
+        }
+    }
+}
+
+/// `adjust_offsets` — solve weld chains/cycles, rebuild boundaries.
+fn adjust_offsets(bm: &mut BMesh, bp: &mut BevelParams) {
+    const TAG: u8 = crate::BM_ELEM_TAG;
+    for bmv in VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.vert(bmv).head.hflag & TAG == 0 {
+            continue;
+        }
+        let bv = find_bevvert(bp, bmv);
+        if bv == BM_NIL {
+            continue;
+        }
+        let boundstart = bp.bverts[bv].vmesh.as_ref().unwrap().boundstart;
+        let mut vanchor = boundstart;
+        loop {
+            if !bp.boundverts[vanchor].visited && bp.boundverts[vanchor].eon != BM_NIL {
+                let mut vchainstart = vanchor;
+                let mut vchainend = vanchor;
+                let mut iscycle = false;
+                let mut chainlen = 1usize;
+                let mut v = vanchor;
+                let mut bvcur = bv;
+                while bp.boundverts[v].eon != BM_NIL && !bp.boundverts[v].visited && !iscycle {
+                    bp.boundverts[v].visited = true;
+                    if bp.boundverts[v].efirst == BM_NIL {
+                        break;
+                    }
+                    let (enext, bvo) = find_other_end_edge_half(bm, bp, (bvcur, bp.boundverts[v].efirst));
+                    bvcur = bvo;
+                    if enext == EH_NIL {
+                        break;
+                    }
+                    let vnext = bp.bverts[enext.0].edges[enext.1].leftv;
+                    bp.boundverts[v].adjchain = vnext;
+                    vchainend = vnext;
+                    chainlen += 1;
+                    if bp.boundverts[vnext].visited {
+                        if vnext != vchainstart {
+                            break;
+                        }
+                        adjust_the_cycle_or_chain(bp, vchainstart, true);
+                        iscycle = true;
+                    }
+                    v = vnext;
+                }
+                if !iscycle {
+                    bp.boundverts[v].adjchain = BM_NIL;
+                    v = vchainstart;
+                    bvcur = bv;
+                    loop {
+                        bp.boundverts[v].visited = true;
+                        if bp.boundverts[v].elast == BM_NIL {
+                            break;
+                        }
+                        let (enext, bvo) =
+                            find_other_end_edge_half(bm, bp, (bvcur, bp.boundverts[v].elast));
+                        bvcur = bvo;
+                        if enext == EH_NIL {
+                            break;
+                        }
+                        let vnext = bp.bverts[enext.0].edges[enext.1].rightv;
+                        bp.boundverts[vnext].adjchain = v;
+                        chainlen += 1;
+                        vchainstart = vnext;
+                        v = vnext;
+                        if bp.boundverts[v].visited || bp.boundverts[v].eon == BM_NIL {
+                            break;
+                        }
+                    }
+                    if chainlen >= 3
+                        && bp.boundverts[vchainstart].eon == BM_NIL
+                        && bp.boundverts[vchainend].eon == BM_NIL
+                    {
+                        adjust_the_cycle_or_chain(bp, vchainstart, false);
+                    }
+                }
+            }
+            vanchor = bp.boundverts[vanchor].next;
+            if vanchor == boundstart {
+                break;
+            }
+        }
+    }
+    for bmv in VertsOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.vert(bmv).head.hflag & TAG != 0 {
+            let bv = find_bevvert(bp, bmv);
+            if bv != BM_NIL {
+                build_boundary(bm, bp, bv, false);
+            }
+        }
+    }
+}
