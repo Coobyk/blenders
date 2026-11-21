@@ -29,6 +29,7 @@ pub mod dynamicpaint_types;
 pub mod genfile;
 pub mod sdna_types;
 pub mod effect_types;
+pub mod fluid_types;
 pub mod freestyle_types;
 pub mod lattice_types;
 pub mod lineart_types;
