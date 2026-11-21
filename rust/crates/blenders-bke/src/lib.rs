@@ -289,3 +289,4 @@ pub mod dynamicpaint;
 pub mod image;
 pub mod fluid;
 pub mod grease_pencil_convert_legacy;
+pub mod curve;
