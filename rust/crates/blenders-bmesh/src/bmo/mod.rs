@@ -40,3 +40,4 @@ pub mod bmo_subdivide_edgering;
 pub mod bmo_fit_edge_loops;
 pub mod bmo_curve_edge_loops;
 pub mod bmo_bridge;
+pub mod bmo_fill_grid;
