@@ -51,3 +51,33 @@ editor structs), `node_types` (236 structs), `modifier_types` (102 structs +
 (SDNA tables + `dna_elem_type_size`), `effect_types` (legacy particles).
 
 Next: `blenkernel/intern/*.cc` (~330k lines) into `blenders-bke`.
+
+## blenkernel → blenders-bke (first batch)
+
+`blenders-bke` hosts `source/blender/blenkernel/intern/*.cc` ports. Handles:
+`Main`, `bContext`, `Depsgraph`, RNA, and foreign-subsystem pointers are
+`usize` handles; code paths gated on those keep their structure and carry
+`PORT_PENDING` notes naming the missing system. Fully ported logic includes:
+
+- `appdir.cc` — the whole folder-id search table, env-var precedence,
+  portable-layout, program-path init, tempdir, app-template discovery
+  (GHOST → platform conventions).
+- `autoexec.cc`, `bake_items_paths.cc`, `bake_data_block_map.cc`,
+  `callbacks.cc` (all 43 `eCbEvent` codes), `cpp_types.cc`,
+  `mesh_flip_faces.cc`, `mesh_merge_customdata.cc` (UV weld),
+  `mesh_topology_state.cc`, `editlattice.cc`, `editmesh_cache.cc`
+  (against `blenders-bmesh` normals/center fns), `icons_rasterize.cc`
+  (triangle rasterizer + box downscale), `armature_selection.cc`,
+  `multires_subdiv.cc`, `multires_reshape_{ccg,subdivide,versioning}.cc`,
+  `subdiv_{converter,displacement,topology,deform,stats}.cc`,
+  `node_tree_dot_export.cc`, `node_enum_definition.cc`,
+  `main_invariants.cc`, `addon.cc`, `blender_user_menu.cc`,
+  `blender_undo.cc`, `blender_copybuffer.cc`, `anim_data_bmain_utils.cc`,
+  `curve_convert.cc`, `action_bones.cc`, `lib_id_remapper.cc`,
+  `sound_reader_cache.cc`, `volume_grid_fields.cc`,
+  `geometry_component_{mesh,curves,instances,volume,pointcloud,grease_pencil,edit_data}.cc`,
+  `idtype.cc`/`speaker.cc` (`IDTypeInfo` + `IDTYPE_ID_SPK`),
+  `scene_context.cc`, `view3d_runtime.cc`, `paint_runtime.cc`,
+  `paint_canvas.cc`, `wm_runtime.cc`, `mesh_debug.cc`,
+  `vfontdata_freetype.cc`, `text_suggestions.cc`,
+  `lib_id_eval.cc`.
