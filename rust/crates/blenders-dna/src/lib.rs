@@ -21,6 +21,7 @@ pub mod lattice_types;
 pub mod brush_enums;
 pub mod camera_types;
 pub mod light_types;
+pub mod lightprobe_types;
 pub mod view2d_types;
 pub mod mask_types;
 pub mod nla_types;
