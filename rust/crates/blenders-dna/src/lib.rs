@@ -38,6 +38,7 @@ pub mod brush_types;
 pub mod camera_types;
 pub mod light_types;
 pub mod lightprobe_types;
+pub mod linestyle_types;
 pub mod view2d_types;
 pub mod workspace_types;
 pub mod xr_types;
