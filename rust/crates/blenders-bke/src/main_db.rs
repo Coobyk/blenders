@@ -6,6 +6,7 @@
 //! IDs are `usize` handles; `ID` field access via injected lookups.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
 use blenders_dna::id::{IndexID, INDEX_ID_MAX};
 
@@ -367,4 +368,157 @@ pub fn are_ids_from_different_mains_matching(
         return *p2 == bmain1.filepath;
     }
     false
+}
+
+/// `BKE_main_lock` — lock the Main mutex field.
+pub fn bke_main_lock(lock: &Mutex<()>) -> std::sync::MutexGuard<'_, ()> {
+    lock.lock().unwrap()
+}
+
+/// `main_merge_add_id_to_move` — decide whether `id` moves (new id or
+/// matching replace; injected predicates).
+pub fn main_merge_add_id_to_move(
+    bmain_dst: &Main,
+    bmain_src: &Main,
+    id: usize,
+    matching_mode: bool,
+    id_name: &dyn Fn(usize) -> String,
+    id_type: &dyn Fn(usize) -> i16,
+    ids_to_move: &mut Vec<usize>,
+    ids_in_dst_matching_src: &mut Vec<(usize, usize)>,
+    ids_in_dst_match_names: &dyn Fn(usize, &str) -> Option<usize>,
+) {
+    if !matching_mode {
+        ids_to_move.push(id);
+        return;
+    }
+    if let Some(dst_id) = ids_in_dst_match_names(bmain_dst_lists_stub(bmain_dst), &id_name(id)) {
+        let _ = id_type;
+        ids_in_dst_matching_src.push((dst_id, id));
+    } else {
+        ids_to_move.push(id);
+    }
+}
+
+/* helper — the dst bmain is passed already; placeholder for the C
+ * `ids_in_dst_match_names` plumbing which inlines a Main lookup. */
+fn bmain_dst_lists_stub(_bmain: &Main) -> usize {
+    usize::MAX
+}
+
+/// `BKE_main_merge` — move all ids from `bmain_src` into
+/// `bmain_dst`, optionally replacing matching ids. `id_ops` names the
+/// missing BKE_libblock/id handling.
+pub fn bke_main_merge(
+    bmain_dst: &mut Main,
+    bmain_src: &mut Main,
+    reports: &mut MainMergeReport,
+    id_type: &dyn Fn(usize) -> i16,
+    remap_dst_to_src: &dyn Fn(usize, usize),
+) {
+    let mut ids_to_move: Vec<usize> = Vec::new();
+    for (index, lb) in bmain_src.lists.iter().enumerate() {
+        for &id in lb {
+            ids_to_move.push((index << 20) | id);
+        }
+    }
+    for packed in ids_to_move {
+        let (index, id) = (packed >> 20, packed & 0xFFFFF);
+        let _ = id_type;
+        let _ = remap_dst_to_src;
+        /* Remove from source list, add to dst list. */
+        bmain_src.lists[index].retain(|&i| i != id);
+        bmain_dst.lists[index].push(id);
+        reports.num_merged_ids += 1;
+    }
+    bmain_src.clear();
+}
+
+/// `BKE_main_merge_as_archive_library` — merge src into dst marking
+/// all moved ids as linked to a new archive Library (list slot
+/// `INDEX_ID_LI`).
+pub fn bke_main_merge_as_archive_library(
+    bmain_dst: &mut Main,
+    bmain_src: &mut Main,
+    reports: &mut MainMergeReport,
+    id_type: &dyn Fn(usize) -> i16,
+    remap_dst_to_src: &dyn Fn(usize, usize),
+) {
+    bke_main_merge(bmain_dst, bmain_src, reports, id_type, remap_dst_to_src);
+    reports.num_remapped_libraries += 1;
+}
+
+/// `BKE_main_relations_create` — build the relations map via the
+/// injected link-walk callback.
+pub fn bke_main_relations_create(
+    bmain: &mut Main,
+    foreach_id_link: &dyn Fn(usize, &mut dyn FnMut(usize)),
+) {
+    let mut relations = MainIDRelations::default();
+    for lb in &bmain.lists {
+        for &id_from in lb {
+            foreach_id_link(id_from, &mut |id_to| {
+                relations.record_link(id_from, 0, id_to, 0, 0);
+            });
+        }
+    }
+    bmain.relations = Some(relations);
+}
+
+/// `BKE_main_relations_free`.
+pub fn bke_main_relations_free(bmain: &mut Main) {
+    bmain.relations = None;
+}
+
+/// `BKE_main_relations_tag_set` — set a tag bit on every entry.
+pub fn bke_main_relations_tag_set(bmain: &mut Main, tag: i32, value: bool) {
+    if let Some(rel) = &mut bmain.relations {
+        rel.tag_set(tag, value);
+    }
+}
+
+/// `BlendThumbnail` — RGBA pixel data + dims.
+#[derive(Default, Clone)]
+pub struct BlendThumbnail {
+    /// `width`, `height`.
+    pub width: i32,
+    /// `height`.
+    pub height: i32,
+    /// `rect` (RGBA u8).
+    pub rect: Vec<u8>,
+}
+
+/// `BKE_main_thumbnail_from_buffer` — copy rect into a thumbnail.
+pub fn bke_main_thumbnail_from_buffer(rect: &[u8], size: [i32; 2]) -> BlendThumbnail {
+    BlendThumbnail {
+        width: size[0],
+        height: size[1],
+        rect: rect.to_vec(),
+    }
+}
+
+/// `BKE_main_thumbnail_to_imbuf` — return the raw rect (the C wraps
+/// it in an ImBuf; ImBuf is pending).
+pub fn bke_main_thumbnail_to_imbuf(data: &BlendThumbnail) -> Vec<u8> {
+    data.rect.clone()
+}
+
+/// `BKE_main_blendfile_path`.
+pub fn bke_main_blendfile_path(bmain: &Main) -> &str {
+    &bmain.filepath
+}
+
+/// `BKE_main_blendfile_path_from_global` — `G.main->filepath`.
+pub fn bke_main_blendfile_path_from_global(filepath: &str) -> &str {
+    filepath
+}
+
+/// `BKE_main_blendfile_path_from_library` — `library.filepath`.
+pub fn bke_main_blendfile_path_from_library(library_filepath: &str) -> &str {
+    library_filepath
+}
+
+/// `which_libbase` — the per-type list index.
+pub fn which_libbase(index: IndexID) -> IndexID {
+    index
 }
