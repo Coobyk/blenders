@@ -15,6 +15,7 @@ pub mod asset_types;
 pub mod attribute_types;
 pub mod cachefile_types;
 pub mod color_types;
+pub mod colorband_types;
 pub mod constraint_types;
 pub mod curve_enums;
 pub mod curveprofile_types;

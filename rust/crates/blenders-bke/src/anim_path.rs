@@ -238,25 +238,25 @@ pub fn bke_where_on_path(
 
     /* Quaternion — two-level slerp (`interp_qt_qtqt`). */
     let quat = {
+        let qof = |q: [f32; 4]| blenders_math::quaternion::Quaternion { w: q[0], x: q[1], y: q[2], z: q[3] };
+        let q4 = |q: blenders_math::quaternion::Quaternion| Vec4::new(q.w, q.x, q.y, q.z);
         let totfac = w[0] + w[3];
         let q1 = if totfac > f32::EPSILON {
-            blenders_math::quaternion::interp_qt_qtqt(
-                Vec4::from(p0.quat), Vec4::from(p3.quat), w[3] / totfac)
+            qof(p0.quat).slerp(qof(p3.quat), w[3] / totfac)
         } else {
-            Vec4::from(p1.quat)
+            qof(p1.quat)
         };
         let totfac = w[1] + w[2];
         let q2 = if totfac > f32::EPSILON {
-            blenders_math::quaternion::interp_qt_qtqt(
-                Vec4::from(p1.quat), Vec4::from(p2.quat), w[2] / totfac)
+            qof(p1.quat).slerp(qof(p2.quat), w[2] / totfac)
         } else {
-            Vec4::from(p3.quat)
+            qof(p3.quat)
         };
         let totfac = w[0] + w[1] + w[2] + w[3];
         if totfac > f32::EPSILON {
-            blenders_math::quaternion::interp_qt_qtqt(q1, q2, (w[1] + w[2]) / totfac)
+            q4(q1.slerp(q2, (w[1] + w[2]) / totfac))
         } else {
-            q2
+            q4(q2)
         }
     };
 
