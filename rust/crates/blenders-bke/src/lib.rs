@@ -191,3 +191,4 @@ pub mod multires_reshape_util;
 pub mod idprop_serialize;
 pub mod particle_child;
 pub mod tracking_util;
+pub mod mesh_mapping;
