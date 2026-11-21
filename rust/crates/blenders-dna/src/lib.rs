@@ -10,6 +10,7 @@ pub mod action_types;
 pub mod anim_enums;
 pub mod armature_types;
 pub mod color_types;
+pub mod constraint_types;
 pub mod curve_enums;
 pub mod curve_types;
 pub mod anim_types;
