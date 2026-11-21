@@ -242,3 +242,4 @@ pub mod mesh_normals;
 pub mod deform;
 pub mod pbvh_uv_islands;
 pub mod mask_rasterize;
+pub mod mask;
