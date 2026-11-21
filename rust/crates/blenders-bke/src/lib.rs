@@ -274,3 +274,4 @@ pub mod curves_geometry;
 pub mod pbvh;
 pub mod object_dupli;
 pub mod mesh_remap;
+pub mod vfont_curve;
