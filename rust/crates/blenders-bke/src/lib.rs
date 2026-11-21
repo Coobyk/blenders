@@ -169,3 +169,4 @@ pub mod mball;
 pub mod texture;
 pub mod attribute_storage;
 pub mod lattice;
+pub mod preview_image;
