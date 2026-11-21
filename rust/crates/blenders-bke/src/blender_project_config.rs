@@ -320,6 +320,7 @@ impl TomlAssetLibrary {
 
 /// `ProjectVariable` — the runtime variable (subset of
 /// `BlenderProject`'s list entries).
+#[derive(Clone)]
 pub struct ProjectVariable {
     pub name: String,
     pub ty: ProjectVariableType,
@@ -329,6 +330,7 @@ pub struct ProjectVariable {
 }
 
 /// `ProjectVariable::value_*`.
+#[derive(Clone)]
 pub enum VariableValue {
     Int(i64),
     Float(f64),
@@ -362,7 +364,7 @@ pub fn project_variable_add(variables: &mut Vec<ProjectVariable>, v: TomlProject
 }
 
 /// `BlenderProject` — the fields the config touches.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BlenderProject {
     pub name: String,
     pub root_path: String,

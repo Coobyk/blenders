@@ -161,3 +161,4 @@ pub mod mesh_calc_edges;
 pub mod blender_project_config;
 pub mod light_linking;
 pub mod editmesh_bvh;
+pub mod blender_project;
