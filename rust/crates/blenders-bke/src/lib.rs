@@ -70,6 +70,7 @@ pub mod wm_runtime;
 pub mod subdiv_ccg_mask;
 pub mod subdiv_modifier;
 pub mod subdiv_converter;
+pub mod subdiv_converter_mesh;
 pub mod subdiv_displacement;
 pub mod subdiv_stats;
 pub mod subdiv_topology;
