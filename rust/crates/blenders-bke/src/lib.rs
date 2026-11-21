@@ -154,3 +154,4 @@ pub mod object_update;
 pub mod subdiv_eval;
 pub mod vfont;
 pub mod volume_grid_multi_function_eval;
+pub mod tracking_solver;
