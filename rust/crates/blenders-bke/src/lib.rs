@@ -10,6 +10,7 @@ pub mod icons_rasterize;
 pub mod idprop;
 pub mod kelvinlet;
 pub mod ocean_spectrum;
+pub mod outliner_treehash;
 pub mod idtype;
 pub mod speaker;
 pub mod action_bones;
