@@ -1,37 +1,22 @@
-//! Port of `intern/autoexec.cc` — `BKE_autoexec_*` path checks.
+//! Port of `intern/autoexec.cc` — `BKE_autoexec_match*` trusted-path
+//! checks against `U.autoexec_paths`.
 //!
-//! `U.autoexec_paths` arrives as a slice of `bPathCompare` (ListBase walk is
-//! the caller's job); `G.f`/`G.autoexec_override`/`U.flag` arrive as plain
-//! flags. Path utils come from `blenders_bli::path_utils`/`fnmatch`.
+//! `bPathCompare` entries are `(path, flag)`; the userdef/G.flags gates
+//! come in as bools (PORT_PENDING `U`/`G` globals).
 
-use blenders_bli::fnmatch::fnmatch;
+use blenders_bli::fnmatch::{fnmatch_str, FNM_CASEFOLD};
 use blenders_bli::path_utils;
-use blenders_dna::userdef_types::{bPathCompare, USER_PATHCMP_GLOB};
+use blenders_dna::userdef_types::USER_PATHCMP_GLOB;
 
-/// `AutoExec_Params` (BKE_autoexec.hh).
-#[derive(Clone, Copy, Default)]
-pub struct AutoExecParams {
-    pub skip_overrides: bool,
-    pub canonicalize: bool,
-    pub strip_filename: bool,
-}
-
-fn char_at(s: &str, i: usize) -> u8 {
-    s.as_bytes().get(i).copied().unwrap_or(0)
-}
-
-/// `autoexec_dirpath_resolve` — `path` untouched, or canonicalized/stripped
-/// copy. Returns the resolved dirpath (always an owned String here since the
-/// "nothing to do" case is a clone).
+/// `autoexec_dirpath_resolve` — canonicalize and/or strip the filename.
 fn autoexec_dirpath_resolve(path: &str, canonicalize: bool, strip_filename: bool) -> String {
     if !(canonicalize || strip_filename) {
         return path.to_string();
     }
     let mut dirpath = path.to_string();
-    let path_len = dirpath.len();
-    let is_dirpath = path_len > 0 && path_utils::slash_is_native_compat(char_at(&dirpath, path_len - 1));
+    let is_dirpath = !dirpath.is_empty()
+        && path_utils::slash_is_native_compat(dirpath.as_bytes()[dirpath.len() - 1]);
     let do_strip_filename = strip_filename && !is_dirpath;
-
     if canonicalize {
         path_utils::canonicalize_native(&mut dirpath);
         if !do_strip_filename {
@@ -39,72 +24,81 @@ fn autoexec_dirpath_resolve(path: &str, canonicalize: bool, strip_filename: bool
         }
     }
     if do_strip_filename {
-        let base = path_utils::basename(&dirpath);
-        dirpath.truncate(dirpath.len() - base.len());
+        /* Truncating at the file name leaves the trailing slash. */
+        if let Some(base) = dirpath.rfind(|c| c == '/' || c == '\\') {
+            dirpath.truncate(base + 1);
+        } else {
+            dirpath.clear();
+        }
     }
     dirpath
 }
 
-/// `BKE_autoexec_match_unchecked` — glob/prefix match against the excluded
-/// path list. `paths` is `U.autoexec_paths`.
+/// `BKE_autoexec_match_unchecked` — `autoexec_paths` is the
+/// `ListBase bPathCompare` flattened to `(path, flag)`.
 pub fn bke_autoexec_match_unchecked(
     path: &str,
     canonicalize: bool,
     strip_filename: bool,
-    paths: &[bPathCompare],
+    autoexec_paths: &[(String, u32)],
 ) -> bool {
     debug_assert!(!path.is_empty());
     let dirpath = autoexec_dirpath_resolve(path, canonicalize, strip_filename);
-    let fnmatch_flags = if cfg!(windows) { 4 /* FNM_CASEFOLD */ } else { 0 };
-    for path_cmp in paths {
-        if char_at(core::str::from_utf8(&path_cmp.path).unwrap_or(""), 0) == 0 {
-            continue;
-        }
-        let pattern = cstr(&path_cmp.path);
-        if path_cmp.flag & USER_PATHCMP_GLOB != 0 {
-            if fnmatch(pattern.as_bytes(), dirpath.as_bytes(), fnmatch_flags) == 0 {
+    #[cfg(windows)]
+    let fnmatch_flags = FNM_CASEFOLD;
+    #[cfg(not(windows))]
+    let fnmatch_flags = 0;
+    for (path_cmp, flag) in autoexec_paths {
+        if path_cmp.is_empty() {
+            /* `if (path_cmp->path[0] == '\0') continue` */
+        } else if flag & USER_PATHCMP_GLOB != 0 {
+            if fnmatch_str(path_cmp, &dirpath, fnmatch_flags) {
                 return true;
             }
-        } else if path_utils::path_ncmp(pattern, &dirpath, pattern.len()) == 0 {
+        } else if path_utils::path_ncmp(path_cmp, &dirpath, path_cmp.len()) == 0 {
             return true;
         }
     }
     false
 }
 
-fn cstr(b: &[u8]) -> &str {
-    let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-    core::str::from_utf8(&b[..end]).unwrap_or("")
-}
-
-/// `BKE_autoexec_match` — `USER_SCRIPT_AUTOEXEC_DISABLE`/`G_FLAG_SCRIPT_AUTOEXEC`
-/// pre-checks are the caller's.
+/// `BKE_autoexec_match` — call gate asserted in C
+/// (`USER_SCRIPT_AUTOEXEC_DISABLE`/`G_FLAG_SCRIPT_AUTOEXEC`); caller
+/// enforces it.
 pub fn bke_autoexec_match(
     path: &str,
     canonicalize: bool,
     strip_filename: bool,
-    paths: &[bPathCompare],
+    autoexec_paths: &[(String, u32)],
 ) -> bool {
-    bke_autoexec_match_unchecked(path, canonicalize, strip_filename, paths)
+    bke_autoexec_match_unchecked(path, canonicalize, strip_filename, autoexec_paths)
 }
 
-/// `BKE_autoexec_default_trust_source`.
-/// `autoexec_override` is `G.autoexec_override`; `autoexec_disabled` is
-/// `U.flag & USER_SCRIPT_AUTOEXEC_DISABLE`.
+/// `AutoExec_Params` (BKE_autoexec.hh).
+#[derive(Clone, Copy, Default)]
+pub struct AutoExecParams {
+    pub canonicalize: bool,
+    pub strip_filename: bool,
+    pub skip_overrides: bool,
+}
+
+/// `BKE_autoexec_default_trust_source` — `autoexec_override` is
+/// `G.autoexec_override` (`std::optional<bool>`), `script_autoexec_disable`
+/// the userpref flag check.
 pub fn bke_autoexec_default_trust_source(
     path: &str,
     params: &AutoExecParams,
     autoexec_override: Option<bool>,
-    autoexec_disabled: bool,
-    paths: &[bPathCompare],
+    script_autoexec_disable: bool,
+    autoexec_paths: &[(String, u32)],
 ) -> bool {
     if !params.skip_overrides {
-        if let Some(v) = autoexec_override {
-            return v;
+        if let Some(over) = autoexec_override {
+            return over;
         }
-        if autoexec_disabled {
+        if script_autoexec_disable {
             return false;
         }
     }
-    !bke_autoexec_match_unchecked(path, params.canonicalize, params.strip_filename, paths)
+    !bke_autoexec_match_unchecked(path, params.canonicalize, params.strip_filename, autoexec_paths)
 }
