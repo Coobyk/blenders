@@ -876,7 +876,7 @@ pub const OPDEF_SUBDIVIDE_EDGERING: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_subdivide_edgering::bmo_subdivide_edgering_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
