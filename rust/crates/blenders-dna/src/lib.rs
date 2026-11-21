@@ -6,3 +6,4 @@
 pub mod id;
 pub mod id_enums;
 pub mod vec_types;
+pub mod customdata_types;
