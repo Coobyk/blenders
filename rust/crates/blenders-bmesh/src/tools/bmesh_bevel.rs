@@ -5560,3 +5560,507 @@ fn bevel_vert_construct(bm: &mut BMesh, bp: &mut BevelParams, v: usize) -> usize
     }
     bvi
 }
+
+/* ===== polygon rebuild + wire reattach + edge polys (C ~7118-7620) ===== */
+
+/// `bev_rebuild_polygon` — replace a face cornered at bevel verts by rebuilt ngon.
+fn bev_rebuild_polygon(
+    bm: &mut BMesh,
+    bp: &mut BevelParams,
+    f: usize,
+    r_new_face: Option<&mut usize>,
+) -> bool {
+    const TAG: u8 = crate::BM_ELEM_TAG;
+    let mut do_rebuild = false;
+    let mut vv: Vec<usize> = Vec::new();
+    let mut ee: Vec<usize> = Vec::new();
+    let mut nv_bv_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for l in LoopsOfFace::new(bm, f).collect::<Vec<_>>() {
+        if bm.vert(bm.lpool[l].v).head.hflag & TAG != 0 {
+            let lprev = bm.lpool[l].prev;
+            let bvi = find_bevvert(bp, bm.lpool[l].v);
+            let vm_bound = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+            let _ = vm_bound;
+            let ei = find_edge_half(bp, bvi, bm.lpool[l].e).1;
+            debug_assert!(ei != usize::MAX);
+            let bme = bp.bverts[bvi].edges[ei].e;
+            let epi = find_edge_half(bp, bvi, bm.lpool[lprev].e).1;
+            debug_assert!(epi != usize::MAX);
+            let (enext_i, eprev_i);
+            {
+                let e = &bp.bverts[bvi].edges[ei];
+                let ep = &bp.bverts[bvi].edges[epi];
+                enext_i = e.prev == epi;
+                eprev_i = ep.prev == ei;
+            }
+            let go_ccw;
+            if enext_i {
+                if eprev_i {
+                    go_ccw = bp.bverts[bvi].edges[ei].fnext != f;
+                } else {
+                    go_ccw = true;
+                }
+            } else if eprev_i {
+                go_ccw = false;
+            } else {
+                let c1 = count_ccw_edges_between(bp, (bvi, epi), (bvi, ei));
+                let c2 = count_ccw_edges_between(bp, (bvi, ei), (bvi, epi));
+                go_ccw = c1 < c2;
+            }
+            let mut on_profile_start = false;
+            let vstart;
+            let vend;
+            if go_ccw {
+                let mut vs = bp.bverts[bvi].edges[epi].rightv;
+                vend = bp.bverts[bvi].edges[ei].leftv;
+                if bp.bverts[bvi].edges[ei].profile_index > 0 {
+                    vs = bp.boundverts[vs].prev;
+                    on_profile_start = true;
+                }
+                vstart = vs;
+            } else {
+                let mut vs = bp.bverts[bvi].edges[epi].leftv;
+                vend = bp.bverts[bvi].edges[ei].rightv;
+                if bp.bverts[bvi].edges[epi].profile_index > 0 {
+                    vs = bp.boundverts[vs].next;
+                    on_profile_start = true;
+                }
+                vstart = vs;
+            }
+            debug_assert!(vstart != BM_NIL && vend != BM_NIL);
+            let mut v = vstart;
+            if !on_profile_start {
+                vv.push(bp.boundverts[v].nv.v);
+                ee.push(bme);
+                nv_bv_map.insert(bp.boundverts[v].nv.v, bm.lpool[l].v);
+            }
+            while v != vend {
+                if go_ccw {
+                    let i = bp.boundverts[v].index;
+                    let kstart;
+                    if on_profile_start {
+                        kstart = bp.bverts[bvi].edges[ei].profile_index;
+                        on_profile_start = false;
+                    } else {
+                        kstart = 1;
+                    }
+                    let kend;
+                    if bp.bverts[bvi].edges[epi].rightv == v
+                        && bp.bverts[bvi].edges[epi].profile_index > 0
+                    {
+                        kend = bp.bverts[bvi].edges[epi].profile_index;
+                    } else {
+                        kend = bp.bverts[bvi].vmesh.as_ref().unwrap().seg;
+                    }
+                    for k in kstart..=kend {
+                        let bmv = {
+                            let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                            vm.mesh[mesh_vert(vm, i, 0, k)].v
+                        };
+                        if bmv != BM_NIL {
+                            vv.push(bmv);
+                            ee.push(bme);
+                            nv_bv_map.insert(bmv, bm.lpool[l].v);
+                        }
+                    }
+                    v = bp.boundverts[v].next;
+                } else {
+                    let i = bp.boundverts[bp.boundverts[v].prev].index;
+                    let kstart;
+                    if on_profile_start {
+                        kstart = bp.bverts[bvi].edges[epi].profile_index;
+                        on_profile_start = false;
+                    } else {
+                        kstart = bp.bverts[bvi].vmesh.as_ref().unwrap().seg - 1;
+                    }
+                    let kend;
+                    if bp.bverts[bvi].edges[ei].rightv == bp.boundverts[v].prev
+                        && bp.bverts[bvi].edges[ei].profile_index > 0
+                    {
+                        kend = bp.bverts[bvi].edges[ei].profile_index;
+                    } else {
+                        kend = 0;
+                    }
+                    let mut k = kstart;
+                    loop {
+                        let bmv = {
+                            let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                            vm.mesh[mesh_vert(vm, i, 0, k)].v
+                        };
+                        if bmv != BM_NIL {
+                            vv.push(bmv);
+                            ee.push(bme);
+                            nv_bv_map.insert(bmv, bm.lpool[l].v);
+                        }
+                        if k == kend {
+                            break;
+                        }
+                        k -= 1;
+                    }
+                    v = bp.boundverts[v].prev;
+                }
+            }
+            do_rebuild = true;
+        } else {
+            vv.push(bm.lpool[l].v);
+            ee.push(bm.lpool[l].e);
+            nv_bv_map.insert(bm.lpool[l].v, bm.lpool[l].v);
+        }
+    }
+    if do_rebuild {
+        let n = vv.len();
+        let f_new = bev_create_ngon(
+            bm,
+            bp,
+            &vv,
+            None,
+            f,
+            None,
+            BM_NIL,
+            Some(&nv_bv_map),
+            -1,
+            true,
+        );
+        debug_assert!(n == ee.len());
+        let mut bme_prev = ee[n - 1];
+        for k in 0..n {
+            let bme_new = crate::query::bm_edge_exists(bm, vv[k], vv[(k + 1) % n]);
+            debug_assert!(ee[k] != BM_NIL && bme_new != BM_NIL);
+            if ee[k] != bme_new {
+                /* BM_elem_attrs_copy: PORT_PENDING (CustomData). */
+                if k < n - 1 && ee[k] == ee[k + 1] {
+                    if bm.edge(ee[k]).head.hflag & crate::BM_ELEM_SEAM != 0
+                        && bm.edge(bme_prev).head.hflag & crate::BM_ELEM_SEAM == 0
+                    {
+                        bm.epool[bme_new].head.hflag &= !crate::BM_ELEM_SEAM;
+                    }
+                    if bm.edge(ee[k]).head.hflag & crate::BM_ELEM_SMOOTH == 0
+                        && bm.edge(bme_prev).head.hflag & crate::BM_ELEM_SMOOTH != 0
+                    {
+                        bm.epool[bme_new].head.hflag |= crate::BM_ELEM_SMOOTH;
+                    }
+                } else {
+                    bme_prev = ee[k];
+                }
+            }
+        }
+        if f_new != BM_NIL {
+            if let Some(r) = r_new_face {
+                *r = f_new;
+            }
+            record_face_kind(bp, f_new, F_RECON);
+            bm.fpool[f_new].head.hflag &= !TAG;
+            for bme in EdgesOfFace::new(bm, f_new).collect::<Vec<_>>() {
+                let mut keep = false;
+                for f_other in FacesOfEdge::new(bm, bme).collect::<Vec<_>>() {
+                    if bm.face(f_other).head.hflag & TAG != 0 {
+                        keep = true;
+                        break;
+                    }
+                }
+                if !keep {
+                    disable_flag_out_edge(bm, bme);
+                }
+            }
+        }
+    }
+    do_rebuild
+}
+
+/// `bevel_rebuild_existing_polygons`.
+fn bevel_rebuild_existing_polygons(
+    bm: &mut BMesh,
+    bp: &mut BevelParams,
+    v: usize,
+    rebuilt_orig_faces: &mut std::collections::HashSet<usize>,
+    mut r_rebuilt_face_0: Option<&mut usize>,
+) {
+    for f in FacesOfVert::new(bm, v).collect::<Vec<_>>() {
+        if !rebuilt_orig_faces.contains(&f) {
+            let mut new_face = BM_NIL;
+            if bev_rebuild_polygon(bm, bp, f, Some(&mut new_face)) {
+                rebuilt_orig_faces.insert(f);
+                if r_rebuilt_face_0.is_some() && bm.face(f).head.index == 0 {
+                    **r_rebuilt_face_0.as_mut().unwrap() = new_face;
+                }
+            }
+        }
+    }
+}
+
+/// `bevel_reattach_wires`.
+fn bevel_reattach_wires(bm: &mut BMesh, bp: &mut BevelParams, v: usize) {
+    let bvi = find_bevvert(bp, v);
+    if bvi == BM_NIL || bp.bverts[bvi].wirecount == 0 || bp.bverts[bvi].vmesh.is_none() {
+        return;
+    }
+    for i in 0..bp.bverts[bvi].wirecount as usize {
+        let e = bp.bverts[bvi].wire_edges[i];
+        let mut vclosest = BM_NIL;
+        let mut dclosest = f32::MAX;
+        let mut votherclosest = BM_NIL;
+        let vother = other_vert(bm, e, v);
+        let mut bvother = BM_NIL;
+        if bm.vert(vother).head.hflag & crate::BM_ELEM_TAG != 0 {
+            bvother = find_bevvert(bp, vother);
+            if bvother == BM_NIL || bp.bverts[bvother].vmesh.is_none() {
+                return;
+            }
+        }
+        let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+        let mut bndv = boundstart;
+        loop {
+            if bvother != BM_NIL {
+                let bso = bp.bverts[bvother].vmesh.as_ref().unwrap().boundstart;
+                let mut bndvother = bso;
+                loop {
+                    let d = (bp.boundverts[bndvother].nv.co - bp.boundverts[bndv].nv.co)
+                        .length_squared();
+                    if d < dclosest {
+                        vclosest = bp.boundverts[bndv].nv.v;
+                        votherclosest = bp.boundverts[bndvother].nv.v;
+                        dclosest = d;
+                    }
+                    bndvother = bp.boundverts[bndvother].next;
+                    if bndvother == bso {
+                        break;
+                    }
+                }
+            } else {
+                let d = (bm.vert(vother).co - bp.boundverts[bndv].nv.co).length_squared();
+                if d < dclosest {
+                    vclosest = bp.boundverts[bndv].nv.v;
+                    votherclosest = vother;
+                    dclosest = d;
+                }
+            }
+            bndv = bp.boundverts[bndv].next;
+            if bndv == boundstart {
+                break;
+            }
+        }
+        if vclosest != BM_NIL {
+            let enew = crate::core::bm_edge_create(
+                bm,
+                vclosest,
+                votherclosest,
+                Some(e),
+                crate::BM_CREATE_NO_DOUBLE,
+            );
+            if enew != BM_NIL && enew != e {
+                /* BM_elem_attrs_copy: PORT_PENDING (CustomData). */
+                flag_out_edge(bm, enew);
+            }
+        }
+    }
+}
+
+/// `bevvert_is_weld_cross`.
+fn bevvert_is_weld_cross(bp: &BevelParams, bvi: usize) -> bool {
+    let bv = &bp.bverts[bvi];
+    bv.edgecount == 4
+        && bv.selcount == 2
+        && ((bv.edges[0].is_bev && bv.edges[2].is_bev)
+            || (bv.edges[1].is_bev && bv.edges[3].is_bev))
+}
+
+/// `weld_cross_attrs_copy`.
+fn weld_cross_attrs_copy(bm: &mut BMesh, bp: &BevelParams, bvi: usize, vmindex: i32, ei: usize) {
+    let mut bme_prev = BM_NIL;
+    let mut bme_next = BM_NIL;
+    for i in 0..4usize {
+        if i == ei {
+            bme_prev = bp.bverts[bvi].edges[(i + 3) % 4].e;
+            bme_next = bp.bverts[bvi].edges[(i + 1) % 4].e;
+            break;
+        }
+    }
+    debug_assert!(bme_prev != BM_NIL && bme_next != BM_NIL);
+    let disable_seam = (bm.edge(bme_prev).head.hflag & crate::BM_ELEM_SEAM != 0)
+        != (bm.edge(bme_next).head.hflag & crate::BM_ELEM_SEAM != 0);
+    let enable_smooth = (bm.edge(bme_prev).head.hflag & crate::BM_ELEM_SMOOTH != 0)
+        != (bm.edge(bme_next).head.hflag & crate::BM_ELEM_SMOOTH != 0);
+    let nseg = bp.bverts[bvi].edges[ei].seg;
+    for i in 0..nseg {
+        let (va, vb);
+        {
+            let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+            va = vm.mesh[mesh_vert(vm, vmindex, 0, i)].v;
+            vb = vm.mesh[mesh_vert(vm, vmindex, 0, i + 1)].v;
+        }
+        let bme = crate::query::bm_edge_exists(bm, va, vb);
+        debug_assert!(bme != BM_NIL);
+        /* BM_elem_attrs_copy: PORT_PENDING (CustomData). */
+        if disable_seam {
+            bm.epool[bme].head.hflag &= !crate::BM_ELEM_SEAM;
+        }
+        if enable_smooth {
+            bm.epool[bme].head.hflag |= crate::BM_ELEM_SMOOTH;
+        }
+    }
+}
+
+/// `bevel_build_edge_polygons` — quad strip between the two ends of beveled edge `bme`.
+fn bevel_build_edge_polygons(bm: &mut BMesh, bp: &mut BevelParams, bme: usize) {
+    let mat_nr = bp.mat_nr;
+    if !crate::query::bm_edge_is_manifold(bm, bme) {
+        return;
+    }
+    let bv1 = find_bevvert(bp, bm.edge(bme).v1);
+    let bv2 = find_bevvert(bp, bm.edge(bme).v2);
+    debug_assert!(bv1 != BM_NIL && bv2 != BM_NIL);
+    let e1 = find_edge_half(bp, bv1, bme).1;
+    let e2 = find_edge_half(bp, bv2, bme).1;
+    debug_assert!(e1 != usize::MAX && e2 != usize::MAX);
+    let nseg = bp.bverts[bv1].edges[e1].seg;
+    debug_assert!(nseg > 0 && nseg == bp.bverts[bv2].edges[e2].seg);
+    let bmv1 = bp.boundverts[bp.bverts[bv1].edges[e1].leftv].nv.v;
+    let bmv4 = bp.boundverts[bp.bverts[bv1].edges[e1].rightv].nv.v;
+    let bmv2 = bp.boundverts[bp.bverts[bv2].edges[e2].rightv].nv.v;
+    let bmv3 = bp.boundverts[bp.bverts[bv2].edges[e2].leftv].nv.v;
+    debug_assert!(bmv1 != BM_NIL && bmv2 != BM_NIL && bmv3 != BM_NIL && bmv4 != BM_NIL);
+    let f1 = bp.bverts[bv1].edges[e1].fprev;
+    let f2 = bp.bverts[bv1].edges[e1].fnext;
+    let faces = [f1, f1, f2, f2];
+    let i1 = bp.boundverts[bp.bverts[bv1].edges[e1].leftv].index;
+    let i2 = bp.boundverts[bp.bverts[bv2].edges[e2].leftv].index;
+    let mut verts = [bmv1, bmv2, BM_NIL, BM_NIL];
+    let mut nv_bv_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    nv_bv_map.insert(verts[0], bp.bverts[bv1].v);
+    nv_bv_map.insert(verts[1], bp.bverts[bv2].v);
+    let odd = nseg % 2;
+    let mid = nseg / 2;
+    let fchoices = [f1, f2];
+    let mut f_choice = BM_NIL;
+    let mut center_adj_k = -1i32;
+    if odd == 1 && bp.bverts[bv1].edges[e1].is_seam {
+        f_choice = choose_rep_face(bm, bp, &fchoices);
+        if nseg > 1 {
+            center_adj_k = if f_choice == f1 { mid + 2 } else { mid };
+        }
+    }
+    for k in 1..=nseg {
+        {
+            let vm1 = bp.bverts[bv1].vmesh.as_ref().unwrap();
+            verts[3] = vm1.mesh[mesh_vert(vm1, i1, 0, k)].v;
+            let vm2 = bp.bverts[bv2].vmesh.as_ref().unwrap();
+            verts[2] = vm2.mesh[mesh_vert(vm2, i2, 0, nseg - k)].v;
+        }
+        nv_bv_map.insert(verts[3], bp.bverts[bv1].v);
+        nv_bv_map.insert(verts[2], bp.bverts[bv2].v);
+        let r_f;
+        if odd == 1 && k == mid + 1 {
+            if bp.bverts[bv1].edges[e1].is_seam {
+                let edges = if f_choice == f1 {
+                    [BM_NIL, BM_NIL, bme, bme]
+                } else {
+                    [bme, bme, BM_NIL, BM_NIL]
+                };
+                r_f = bev_create_ngon(
+                    bm,
+                    bp,
+                    &verts,
+                    None,
+                    f_choice,
+                    Some(&edges),
+                    BM_NIL,
+                    Some(&nv_bv_map),
+                    mat_nr,
+                    true,
+                );
+            } else {
+                r_f = bev_create_ngon(
+                    bm,
+                    bp,
+                    &verts,
+                    Some(&faces),
+                    f_choice,
+                    None,
+                    BM_NIL,
+                    Some(&nv_bv_map),
+                    mat_nr,
+                    true,
+                );
+            }
+        } else if odd == 1 && k == center_adj_k && bp.bverts[bv1].edges[e1].is_seam {
+            let (edges, f_interp) = if k == mid {
+                ([BM_NIL, BM_NIL, bme, bme], f1)
+            } else {
+                ([bme, bme, BM_NIL, BM_NIL], f2)
+            };
+            r_f = bev_create_ngon(
+                bm,
+                bp,
+                &verts,
+                None,
+                f_interp,
+                Some(&edges),
+                BM_NIL,
+                Some(&nv_bv_map),
+                mat_nr,
+                true,
+            );
+        } else if odd == 0 && k == mid {
+            let edges = [BM_NIL, BM_NIL, bme, bme];
+            r_f = bev_create_ngon(
+                bm,
+                bp,
+                &verts,
+                None,
+                f1,
+                Some(&edges),
+                BM_NIL,
+                Some(&nv_bv_map),
+                mat_nr,
+                true,
+            );
+        } else if odd == 0 && k == mid + 1 {
+            let edges = [bme, bme, BM_NIL, BM_NIL];
+            r_f = bev_create_ngon(
+                bm,
+                bp,
+                &verts,
+                None,
+                f2,
+                Some(&edges),
+                BM_NIL,
+                Some(&nv_bv_map),
+                mat_nr,
+                true,
+            );
+        } else {
+            let f = if k <= mid { f1 } else { f2 };
+            r_f = bev_create_ngon(
+                bm,
+                bp,
+                &verts,
+                None,
+                f,
+                None,
+                BM_NIL,
+                Some(&nv_bv_map),
+                mat_nr,
+                true,
+            );
+        }
+        record_face_kind(bp, r_f, F_EDGE);
+        for l in LoopsOfFace::new(bm, r_f).collect::<Vec<_>>() {
+            let lv = bm.lpool[l].v;
+            if lv == verts[0] || lv == verts[2] {
+                bm.lpool[l].head.hflag |= BM_ELEM_LONG_TAG;
+            }
+        }
+        verts[0] = verts[3];
+        verts[1] = verts[2];
+    }
+    let bme1 = crate::query::bm_edge_exists(bm, bmv1, bmv2);
+    let bme2 = crate::query::bm_edge_exists(bm, bmv3, bmv4);
+    debug_assert!(bme1 != BM_NIL && bme2 != BM_NIL);
+    /* BM_elem_attrs_copy: PORT_PENDING (CustomData). */
+    if bevvert_is_weld_cross(bp, bv1) {
+        weld_cross_attrs_copy(bm, bp, bv1, i1, e1);
+    }
+    if bevvert_is_weld_cross(bp, bv2) {
+        weld_cross_attrs_copy(bm, bp, bv2, i2, e2);
+    }
+}
