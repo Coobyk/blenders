@@ -180,3 +180,4 @@ pub mod node_runtime;
 pub mod mesh_evaluate;
 pub mod multires;
 pub mod bvhutils;
+pub mod object_deform;
