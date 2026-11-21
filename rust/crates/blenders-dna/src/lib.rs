@@ -35,6 +35,7 @@ pub mod scene_types;
 pub mod vec_types;
 pub mod view3d_types;
 pub mod viewer_path_types;
+pub mod texture_types;
 pub mod tracking_types;
 pub mod customdata_types;
 pub mod meshdata_types;
