@@ -1887,3 +1887,36 @@ pub fn bm_face_copy(bm: &mut BMesh, f: usize, copy_verts: bool, copy_edges: bool
     }
     bm_face_create(bm, &verts, &edges, Some(f), 0)
 }
+
+/// `BM_face_kill_loose` — kill face, plus edges/verts that become loose.
+/// (No `USE_BMESH_HOLES` loop-lists in the port.)
+pub fn bm_face_kill_loose(bm: &mut BMesh, f: usize) {
+    if bm.face(f).l_first != BM_NIL {
+        let l_first = bm.face(f).l_first;
+        let mut l_iter = l_first;
+        loop {
+            let l_next = bm.loo(l_iter).next;
+            let e = bm.loo(l_iter).e;
+            crate::structure::bmesh_radial_loop_remove(bm, e, l_iter);
+            bm_kill_only_loop(bm, l_iter);
+            if bm.edge(e).l == BM_NIL {
+                let v1 = bm.edge(e).v1;
+                let v2 = bm.edge(e).v2;
+                crate::structure::bmesh_disk_edge_remove(bm, e, v1);
+                crate::structure::bmesh_disk_edge_remove(bm, e, v2);
+                bm_kill_only_edge(bm, e);
+                if bm.vert(v1).e == BM_NIL {
+                    bm_kill_only_vert(bm, v1);
+                }
+                if bm.vert(v2).e == BM_NIL {
+                    bm_kill_only_vert(bm, v2);
+                }
+            }
+            l_iter = l_next;
+            if l_iter == l_first {
+                break;
+            }
+        }
+    }
+    bm_kill_only_face(bm, f);
+}

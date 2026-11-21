@@ -22,6 +22,8 @@ pub enum BoolOpType {
     Difference,
     Union,
     Intersect,
+    /// Knife op (no boolean): `boolean_mesh` returns the intersected mesh.
+    None,
 }
 
 /// `Edge` — canonical vert-index pair (lower vert id first).
@@ -1275,6 +1277,7 @@ pub fn apply_bool_op(op: BoolOpType, winding: &[i32]) -> bool {
     match op {
         BoolOpType::Intersect => winding.iter().all(|&w| w != 0),
         BoolOpType::Union => winding.iter().any(|&w| w != 0),
+        BoolOpType::None => false,
         BoolOpType::Difference => {
             if winding[0] == 0 {
                 return false;
@@ -2261,7 +2264,7 @@ pub fn boolean_trimesh(
         arena, tm_in, nshapes, shape_fn, use_self,
     );
     /* tm_si may be empty if all input triangles were degenerate. */
-    if tm_si.face_size() == 0 {
+    if tm_si.face_size() == 0 || op == BoolOpType::None {
         return tm_si;
     }
     let si_origs: Vec<i32> = tm_si.face.iter().map(|&f| arena.faces[f].orig).collect();
