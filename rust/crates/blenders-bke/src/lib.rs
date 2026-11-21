@@ -158,3 +158,4 @@ pub mod tracking_solver;
 pub mod instances;
 pub mod grease_pencil_modifiers;
 pub mod mesh_calc_edges;
+pub mod blender_project_config;
