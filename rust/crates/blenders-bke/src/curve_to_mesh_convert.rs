@@ -405,3 +405,184 @@ pub fn calculate_result_offsets(
         profile_curve_points.iter().any(|&n| n == 1);
     result
 }
+
+/// `CombinationInfo` for `foreach_curve_combination`.
+pub struct CombinationInfo {
+    /// Range start offsets.
+    pub vert_start: usize,
+    /// See `vert_start`.
+    pub edge_start: usize,
+    /// See `vert_start`.
+    pub loop_start: usize,
+    /// See `vert_start`.
+    pub face_start: usize,
+    /// Curve indices.
+    pub main_index: usize,
+    /// See `main_index`.
+    pub profile_index: usize,
+    /// Cyclic flags.
+    pub main_cyclic: bool,
+    /// See `main_cyclic`.
+    pub profile_cyclic: bool,
+    /// Segment counts.
+    pub main_segment_num: i32,
+    /// See `main_segment_num`.
+    pub profile_segment_num: i32,
+}
+
+/// `foreach_curve_combination` — iterate (main,profile) pairs.
+pub fn foreach_curve_combination(
+    main_curve_points: &[usize],
+    profile_curve_points: &[usize],
+    main_cyclic: &[bool],
+    profile_cyclic: &[bool],
+    offsets: &ResultOffsets,
+    mut f: impl FnMut(&CombinationInfo),
+) {
+    let mut mesh_index = 0usize;
+    for (i_main, &mp) in main_curve_points.iter().enumerate() {
+        for (i_profile, &pp) in profile_curve_points.iter().enumerate() {
+            if pp == 0 {
+                mesh_index += 1;
+                continue;
+            }
+            let info = CombinationInfo {
+                vert_start: offsets.vert[mesh_index] as usize,
+                edge_start: offsets.edge[mesh_index] as usize,
+                loop_start: offsets.lp[mesh_index] as usize,
+                face_start: offsets.face[mesh_index] as usize,
+                main_index: i_main,
+                profile_index: i_profile,
+                main_cyclic: main_cyclic[i_main],
+                profile_cyclic: profile_cyclic[i_profile],
+                main_segment_num: segments_num_no_duplicate_edge(mp as i32, main_cyclic[i_main]),
+                profile_segment_num: segments_num(pp as i32, profile_cyclic[i_profile]),
+            };
+            f(&info);
+            mesh_index += 1;
+        }
+    }
+}
+
+/// `curve_to_mesh_sweep` — mesh topology driver. Takes per-curve
+/// point counts + evaluated positions/tangents/normals arrays per
+/// (main, profile) curve; outputs edges/corner/face_offsets/positions.
+/// Curve data access via flat slices: `main_curve_points` (pts/curve),
+/// `main_eval_positions` flattened, etc.
+#[allow(clippy::too_many_arguments)]
+pub fn curve_to_mesh_sweep(
+    main_curve_points: &[usize],
+    profile_curve_points: &[usize],
+    main_cyclic: &[bool],
+    profile_cyclic: &[bool],
+    main_eval_positions: &[Vec<Vec3>],
+    main_eval_tangents: &[Vec<Vec3>],
+    main_eval_normals: &[Vec<Vec3>],
+    profile_eval_positions: &[Vec<Vec3>],
+    scales: &[f32],
+    fill_caps: bool,
+    miter_limit_angle: Option<f32>,
+) -> Option<(Vec<[usize; 2]>, Vec<usize>, Vec<usize>, Vec<usize>, Vec<Vec3>, Vec<bool>)> {
+    let miter_scale_limit = miter_limit_angle.map(|a| {
+        if a >= std::f32::consts::PI {
+            f32::MAX
+        } else {
+            1.0 / (a / 2.0).cos()
+        }
+    });
+    let offsets = calculate_result_offsets(
+        main_curve_points,
+        profile_curve_points,
+        main_cyclic,
+        profile_cyclic,
+        fill_caps,
+    );
+    let total_verts = *offsets.vert.last().unwrap() as usize;
+    if total_verts == 0 {
+        return None;
+    }
+    let total_edges = *offsets.edge.last().unwrap() as usize;
+    let total_faces = *offsets.face.last().unwrap() as usize;
+    let total_loops = *offsets.lp.last().unwrap() as usize;
+
+    let mut edges = vec![[0usize; 2]; total_edges];
+    let mut face_offsets = vec![0usize; total_faces];
+    let mut corner_verts = vec![0usize; total_loops];
+    let mut corner_edges = vec![0usize; total_loops];
+    let mut positions = vec![Vec3::ZERO; total_verts];
+    let mut sharp_faces = vec![false; total_faces];
+
+    foreach_curve_combination(
+        main_curve_points,
+        profile_curve_points,
+        main_cyclic,
+        profile_cyclic,
+        &offsets,
+        |info| {
+            fill_mesh_topology(
+                info.vert_start,
+                info.edge_start,
+                info.face_start,
+                info.loop_start,
+                main_curve_points[info.main_index],
+                profile_curve_points[info.profile_index],
+                info.main_cyclic,
+                info.profile_cyclic,
+                fill_caps,
+                &mut edges,
+                &mut corner_verts,
+                &mut corner_edges,
+                &mut face_offsets,
+            );
+            if fill_caps
+                && has_caps(info.main_cyclic, info.profile_cyclic, info.profile_segment_num)
+            {
+                let face_num = (info.main_segment_num * info.profile_segment_num) as usize;
+                let cap_face_offset = info.face_start + face_num;
+                if cap_face_offset < sharp_faces.len() {
+                    sharp_faces[cap_face_offset] = true;
+                }
+                if cap_face_offset + 1 < sharp_faces.len() {
+                    sharp_faces[cap_face_offset + 1] = true;
+                }
+            }
+            let mp = main_eval_positions[info.main_index].as_slice();
+            let tp = main_eval_tangents[info.main_index].as_slice();
+            let np = main_eval_normals[info.main_index].as_slice();
+            let pp = profile_eval_positions[info.profile_index].as_slice();
+            let vert_start = info.vert_start;
+            if pp.len() == 1 {
+                for i_ring in 0..mp.len() {
+                    let m = build_point_matrix_ring(
+                        mp,
+                        tp,
+                        np,
+                        scales,
+                        info.main_cyclic,
+                        miter_scale_limit,
+                        i_ring,
+                    );
+                    positions[vert_start + i_ring] = m.transform_point(pp[0]);
+                }
+            } else {
+                for i_ring in 0..mp.len() {
+                    let m = build_point_matrix_ring(
+                        mp,
+                        tp,
+                        np,
+                        scales,
+                        info.main_cyclic,
+                        miter_scale_limit,
+                        i_ring,
+                    );
+                    let ring_vert_start = vert_start + i_ring * pp.len();
+                    for (i_profile, p) in pp.iter().enumerate() {
+                        positions[ring_vert_start + i_profile] = m.transform_point(*p);
+                    }
+                }
+            }
+        },
+    );
+
+    Some((edges, face_offsets, corner_verts, corner_edges, positions, sharp_faces))
+}
