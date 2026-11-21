@@ -205,3 +205,4 @@ pub mod armature_update;
 pub mod volume;
 pub mod lib_query;
 pub mod image_gpu;
+pub mod subdiv_mesh_layout;
