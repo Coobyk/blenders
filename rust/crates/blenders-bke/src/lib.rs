@@ -186,3 +186,4 @@ pub mod library;
 pub mod workspace;
 pub mod crazyspace;
 pub mod bvh;
+pub mod preferences;
