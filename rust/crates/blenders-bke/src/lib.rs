@@ -6,3 +6,4 @@
 pub mod anonymous_attribute_id;
 pub mod idtype;
 pub mod speaker;
+pub mod armature_selection;
