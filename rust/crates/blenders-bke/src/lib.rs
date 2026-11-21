@@ -29,6 +29,7 @@ pub mod ocean_spectrum;
 pub mod outliner_treehash;
 pub mod uvproject;
 pub mod idtype;
+pub mod shader_fx;
 pub mod speaker;
 pub mod action_bones;
 pub mod action_mirror;
