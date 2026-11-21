@@ -282,3 +282,4 @@ pub mod customdata;
 pub mod layer;
 pub mod lib_id;
 pub mod softbody;
+pub mod tracking;
