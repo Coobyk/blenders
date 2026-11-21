@@ -150,7 +150,7 @@ pub const OPDEF_BISECT_EDGES: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom_split.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_subdivide::bmo_bisect_edges_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -858,7 +858,7 @@ pub const OPDEF_SUBDIVIDE_EDGES: BMOpDefine = BMOpDefine {
         ("geom_split.out", BMOSlotType::ElemBuf),
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_subdivide::bmo_subdivide_edges_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

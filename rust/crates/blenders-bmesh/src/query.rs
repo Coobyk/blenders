@@ -1582,3 +1582,36 @@ pub fn bm_edge_is_contiguous(bm: &BMesh, e: usize) -> bool {
     let l_other = bm.loo(l).radial_next;
     l_other != l && bm.loo(l_other).radial_next == l && bm.loo(l_other).v != bm.loo(l).v
 }
+
+/// `BM_vert_pair_share_face_by_len` — shortest shared face; returns loops of
+/// both verts in it (allow_adjacent permits adjacent loops).
+pub fn bm_vert_pair_share_face_by_len_loops(
+    bm: &BMesh,
+    v_a: usize,
+    v_b: usize,
+    r_l_a: &mut usize,
+    r_l_b: &mut usize,
+    allow_adjacent: bool,
+) -> usize {
+    let mut l_cur_a = BM_NIL;
+    let mut l_cur_b = BM_NIL;
+    let mut f_cur = BM_NIL;
+    if bm.vert(v_a).e != BM_NIL && bm.vert(v_b).e != BM_NIL {
+        for l_a in LoopsOfVert::new(bm, v_a) {
+            let fa = bm.loo(l_a).f;
+            if f_cur == BM_NIL || bm.face(fa).len < bm.face(f_cur).len {
+                let l_b = bm_face_vert_share_loop(bm, fa, v_b);
+                if l_b != BM_NIL
+                    && (allow_adjacent || !crate::mods::bm_loop_is_adjacent(bm, l_a, l_b))
+                {
+                    f_cur = fa;
+                    l_cur_a = l_a;
+                    l_cur_b = l_b;
+                }
+            }
+        }
+    }
+    *r_l_a = l_cur_a;
+    *r_l_b = l_cur_b;
+    f_cur
+}
