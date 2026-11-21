@@ -217,3 +217,4 @@ pub mod camera;
 pub mod mball_tessellate;
 pub mod tracking_auto;
 pub mod particle_distribute;
+pub mod curveprofile;
