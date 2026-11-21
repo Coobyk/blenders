@@ -232,3 +232,4 @@ pub mod fcurve_driver;
 pub mod tracking_stabilize;
 pub mod shrinkwrap;
 pub mod modifier;
+pub mod subdiv_ccg;
