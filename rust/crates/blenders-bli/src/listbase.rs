@@ -29,6 +29,12 @@ pub struct ListBase {
     pub last: *mut Link,
 }
 
+impl Default for ListBase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ListBase {
     /// Zeroed `ListBase` (`{.first = NULL, .last = NULL}`).
     pub const fn new() -> Self {
