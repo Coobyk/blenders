@@ -53,6 +53,7 @@ pub mod pointcloud_types;
 pub mod nla_types;
 pub mod node_tree_interface_types;
 pub mod packedfile_types;
+pub mod particle_types;
 pub mod session_uid_types;
 pub mod uuid_types;
 pub mod vec_defaults;
