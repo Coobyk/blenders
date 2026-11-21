@@ -151,3 +151,4 @@ pub mod lightprobe;
 pub mod volume_to_mesh;
 pub mod world;
 pub mod object_update;
+pub mod subdiv_eval;
