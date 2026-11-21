@@ -374,9 +374,7 @@ impl Default for BPoseChannelRuntime {
     }
 }
 
-/// `BoneColor` (DNA_armature_types.h) placeholder.
-#[derive(Clone, Copy, Default)]
-pub struct BoneColor(pub u64);
+pub use crate::armature_types::BoneColor;
 
 /// `bPoseChannel`.
 #[derive(Clone)]
