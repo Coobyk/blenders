@@ -1006,3 +1006,36 @@ mod tests {
         assert_eq!(p, "a/b/");
     }
 }
+
+/// `BLI_path_canonicalize_native` — abs-from-cwd + slash-native +
+/// normalize-native, stripping a trailing slash (never to empty).
+pub fn canonicalize_native(path: &mut String) -> usize {
+    abs_from_cwd(path);
+    if slash_is_native_compat(ALTSEP) {
+        slash_native(path);
+    }
+    let mut path_len = normalize_native(path);
+    if path_len > 1 && path.as_bytes()[path_len - 1] == SEP {
+        // WIN32 only: don't strip `C:\` -> `C:` — POSIX has no drive prefix.
+        path_len -= 1;
+        path.truncate(path_len);
+    }
+    path_len
+}
+
+/// `BLI_path_ncmp` — `strncmp` on POSIX.
+pub fn path_ncmp(a: &str, b: &str, n: usize) -> i32 {
+    let ab = a.as_bytes();
+    let bb = b.as_bytes();
+    for i in 0..n {
+        let ca = ab.get(i).copied().unwrap_or(0);
+        let cb = bb.get(i).copied().unwrap_or(0);
+        if ca != cb {
+            return ca as i32 - cb as i32;
+        }
+        if ca == 0 {
+            return 0;
+        }
+    }
+    0
+}

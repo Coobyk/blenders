@@ -7,6 +7,7 @@ pub mod anonymous_attribute_id;
 pub mod idtype;
 pub mod speaker;
 pub mod armature_selection;
+pub mod autoexec;
 pub mod callbacks;
 pub mod editlattice;
 pub mod lib_id_eval;
