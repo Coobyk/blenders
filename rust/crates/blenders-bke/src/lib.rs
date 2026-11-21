@@ -9,6 +9,7 @@ pub mod freestyle;
 pub mod geometry_components;
 pub mod geometry_component_edit_data;
 pub mod grease_pencil_attributes;
+pub mod grease_pencil_fills;
 pub mod geometry_component_grease_pencil;
 pub mod geometry_component_instances;
 pub mod geometry_component_mesh;
