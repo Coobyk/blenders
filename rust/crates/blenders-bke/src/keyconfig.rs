@@ -225,8 +225,13 @@ pub fn bke_keyconfig_pref_filter_items<'a>(
     filter_fn: &mut dyn FnMut(&mut WmKeyMapItem) -> bool,
 ) {
     for keymap in user_keymaps.iter_mut() {
+        let diff_items = diff_items_of(keymap) as *mut Vec<(usize, usize)>;
+        let items = items_of(keymap) as *mut Vec<WmKeyMapItem>;
+        /* SAFETY: the two closures may legally alias disjoint lists inside
+         * `keymap` (diff_items vs items) but the borrow checker cannot prove
+         * it through two calls; they never touch each other's target. */
         bke_keyconfig_keymap_filter_item(
-            diff_items_of(keymap), items_of(keymap), params, get_item, filter_fn,
+            unsafe { &mut *diff_items }, unsafe { &mut *items }, params, get_item, filter_fn,
         );
     }
 }
