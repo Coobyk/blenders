@@ -551,7 +551,7 @@ pub const OPDEF_FIT_EDGE_LOOPS_TO_ANNOTATION: BMOpDefine = BMOpDefine {
         ("lock_z", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_fit_edge_loops::bmo_fit_edge_loops_to_annotation_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

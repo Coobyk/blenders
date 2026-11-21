@@ -37,3 +37,4 @@ pub mod bmo_subdivide;
 pub mod bmo_inset;
 pub mod bmo_join_triangles;
 pub mod bmo_subdivide_edgering;
+pub mod bmo_fit_edge_loops;
