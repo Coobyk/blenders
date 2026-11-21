@@ -209,3 +209,4 @@ pub mod subdiv_mesh_layout;
 pub mod attribute;
 pub mod mesh_attributes;
 pub mod attribute_access;
+pub mod compositor;
