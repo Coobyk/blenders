@@ -254,3 +254,4 @@ pub mod node_tree_interface;
 pub mod brush;
 pub mod colortools;
 pub mod linestyle;
+pub mod bake_items_serialize;
