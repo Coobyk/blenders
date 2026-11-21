@@ -284,3 +284,4 @@ pub mod lib_id;
 pub mod softbody;
 pub mod tracking;
 pub mod blendfile;
+pub mod node_tree_update;
