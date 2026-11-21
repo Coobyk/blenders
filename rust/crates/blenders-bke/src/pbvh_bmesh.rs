@@ -74,7 +74,7 @@ impl DyntopoCD {
 
 /// `BMeshNode` — the PBVH leaf/interior node for the dyntopo
 /// backend (`bm_faces_`, vert ownership sets, bounds, orig arrays).
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct BMeshNode {
     /// `flag_` — `Node::Flag` bitmask.
     pub flag_: u16,
