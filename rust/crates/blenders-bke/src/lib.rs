@@ -59,6 +59,7 @@ pub mod colorband;
 pub mod curve_convert;
 pub mod curve_catmull_rom;
 pub mod curve_bevel;
+pub mod curves_utils;
 pub mod curve_poly;
 pub mod wm_runtime;
 pub mod subdiv_ccg_mask;
