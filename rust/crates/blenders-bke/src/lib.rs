@@ -71,6 +71,7 @@ pub mod curve_bevel;
 pub mod curve_decimate;
 pub mod curves_utils;
 pub mod volume_grid_file_cache;
+pub mod volume_render;
 pub mod curve_poly;
 pub mod wm_runtime;
 pub mod subdiv_ccg_mask;
