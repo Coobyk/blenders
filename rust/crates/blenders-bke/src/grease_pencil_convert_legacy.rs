@@ -198,14 +198,14 @@ pub fn get_legacy_layer_to_stroke_matrix(points: &[BGpdSPoint]) -> Float4x2 {
     let pt0 = Vec3::new(p0.x, p0.y, p0.z);
     let pt1 = Vec3::new(p1.x, p1.y, p1.z);
     let pt3 = Vec3::new(p3.x, p3.y, p3.z);
-    let local_x = (pt1 - pt0).normalize();
+    let local_x = (pt1 - pt0).normalized();
     let local_3 = if totpoints == 2 {
         pt3 * 0.001 - pt0
     } else {
         pt3 - pt0
     };
     let normal = local_x.cross(local_3);
-    let local_y = normal.cross(local_x).normalize();
+    let local_y = normal.cross(local_x).normalized();
     /* `transpose(float2x4(vec4(local_x, -dot(pt0, local_x)),
      * vec4(local_y, -dot(pt0, local_y))))` */
     let m2x4: Float2x4 = [
