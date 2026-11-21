@@ -25,6 +25,12 @@ pub struct OceanSpectrumParams {
     pub wind_alignment: f32,
     /// `oc->_damp_reflections`.
     pub damp_reflections: f32,
+    /// `oc->_A` — Phillips amplitude.
+    pub a: f32,
+    /// `oc->_l` — smallest wave.
+    pub l: f32,
+    /// `oc->_L` — largest wave (`V²/G`).
+    pub l2: f32,
 }
 
 /// `alpha_beta_spectrum`.
