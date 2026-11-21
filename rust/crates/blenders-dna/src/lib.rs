@@ -60,6 +60,7 @@ pub mod id_enums;
 pub mod layer_types;
 pub mod material_types;
 pub mod scene_enums;
+pub mod screen_types;
 pub mod sound_types;
 pub mod speaker_types;
 pub mod space_enums;
