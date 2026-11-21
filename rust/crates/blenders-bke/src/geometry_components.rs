@@ -98,12 +98,44 @@ impl VolumeComponent {
     }
     /// `VolumeComponent::get_for_read`.
     pub fn get_for_read(&self) -> usize { self.volume }
-    /// `VolumeComponent::get_for_write` — NIL unless Owned.
-    pub fn get_for_write(&mut self) -> usize {
-        if self.ownership != GeometryOwnershipType::Owned { self.volume = NIL; }
-        if self.volume == NIL { return NIL; }
-        self.ownership = GeometryOwnershipType::Owned;
+    /// `VolumeComponent::get_for_write` — `BKE_volume_copy_for_eval`
+    /// injected so ReadOnly data can be made writable.
+    pub fn get_for_write_ex(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) -> usize {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership == GeometryOwnershipType::ReadOnly {
+            self.volume = copy_for_eval(self.volume);
+            self.ownership = GeometryOwnershipType::Owned;
+        }
         self.volume
+    }
+    /// `VolumeComponent::owns_direct_data`.
+    pub fn owns_direct_data(&self) -> bool {
+        self.ownership == GeometryOwnershipType::Owned
+    }
+    /// `VolumeComponent::ensure_owns_direct_data`.
+    pub fn ensure_owns_direct_data(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership != GeometryOwnershipType::Owned {
+            if self.volume != NIL {
+                self.volume = copy_for_eval(self.volume);
+            }
+            self.ownership = GeometryOwnershipType::Owned;
+        }
+    }
+    /// `VolumeComponent::copy` — `BKE_volume_copy_for_eval` injected.
+    pub fn copy(&self, copy_for_eval: &dyn Fn(usize) -> usize) -> Self {
+        let mut c = Self::new();
+        if self.volume != NIL {
+            c.volume = copy_for_eval(self.volume);
+            c.ownership = GeometryOwnershipType::Owned;
+        }
+        c
+    }
+    /// `VolumeComponent::count_memory` — `BKE_volume_count_memory` injected.
+    pub fn count_memory(&self, count: &mut dyn FnMut(usize)) {
+        if self.volume != NIL {
+            count(self.volume);
+        }
     }
 }
 
@@ -158,6 +190,30 @@ impl InstancesComponent {
         self.references.reserve(references);
         self.instances.reserve(instances);
     }
+    /// `InstancesComponent::copy` — `instances_` deep-copied (Rust Vec).
+    pub fn copy(&self) -> Self {
+        Self {
+            base: GeometryComponent::new(GeometryComponentType::Instances),
+            references: self.references.clone(),
+            instances: self.instances.clone(),
+            ids: self.ids.clone(),
+            ownership: GeometryOwnershipType::Owned,
+        }
+    }
+    /// `InstancesComponent::owns_direct_data` / `ensure_owns_direct_data`
+    /// (deep-copy handled by `copy`/`get_for_write` — Vec is always owned).
+    pub fn owns_direct_data(&self) -> bool { self.ownership == GeometryOwnershipType::Owned }
+    pub fn ensure_owns_direct_data(&mut self) {
+        debug_assert!(self.base.is_mutable());
+        self.ownership = GeometryOwnershipType::Owned;
+    }
+    /// `InstancesComponent::count_memory` — injected `count` runs per
+    /// reference handle (`Instances::count_memory` internals PORT_PENDING).
+    pub fn count_memory(&self, count: &mut dyn FnMut(usize)) {
+        for &r in &self.references { count(r); }
+    }
+    /* `attributes`/`attributes_for_write` — PORT_PENDING
+     * (instance_attribute_accessor_functions). */
 }
 
 /// `PointCloudComponent` — `PointCloud *` handle version of the same shape.
@@ -195,14 +251,35 @@ impl PointCloudComponent {
         self.pointcloud = NIL;
         p
     }
-    /// `get_for_read` / `get_for_write`.
+    /// `get_for_read` / `get_for_write` — `BKE_pointcloud_copy_for_eval` injected.
     pub fn get_for_read(&self) -> usize { self.pointcloud }
-    pub fn get_for_write(&mut self) -> usize {
-        if self.ownership != GeometryOwnershipType::Owned { self.pointcloud = NIL; }
-        if self.pointcloud == NIL { return NIL; }
-        self.ownership = GeometryOwnershipType::Owned;
+    pub fn get_for_write_ex(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) -> usize {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership == GeometryOwnershipType::ReadOnly {
+            self.pointcloud = copy_for_eval(self.pointcloud);
+            self.ownership = GeometryOwnershipType::Owned;
+        }
         self.pointcloud
     }
+    /// `PointCloudComponent::owns_direct_data` / `ensure_owns_direct_data` / `copy`.
+    pub fn owns_direct_data(&self) -> bool { self.ownership == GeometryOwnershipType::Owned }
+    pub fn ensure_owns_direct_data(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership != GeometryOwnershipType::Owned {
+            if self.pointcloud != NIL { self.pointcloud = copy_for_eval(self.pointcloud); }
+            self.ownership = GeometryOwnershipType::Owned;
+        }
+    }
+    pub fn copy(&self, copy_for_eval: &dyn Fn(usize) -> usize) -> Self {
+        let mut c = Self::new();
+        if self.pointcloud != NIL {
+            c.pointcloud = copy_for_eval(self.pointcloud);
+            c.ownership = GeometryOwnershipType::Owned;
+        }
+        c
+    }
+    /* `attributes`/`attributes_for_write` — PORT_PENDING
+     * (pointcloud_attribute_accessor_functions). */
 }
 
 /// `GreasePencilComponent` — `GreasePencil *` handle, same shape.
@@ -238,12 +315,35 @@ impl GreasePencilComponent {
         g
     }
     pub fn get_for_read(&self) -> usize { self.grease_pencil }
-    pub fn get_for_write(&mut self) -> usize {
-        if self.ownership != GeometryOwnershipType::Owned { self.grease_pencil = NIL; }
-        if self.grease_pencil == NIL { return NIL; }
-        self.ownership = GeometryOwnershipType::Owned;
+    /// `GreasePencilComponent::get_for_write` — `BKE_grease_pencil_copy_for_eval` injected.
+    pub fn get_for_write_ex(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) -> usize {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership == GeometryOwnershipType::ReadOnly {
+            self.grease_pencil = copy_for_eval(self.grease_pencil);
+            self.ownership = GeometryOwnershipType::Owned;
+        }
         self.grease_pencil
     }
+    /// `is_empty` / `owns_direct_data` / `ensure_owns_direct_data` / `copy`.
+    pub fn is_empty(&self) -> bool { self.grease_pencil == NIL }
+    pub fn owns_direct_data(&self) -> bool { self.ownership == GeometryOwnershipType::Owned }
+    pub fn ensure_owns_direct_data(&mut self, copy_for_eval: &dyn Fn(usize) -> usize) {
+        debug_assert!(self.base.is_mutable());
+        if self.ownership != GeometryOwnershipType::Owned {
+            if self.grease_pencil != NIL { self.grease_pencil = copy_for_eval(self.grease_pencil); }
+            self.ownership = GeometryOwnershipType::Owned;
+        }
+    }
+    pub fn copy(&self, copy_for_eval: &dyn Fn(usize) -> usize) -> Self {
+        let mut c = Self::new();
+        if self.grease_pencil != NIL {
+            c.grease_pencil = copy_for_eval(self.grease_pencil);
+            c.ownership = GeometryOwnershipType::Owned;
+        }
+        c
+    }
+    /* `attributes`/`attributes_for_write` — PORT_PENDING
+     * (greasepencil::get_attribute_accessor_functions). */
 }
 
 /// `CurveComponent` — `CurvesGeometry` handle (DNA `Curves` — usize).
