@@ -178,3 +178,67 @@ pub fn multires_do_versions_simple_to_catmull_clark(_object: usize, _mmd: usize)
     // WITH_OPENSUBDIV == false branch: UNUSED_VARS(object, mmd).
     // PORT_PENDING the OpenSubdiv path.
 }
+
+// --- intern/multires_reshape_vertcos.cc -----------------------------------
+
+/// `multires_reshape_ptex_coord_to_grid` dependency — injected since
+/// `multires_reshape.cc` ptex mapping is PORT_PENDING.
+/// Signature: `(ptex_face_index, u, v) -> GridCoord`.
+pub type PtexToGridFn<'a> = &'a mut dyn FnMut(i32, f32, f32) -> GridCoord;
+
+/// `assign_ptex_coord_from_vert` — assigns `positions[subdiv_vert_index]`
+/// to all grid elements the ptex corner maps onto (corner mirroring when
+/// `u`/`v` == 0). `element_for(grid_coord)` resolves the write targets.
+pub fn multires_reshape_assign_vertcos_from_ptex(
+    positions: &[Vec3],
+    ptex: &crate::subdiv_deform::PtexCoord,
+    subdiv_vert_index: usize,
+    num_corners: i32,
+    start_grid_index: i32,
+    ptex_to_grid: PtexToGridFn,
+    element_for: &mut dyn FnMut(&GridCoord) -> ReshapeGridElement,
+    displacements: &mut [Vec3],
+) {
+    let grid_coord = ptex_to_grid(ptex.ptex_face_index, ptex.uv.x, ptex.uv.y);
+    let corner = grid_coord.grid_index - start_grid_index;
+    if grid_coord.u == 0.0 && grid_coord.v == 0.0 {
+        for current_corner in 0..num_corners {
+            let cc = GridCoord {
+                grid_index: start_grid_index + current_corner,
+                u: grid_coord.u,
+                v: grid_coord.v,
+            };
+            let e = element_for(&cc);
+            if e.displacement != usize::MAX {
+                displacements[e.displacement] = positions[subdiv_vert_index];
+            }
+        }
+        return;
+    }
+    let e = element_for(&grid_coord);
+    if e.displacement != usize::MAX {
+        displacements[e.displacement] = positions[subdiv_vert_index];
+    }
+    if grid_coord.u == 0.0 {
+        let prev = GridCoord {
+            grid_index: start_grid_index + ((corner + num_corners - 1) % num_corners),
+            u: grid_coord.v,
+            v: 0.0,
+        };
+        let e = element_for(&prev);
+        if e.displacement != usize::MAX {
+            displacements[e.displacement] = positions[subdiv_vert_index];
+        }
+    }
+    if grid_coord.v == 0.0 {
+        let next = GridCoord {
+            grid_index: start_grid_index + ((corner + 1) % num_corners),
+            u: 0.0,
+            v: grid_coord.u,
+        };
+        let e = element_for(&next);
+        if e.displacement != usize::MAX {
+            displacements[e.displacement] = positions[subdiv_vert_index];
+        }
+    }
+}
