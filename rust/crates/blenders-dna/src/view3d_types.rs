@@ -310,10 +310,8 @@ pub const V3D_SHADING_BACKGROUND_THEME: V3DShadingBackgroundType = 0;
 pub const V3D_SHADING_BACKGROUND_WORLD: V3DShadingBackgroundType = 1;
 pub const V3D_SHADING_BACKGROUND_VIEWPORT: V3DShadingBackgroundType = 2;
 
-/// `STEREO_3D_ID` (DNA_scene_enums.h) placeholder.
-pub const STEREO_3D_ID: i8 = 2;
-/// `SPACE_VIEW3D` (DNA_space_enums.h) placeholder.
-pub const SPACE_VIEW3D: i8 = 1;
+pub use crate::scene_enums::STEREO_3D_ID;
+pub use crate::space_enums::SPACE_VIEW3D;
 
 /// `RegionView3D`.
 #[derive(Clone)]

@@ -25,6 +25,8 @@ pub mod nla_types;
 pub mod id_enums;
 pub mod layer_types;
 pub mod material_types;
+pub mod scene_enums;
+pub mod space_enums;
 pub mod scene_types;
 pub mod vec_types;
 pub mod view3d_types;
