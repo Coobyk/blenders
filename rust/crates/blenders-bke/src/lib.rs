@@ -195,3 +195,4 @@ pub mod mesh_mapping;
 pub mod mask_evaluate;
 pub mod packed_file;
 pub mod lib_remap;
+pub mod path_templates;
