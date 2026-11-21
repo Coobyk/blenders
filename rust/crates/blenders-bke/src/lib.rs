@@ -10,6 +10,7 @@ pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
 pub mod idprop;
 pub mod kelvinlet;
+pub mod keyconfig;
 pub mod ocean_spectrum;
 pub mod outliner_treehash;
 pub mod uvproject;
