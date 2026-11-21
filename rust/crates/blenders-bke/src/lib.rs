@@ -30,6 +30,7 @@ pub mod bpath;
 pub mod callbacks;
 pub mod curve_convert;
 pub mod curve_catmull_rom;
+pub mod curve_poly;
 pub mod wm_runtime;
 pub mod subdiv_stats;
 pub mod editlattice;
