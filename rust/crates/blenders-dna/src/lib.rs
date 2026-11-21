@@ -5,6 +5,7 @@
 
 pub mod id;
 pub mod image_types;
+pub mod cloth_types;
 pub mod collection_types;
 pub mod action_types;
 pub mod anim_enums;
@@ -42,6 +43,7 @@ pub mod sound_types;
 pub mod speaker_types;
 pub mod space_enums;
 pub mod movieclip_types;
+pub mod rigidbody_types;
 pub mod scene_types;
 pub mod vec_types;
 pub mod view3d_enums;
