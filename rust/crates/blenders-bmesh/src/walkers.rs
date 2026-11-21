@@ -37,6 +37,9 @@ pub enum BMWType {
     EdgeLoop,
     FaceLoop,
     EdgeRing,
+    Edgeboundary,
+    NonManifoldedge,
+    UVEdge,
 }
 
 #[derive(Clone, Copy)]
@@ -52,6 +55,9 @@ enum WalkState {
     },
     FaceLoop { l: usize, no_calc: bool },
     Edgering { l: usize, wireedge: usize, no_calc: bool },
+    NonManifoldEdge {
+        start: usize, startv: usize, cur: usize, lastv: usize, face_count: i32,
+    },
 }
 
 /// `BMWalker`.
@@ -65,6 +71,9 @@ pub struct BMWalker {
     stack: Vec<WalkState>,
     visit_set: HashSet<(u8, usize)>,
     visit_set_alt: HashSet<(u8, usize)>,
+    /// `walker->layer` loop data for `BMW_UVEDGE` — PORT_PENDING CustomData:
+    /// set a UV accessor before walking (`BM_ELEM_CD_GET_FLOAT_P` equivalent).
+    pub uv_at: Option<std::sync::Arc<dyn Fn(&BMesh, usize) -> blenders_math::vector::Vec2>>,
 }
 
 fn hflag_of(bm: &BMesh, htype: u8, i: usize) -> u8 {
@@ -96,6 +105,7 @@ impl BMWalker {
             stack: Vec::new(),
             visit_set: HashSet::new(),
             visit_set_alt: HashSet::new(),
+            uv_at: None,
         }
     }
 
@@ -312,6 +322,32 @@ impl BMWalker {
             BMWType::EdgeLoop => self.edgeloop_begin(bm, i),
             BMWType::FaceLoop => self.faceloop_begin(bm, i),
             BMWType::EdgeRing => self.edgering_begin(bm, i),
+            BMWType::Edgeboundary => {
+                /* `bmw_EdgeboundaryWalker_begin`: data is a boundary edge. */
+                if htype == BM_EDGE && !self.visit_set.contains(&(BM_EDGE, i)) {
+                    debug_assert!(crate::delete::bm_edge_is_boundary(bm, i));
+                    self.stack.push(WalkState::Edge(i));
+                    self.visit_set.insert((BM_EDGE, i));
+                }
+            }
+            BMWType::NonManifoldedge => {
+                if htype == BM_EDGE && !self.visit_set.contains(&(BM_EDGE, i)) {
+                    self.stack.push(WalkState::NonManifoldEdge {
+                        start: i,
+                        cur: i,
+                        startv: bm.edge(i).v1,
+                        lastv: bm.edge(i).v1,
+                        face_count: crate::query::bm_edge_face_count(bm, i),
+                    });
+                    self.visit_set.insert((BM_EDGE, i));
+                }
+            }
+            BMWType::UVEdge => {
+                if htype == BM_LOOP && !self.visit_set.contains(&(BM_LOOP, i)) {
+                    self.stack.push(WalkState::Loop(i));
+                    self.visit_set.insert((BM_LOOP, i));
+                }
+            }
         }
     }
 
@@ -326,6 +362,7 @@ impl BMWalker {
             WalkState::Island { cur } => Some((BM_FACE, *cur)),
             WalkState::EdgeLoop { cur, .. } => Some((BM_EDGE, *cur)),
             WalkState::FaceLoop { l, .. } => Some((BM_FACE, bm.loo(*l).f)),
+            WalkState::NonManifoldEdge { cur, .. } => Some((BM_EDGE, *cur)),
             WalkState::Edgering { l, wireedge, .. } => {
                 if *wireedge != BM_NIL {
                     Some((BM_EDGE, *wireedge))
@@ -378,14 +415,95 @@ impl BMWalker {
                     }
                     Some((BM_EDGE, e))
                 }
+                BMWType::Edgeboundary => {
+                    if self.mask_check(bm, BM_EDGE, e) {
+                        for i in 0..2 {
+                            let v = if i == 0 { bm.edge(e).v1 } else { bm.edge(e).v2 };
+                            for e_other in
+                                crate::iterators::EdgesOfVert::new(bm, v).collect::<Vec<_>>()
+                            {
+                                if e_other != e
+                                    && crate::delete::bm_edge_is_boundary(bm, e_other)
+                                    && !self.visit_set.contains(&(BM_EDGE, e_other))
+                                    && self.mask_check(bm, BM_EDGE, e_other)
+                                {
+                                    self.stack.push(WalkState::Edge(e_other));
+                                    self.visit_set.insert((BM_EDGE, e_other));
+                                }
+                            }
+                        }
+                    }
+                    Some((BM_EDGE, e))
+                }
                 _ => Some((BM_EDGE, e)),
             },
             WalkState::Loop(l) => {
-                self.loopshell_step_impl(bm, l);
-                if self.kind == BMWType::LoopShellWire {
-                    self.visit_vert_wire(bm, bm.loo(l).v, BM_NIL);
+                if self.kind == BMWType::UVEdge {
+                    self.uvedge_step_impl(bm, l);
+                } else {
+                    self.loopshell_step_impl(bm, l);
+                    if self.kind == BMWType::LoopShellWire {
+                        self.visit_vert_wire(bm, bm.loo(l).v, BM_NIL);
+                    }
                 }
                 Some((BM_LOOP, l))
+            },
+            WalkState::NonManifoldEdge {
+                start,
+                startv,
+                cur,
+                lastv,
+                face_count,
+            } => {
+                /* `bmw_NonManifoldedgeWalker_step`. */
+                let mut l_cur = BM_NIL;
+                let mut v_found = BM_NIL;
+                'pass: for pass in 0..2 {
+                    let e = if pass == 0 { cur } else { start };
+                    let v = if pass == 0 {
+                        crate::structure::bm_edge_other_vert(bm, e, lastv)
+                    } else {
+                        startv
+                    };
+                    v_found = v;
+                    let l0 = bm.edge(e).l;
+                    if l0 == BM_NIL {
+                        continue;
+                    }
+                    let mut l = l0;
+                    loop {
+                        let l_next = bmw_nonmanifold_find_next(bm, l, v, face_count);
+                        if l_next != BM_NIL
+                            && !self.visit_set.contains(&(BM_EDGE, bm.loo(l_next).e))
+                        {
+                            if l_cur == BM_NIL {
+                                l_cur = l_next;
+                            } else if bm.loo(l_cur).e != bm.loo(l_next).e {
+                                l_cur = BM_NIL;
+                                break;
+                            }
+                        }
+                        l = bm.loo(l).radial_next;
+                        if l == l0 {
+                            break;
+                        }
+                    }
+                    if l_cur != BM_NIL {
+                        break 'pass;
+                    }
+                }
+                if l_cur != BM_NIL {
+                    debug_assert!(!self.visit_set.contains(&(BM_EDGE, bm.loo(l_cur).e)));
+                    self.stack.push(WalkState::NonManifoldEdge {
+                        start,
+                        startv,
+                        cur: bm.loo(l_cur).e,
+                        lastv: v_found,
+                        face_count,
+                    });
+                    self.visit_set.insert((BM_EDGE, bm.loo(l_cur).e));
+                }
+                Some((BM_EDGE, cur))
             }
             WalkState::WireElem(ht, i) => {
                 if ht == BM_LOOP {
@@ -1088,4 +1206,79 @@ fn bm_edge_is_single(bm: &BMesh, e: usize) -> bool {
         && bm.face(bm.loo(bm.edge(e).l).f).len > 4
         && (bm_edge_is_boundary(bm, bm.loo(bm.loo(bm.edge(e).l).next).e)
             || bm_edge_is_boundary(bm, bm.loo(bm.loo(bm.edge(e).l).prev).e))
+}
+
+/// `bmw_NonManifoldLoop_find_next_around_vertex`.
+fn bmw_nonmanifold_find_next(bm: &BMesh, l: usize, v: usize, face_count: i32) -> usize {
+    debug_assert!(!bm_loop_is_manifold(bm, l));
+    let mut l = l;
+    loop {
+        l = crate::query::bm_loop_other_edge_loop(bm, l, v);
+        if bm_loop_is_manifold(bm, l) {
+            l = bm.loo(l).radial_next;
+        } else if crate::query::bm_edge_face_count(bm, bm.loo(l).e) == face_count {
+            return l;
+        } else {
+            break;
+        }
+    }
+    BM_NIL
+}
+
+impl BMWalker {
+    /// `bmw_UVEdgeWalker_step` — walk along UV-equal radial loops
+    /// (`CustomData_data_equals` on the loop UV layer → `uv_at` accessor;
+    /// PORT_PENDING when `uv_at` is unset: compares verts instead).
+    fn uvedge_step_impl(&mut self, bm: &mut BMesh, l: usize) {
+        if !self.mask_check(bm, BM_EDGE, bm.loo(l).e) {
+            return;
+        }
+        for i in 0..2 {
+            let l_pivot = if i == 1 { bm.loo(l).next } else { l };
+            for l_radial_first in
+                crate::iterators::LoopsOfVert::new(bm, bm.loo(l_pivot).v).collect::<Vec<_>>()
+            {
+                let mut l_radial = l_radial_first;
+                loop {
+                    if !self.visit_set.contains(&(BM_LOOP, l_radial)) {
+                        if bm.loo(l_radial).v != bm.loo(l_pivot).v
+                            && !self.mask_check(bm, BM_EDGE, bm.loo(l_radial).e)
+                        {
+                            /* skip */
+                        } else {
+                            let l_other = if bm.loo(l_radial).v != bm.loo(l_pivot).v {
+                                bm.loo(l_radial).next
+                            } else {
+                                l_radial
+                            };
+                            let equal = if let Some(uv_at) = &self.uv_at {
+                                uv_at(bm, l_pivot) == uv_at(bm, l_other)
+                            } else {
+                                /* PORT_PENDING CustomData equality. */
+                                true
+                            };
+                            if equal {
+                                self.stack.push(WalkState::Loop(l_radial));
+                                self.visit_set.insert((BM_LOOP, l_radial));
+                            }
+                        }
+                    }
+                    l_radial = bm.loo(l_radial).radial_next;
+                    if l_radial == l_radial_first {
+                        break;
+                    }
+                }
+                if self.mask_edge != 0 {
+                    let l_boundary = bm.loo(l_radial_first).prev;
+                    if crate::delete::bm_edge_is_boundary(bm, bm.loo(l_boundary).e)
+                        && self.mask_check(bm, BM_EDGE, bm.loo(l_boundary).e)
+                        && !self.visit_set.contains(&(BM_LOOP, l_boundary))
+                    {
+                        self.visit_set.insert((BM_LOOP, l_boundary));
+                        self.stack.push(WalkState::Loop(l_boundary));
+                    }
+                }
+            }
+        }
+    }
 }
