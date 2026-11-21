@@ -280,3 +280,4 @@ pub mod paint;
 pub mod sound;
 pub mod customdata;
 pub mod layer;
+pub mod lib_id;
