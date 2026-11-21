@@ -25,6 +25,7 @@ pub mod key_types;
 pub mod vfont_types;
 pub mod meta_types;
 pub mod defs;
+pub mod documentation;
 pub mod dynamicpaint_types;
 pub mod genfile;
 pub mod sdna_types;
