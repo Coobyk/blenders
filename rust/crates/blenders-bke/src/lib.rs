@@ -104,6 +104,7 @@ pub mod editmesh_tangent;
 pub mod mesh_flip_faces;
 pub mod mesh_fair;
 pub mod mesh_iterators;
+pub mod mesh_tangent;
 pub mod image_gen;
 pub mod main_idmap;
 pub mod mesh_tessellate;
