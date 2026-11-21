@@ -31,3 +31,5 @@ Crate: `crates/blenders-bmesh`. Index-arena model: pools are `Vec`, links are `u
 - bmesh_construct.cc → `construct.rs` (quad_tri/ngon/ensure/copy; CustomData PORT_PENDING)
 - bmesh_delete.cc → `delete.rs` (hflag + oflag contexts)
 - Remaining: query, marking, interp, mesh_convert, mesh_normals, operators/opdefines, walkers, uvselect, polygon(+edgenet), log, mods, edgeloop, callback_generic, kernel splits/joins in core.
+
+- bmesh_bevel.cc -> `tools/bmesh_bevel.rs` FULL port (6.7k lines): BM_mesh_bevel wired in bmo_bevel
