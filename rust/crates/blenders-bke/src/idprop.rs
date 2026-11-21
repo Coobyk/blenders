@@ -355,3 +355,87 @@ pub mod idprop_create {
         p
     }
 }
+
+/// `IDP_FreeFromGroup` — remove and free a member (arena slot stays, matching
+/// the shared-arena model).
+pub fn idp_free_from_group(group: &mut IDProperty, prop: usize) {
+    idp_remove_from_group(group, prop);
+}
+
+/// `IDP_ReplaceInGroup_ex` — replace `prop` with `newp` at the same list
+/// position.
+pub fn idp_replace_in_group_ex(group: &mut IDProperty, newp: usize, prop: usize) {
+    if let IDPData::Group(children) = &mut group.data {
+        if let Some(pos) = children.iter().position(|&c| c == prop) {
+            children[pos] = newp;
+        } else {
+            children.push(newp);
+        }
+    }
+}
+
+/// `IDP_SyncGroupValues` — overwrite matching scalar values in `dest` from
+/// `src`, recurse into groups, replace mismatched scalar types.
+pub fn idp_sync_group_values(dest: usize, src: usize, arena: &mut Vec<IDProperty>) {
+    debug_assert_eq!(arena[dest].type_, IDP_GROUP);
+    debug_assert_eq!(arena[src].type_, IDP_GROUP);
+    let src_children = match &arena[src].data {
+        IDPData::Group(c) => c.clone(),
+        _ => return,
+    };
+    for prop_idx in src_children {
+        let prop = arena[prop_idx].clone();
+        let other_idx = match &arena[dest].data {
+            IDPData::Group(children) => children.iter().copied().find(|&ci| arena[ci].name == prop.name),
+            _ => None,
+        };
+        if let Some(oi) = other_idx {
+            if prop.type_ == arena[oi].type_ {
+                match prop.type_ {
+                    IDP_INT | IDP_FLOAT | IDP_DOUBLE | IDP_BOOLEAN => {
+                        arena[oi].data = prop.data;
+                    }
+                    IDP_GROUP => {
+                        idp_sync_group_values(oi, prop_idx, arena);
+                    }
+                    _ => {
+                        let newp = idp_copy_property(&prop, arena, 0);
+                        idp_replace_in_group_ex(&mut arena[dest], newp, oi);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `IDP_SyncGroupTypes` — replace type/subtype/array-len mismatches, recurse
+/// into groups, free dest-only members.
+pub fn idp_sync_group_types(dest: usize, src: usize, do_arraylen: bool, arena: &mut Vec<IDProperty>) {
+    let dest_children = match &arena[dest].data {
+        IDPData::Group(c) => c.clone(),
+        _ => return,
+    };
+    for dst_idx in dest_children {
+        let src_match = match &arena[src].data {
+            IDPData::Group(children) => children.iter().copied().find(|&ci| arena[ci].name == arena[dst_idx].name),
+            _ => None,
+        };
+        if let Some(src_idx) = src_match {
+            let prop_dst = &arena[dst_idx];
+            let prop_src = &arena[src_idx];
+            let mismatched = prop_dst.type_ != prop_src.type_ || prop_dst.subtype != prop_src.subtype
+                || (do_arraylen
+                    && (prop_dst.type_ == IDP_ARRAY || prop_dst.type_ == IDP_IDPARRAY)
+                    && prop_src.len != prop_dst.len);
+            if mismatched {
+                let src_clone = arena[src_idx].clone();
+                let newp = idp_copy_property(&src_clone, arena, 0);
+                idp_replace_in_group_ex(&mut arena[dest], newp, dst_idx);
+            } else if arena[dst_idx].type_ == IDP_GROUP {
+                idp_sync_group_types(dst_idx, src_idx, do_arraylen, arena);
+            }
+        } else {
+            idp_free_from_group(&mut arena[dest], dst_idx);
+        }
+    }
+}
