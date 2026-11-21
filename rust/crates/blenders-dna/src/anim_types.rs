@@ -19,9 +19,7 @@ pub type FModLimitFlags = i32;
 pub type FModSteppedFlags = i32;
 pub type KspSettings = i16;
 
-/// `BezTriple` (DNA_curve_types.h) — placeholder until curve types port.
-#[derive(Clone, Copy, Default)]
-pub struct BezTriple(pub [f32; 24]);
+pub use crate::curve_types::BezTriple;
 
 /// `FModifier`.
 #[derive(Clone)]

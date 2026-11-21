@@ -1,7 +1,7 @@
 //! Port of `DNA_action_types.h` — `bAction`, `ActionLayer/Slot/Strip`,
 //! `bPose`, `bPoseChannel`, `bMotionPath`, `bDopeSheet`, `SpaceAction` + enums.
 #![allow(non_camel_case_types)]
-use crate::anim_types::AnimDataFlag as _AnimDataFlag;
+
 use crate::id::{ID, NIL};
 use crate::small_types::SessionUid;
 use blenders_bli::listbase::ListBase;
