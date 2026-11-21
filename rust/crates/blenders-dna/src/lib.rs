@@ -70,6 +70,7 @@ pub mod sound_types;
 pub mod space_types;
 pub mod speaker_types;
 pub mod space_enums;
+pub mod modifier_types;
 pub mod movieclip_types;
 pub mod rigidbody_types;
 pub mod scene_types;
