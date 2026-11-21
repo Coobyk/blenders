@@ -11,3 +11,4 @@ pub mod bmesh_path;
 pub mod bmesh_path_region;
 pub mod bmesh_boolean;
 pub mod bmesh_decimate_collapse;
+pub mod bmesh_path_uv;
