@@ -270,3 +270,4 @@ pub mod context;
 pub mod armature;
 pub mod collection;
 pub mod main_registry;
+pub mod curves_geometry;

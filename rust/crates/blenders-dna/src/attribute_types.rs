@@ -42,6 +42,10 @@ pub struct AttributeStorage {
     pub dna_attributes_num: i32,
     /// `bke::AttributeStorageRuntime *runtime` — opaque.
     pub runtime: usize,
+    /// Payload table backing `Attribute.data` handles (the
+    /// `void *data` allocations in C — array bytes or one
+    /// single element). Index = `Attribute.data`.
+    pub data_blobs: Vec<Vec<u8>>,
 }
 impl AttributeStorage {
     /// `wrap()` — accessor parity note; runtime wrapper lands with bke attributes.
@@ -52,6 +56,7 @@ impl AttributeStorage {
 impl Default for AttributeStorage {
     fn default() -> Self {
         Self {
+            data_blobs: Vec::new(),
             dna_attributes: Vec::new(),
             dna_attributes_num: 0,
             runtime: NIL,
