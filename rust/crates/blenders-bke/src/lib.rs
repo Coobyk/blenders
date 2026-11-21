@@ -22,6 +22,7 @@ pub mod addon;
 pub mod blender_copybuffer;
 pub mod blender_undo;
 pub mod anim_data_bmain_utils;
+pub mod anim_data_bmain_utils;
 pub mod appdir;
 pub mod armature_selection;
 pub mod asset;
