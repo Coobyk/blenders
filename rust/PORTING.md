@@ -34,3 +34,20 @@ Crate: `crates/blenders-bmesh`. Index-arena model: pools are `Vec`, links are `u
 
 - bmesh_bevel.cc -> `tools/bmesh_bevel.rs` FULL port (6.7k lines): BM_mesh_bevel wired in bmo_bevel
 - makesdna DNA headers underway in `blenders-dna`: DNA_ID.h, DNA_ID_enums.h, DNA_vec_types.h, DNA_customdata_types.h, DNA_meshdata_types.h, DNA_mesh_types.h, DNA_object_types.h, DNA_object_enums.h, DNA_collection_types.h, DNA_layer_types.h, DNA_{world,colorband,text,packedFile,uuid,image_enums,gpu,session_uid,view3d_enums,attribute}_types.h ported
+
+## makesdna (source/blender/makesdna) — COMPLETE (97/97 headers)
+
+All `DNA_*.h` headers are ported into `crates/blenders-dna` via the
+`/tmp/struct_conv.py` + `/tmp/enum_conv.py` converters (struct→`#[derive(Clone)]`
++ `impl Default`, enums→`pub type` alias + verbatim `pub const` members).
+Conventions: pointers→`usize` arena idx (`id::NIL`), `char*`→`Option<String>`,
+`char name[N]`→`[u8;N]`, `ListBaseT`→`blenders_bli::listbase::ListBase`,
+`void*`/runtime ptrs→usize, `T *p` owned arrays→`Vec<T>`, `T **p`→`Vec<usize>`.
+Notable: `screen_types` (bScreen/ARegion/Panel/uiList), `space_types` (44
+editor structs), `node_types` (236 structs), `modifier_types` (102 structs +
+~40 GP modifiers), `userdef_types`, `sequence_types`, `windowmanager_types`,
+`gpencil_legacy_types`, `particle_types`, `fluid_types`, `linestyle_types`
+(41 Freestyle modifiers), `node_tree_interface_types`, `sdna_types`+`genfile`
+(SDNA tables + `dna_elem_type_size`), `effect_types` (legacy particles).
+
+Next: `blenkernel/intern/*.cc` (~330k lines) into `blenders-bke`.
