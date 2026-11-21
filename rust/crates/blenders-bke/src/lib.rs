@@ -59,6 +59,7 @@ pub mod paint_runtime;
 pub mod scene_context;
 pub mod sound_reader_cache;
 pub mod volume_grid_fields;
+pub mod blender_cli_command;
 pub mod blender_copybuffer;
 pub mod blender_undo;
 pub mod view3d_runtime;
