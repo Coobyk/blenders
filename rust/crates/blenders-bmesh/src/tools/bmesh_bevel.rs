@@ -6064,3 +6064,664 @@ fn bevel_build_edge_polygons(bm: &mut BMesh, bp: &mut BevelParams, bme: usize) {
         weld_cross_attrs_copy(bm, bp, bv2, i2, e2);
     }
 }
+
+/* ===== superellipse chord spacing + collide + main (C ~7627-8485) ===== */
+
+/// `find_superellipse_chord_endpoint` — secant solve for chord length `dtarget`.
+fn find_superellipse_chord_endpoint(x0: f64, dtarget: f64, r: f32, rbig: bool) -> f64 {
+    let y0 = superellipse_co(x0, r, rbig);
+    let tol = 1e-13;
+    let maxiter = 10;
+    let mut xmin = (x0 + std::f64::consts::SQRT_2 / 2.0 * dtarget).min(1.0);
+    let mut xmax = (x0 + dtarget).min(1.0);
+    let mut ymin = superellipse_co(xmin, r, rbig);
+    let mut ymax = superellipse_co(xmax, r, rbig);
+    let mut dmaxerr = ((xmax - x0).powi(2) + (ymax - y0).powi(2)).sqrt() - dtarget;
+    let mut dminerr = ((xmin - x0).powi(2) + (ymin - y0).powi(2)).sqrt() - dtarget;
+    let mut xnew = xmax - dmaxerr * (xmax - xmin) / (dmaxerr - dminerr);
+    let mut lastupdated_upper = true;
+    for _ in 0..maxiter {
+        let ynew = superellipse_co(xnew, r, rbig);
+        let dnewerr = ((xnew - x0).powi(2) + (ynew - y0).powi(2)).sqrt() - dtarget;
+        if dnewerr.abs() < tol {
+            break;
+        }
+        if dnewerr < 0.0 {
+            xmin = xnew;
+            ymin = ynew;
+            dminerr = dnewerr;
+            if !lastupdated_upper {
+                xnew = (dmaxerr / 2.0 * xmin - dminerr * xmax) / (dmaxerr / 2.0 - dminerr);
+            } else {
+                xnew = xmax - dmaxerr * (xmax - xmin) / (dmaxerr - dminerr);
+            }
+            lastupdated_upper = false;
+        } else {
+            xmax = xnew;
+            ymax = ynew;
+            dmaxerr = dnewerr;
+            if lastupdated_upper {
+                xnew = (dmaxerr * xmin - dminerr / 2.0 * xmax) / (dmaxerr - dminerr / 2.0);
+            } else {
+                xnew = xmax - dmaxerr * (xmax - xmin) / (dmaxerr - dminerr);
+            }
+            lastupdated_upper = true;
+        }
+    }
+    xnew
+}
+
+/// `find_even_superellipse_chords_general`.
+fn find_even_superellipse_chords_general(
+    seg: usize,
+    r: f32,
+    xvals: &mut Vec<f64>,
+    yvals: &mut Vec<f64>,
+) {
+    const SMOOTHITERMAX: usize = 10;
+    const ERROR_TOL: f64 = 1e-7;
+    let imax = (seg + 1) / 2 - 1;
+    let seg_odd = seg % 2 == 1;
+    let (rbig, mx) = if r > 1.0 {
+        (true, (0.5f64).powf(1.0 / r as f64))
+    } else {
+        (false, 1.0 - (0.5f64).powf(1.0 / r as f64))
+    };
+    xvals.resize(seg + 1, 0.0);
+    yvals.resize(seg + 1, 0.0);
+    for i in 0..=imax {
+        xvals[i] = i as f64 * mx / seg as f64 * 2.0;
+        yvals[i] = superellipse_co(xvals[i], r, rbig);
+    }
+    yvals[0] = 1.0;
+    for _ in 0..SMOOTHITERMAX {
+        let mut sum = 0.0f64;
+        let mut dmin = 2.0f64;
+        let mut dmax = 0.0f64;
+        for i in 0..imax {
+            let d =
+                ((xvals[i + 1] - xvals[i]).powi(2) + (yvals[i + 1] - yvals[i]).powi(2)).sqrt();
+            sum += d;
+            dmax = dmax.max(d);
+            dmin = dmin.min(d);
+        }
+        let davg;
+        if seg_odd {
+            sum += std::f64::consts::SQRT_2 / 2.0 * (yvals[imax] - xvals[imax]);
+            davg = sum / (imax as f64 + 0.5);
+        } else {
+            sum += ((xvals[imax] - mx).powi(2) + (yvals[imax] - mx).powi(2)).sqrt();
+            davg = sum / (imax as f64 + 1.0);
+        }
+        let mut precision_reached = true;
+        if dmax - davg > ERROR_TOL {
+            precision_reached = false;
+        }
+        if dmin - davg < ERROR_TOL {
+            precision_reached = false;
+        }
+        if precision_reached {
+            break;
+        }
+        for i in 1..=imax {
+            xvals[i] = find_superellipse_chord_endpoint(xvals[i - 1], davg, r, rbig);
+            yvals[i] = superellipse_co(xvals[i], r, rbig);
+        }
+    }
+    if !seg_odd {
+        xvals[imax + 1] = mx;
+        yvals[imax + 1] = mx;
+    }
+    for i in imax + 1..=seg {
+        yvals[i] = xvals[seg - i];
+        xvals[i] = yvals[seg - i];
+    }
+    if !rbig {
+        for i in 0..=seg {
+            let temp = xvals[i];
+            xvals[i] = 1.0 - yvals[i];
+            yvals[i] = 1.0 - temp;
+        }
+    }
+}
+
+/// `find_even_superellipse_chords` — fills xvals/yvals (len n+1).
+fn find_even_superellipse_chords(n: usize, r: f32, xvals: &mut Vec<f64>, yvals: &mut Vec<f64>) {
+    let seg_odd = n % 2 == 1;
+    let n2 = n / 2;
+    xvals.resize(n + 1, 0.0);
+    yvals.resize(n + 1, 0.0);
+    if r == PRO_LINE_R {
+        for i in 0..=n {
+            xvals[i] = i as f64 / n as f64;
+            yvals[i] = 1.0 - i as f64 / n as f64;
+        }
+        return;
+    }
+    if r == PRO_CIRCLE_R {
+        let temp = std::f64::consts::FRAC_PI_2 / n as f64;
+        for i in 0..=n {
+            xvals[i] = (i as f64 * temp).sin();
+            yvals[i] = (i as f64 * temp).cos();
+        }
+        return;
+    }
+    if r == PRO_SQUARE_IN_R {
+        if !seg_odd {
+            for i in 0..=n2 {
+                xvals[i] = 0.0;
+                yvals[i] = 1.0 - i as f64 / n2 as f64;
+                xvals[n - i] = yvals[i];
+                yvals[n - i] = xvals[i];
+            }
+        } else {
+            let temp = 1.0 / (n2 as f64 + std::f64::consts::SQRT_2 / 2.0);
+            for i in 0..=n2 {
+                xvals[i] = 0.0;
+                yvals[i] = 1.0 - i as f64 * temp;
+                xvals[n - i] = yvals[i];
+                yvals[n - i] = xvals[i];
+            }
+        }
+        return;
+    }
+    if r == PRO_SQUARE_R {
+        if !seg_odd {
+            for i in 0..=n2 {
+                xvals[i] = i as f64 / n2 as f64;
+                yvals[i] = 1.0;
+                xvals[n - i] = yvals[i];
+                yvals[n - i] = xvals[i];
+            }
+        } else {
+            let temp = 1.0 / (n2 as f64 + std::f64::consts::SQRT_2 / 2.0);
+            for i in 0..=n2 {
+                xvals[i] = i as f64 * temp;
+                yvals[i] = 1.0;
+                xvals[n - i] = yvals[i];
+                yvals[n - i] = xvals[i];
+            }
+        }
+        return;
+    }
+    find_even_superellipse_chords_general(n, r, xvals, yvals);
+}
+
+/// `find_profile_fullness`.
+fn find_profile_fullness(bp: &BevelParams) -> f32 {
+    const CIRCLE_FULLNESS: [f32; 11] = [
+        0.0, 0.559, 0.642, 0.551, 0.646, 0.624, 0.646, 0.619, 0.647, 0.639, 0.647,
+    ];
+    let nseg = bp.seg as usize;
+    if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+        let mut fullness = 0.0f32;
+        for i in 0..nseg {
+            fullness += (bp.pro_spacing.xvals[i] + bp.pro_spacing.yvals[i]) as f32
+                / (2.0 * nseg as f32);
+        }
+        fullness
+    } else if bp.pro_super_r == PRO_LINE_R {
+        0.0
+    } else if bp.pro_super_r == PRO_CIRCLE_R && nseg > 0 && nseg <= 11 {
+        CIRCLE_FULLNESS[nseg - 1]
+    } else if nseg % 2 == 0 {
+        2.4506 * bp.profile - 0.00000300 * nseg as f32 - 0.6266
+    } else {
+        2.3635 * bp.profile + 0.000152 * nseg as f32 - 0.6060
+    }
+}
+
+/// `set_profile_spacing`.
+fn set_profile_spacing(bp: &mut BevelParams, custom: bool) {
+    let seg = bp.seg;
+    let pro_super_r = bp.pro_super_r;
+    if seg <= 1 {
+        bp.pro_spacing.xvals.clear();
+        bp.pro_spacing.yvals.clear();
+        bp.pro_spacing.xvals_2.clear();
+        bp.pro_spacing.yvals_2.clear();
+        bp.pro_spacing.seg_2 = 0;
+        return;
+    }
+    let seg_2 = (seg as usize).next_power_of_two().max(4) as i32;
+    bp.pro_spacing.seg_2 = seg_2;
+    let mut xvals_2 = Vec::new();
+    let mut yvals_2 = Vec::new();
+    if seg_2 != seg {
+        if custom {
+            /* BKE_curveprofile_init: PORT_PENDING (CurveProfile CustomData). */
+            xvals_2 = (0..=seg_2).map(|i| i as f64 / seg_2 as f64).collect();
+            yvals_2 = (0..=seg_2).map(|i| 1.0 - i as f64 / seg_2 as f64).collect();
+        } else {
+            find_even_superellipse_chords(seg_2 as usize, pro_super_r, &mut xvals_2, &mut yvals_2);
+        }
+        bp.pro_spacing.xvals_2 = xvals_2;
+        bp.pro_spacing.yvals_2 = yvals_2;
+    } else {
+        bp.pro_spacing.xvals_2.clear();
+        bp.pro_spacing.yvals_2.clear();
+    }
+    if custom {
+        /* PORT_PENDING: custom profile sampling; straight line fallback. */
+        bp.pro_spacing.xvals = (0..=seg).map(|i| i as f64 / seg as f64).collect();
+        bp.pro_spacing.yvals = (0..=seg).map(|i| 1.0 - i as f64 / seg as f64).collect();
+    } else {
+        let mut xv = Vec::new();
+        let mut yv = Vec::new();
+        find_even_superellipse_chords(seg as usize, pro_super_r, &mut xv, &mut yv);
+        bp.pro_spacing.xvals = xv;
+        bp.pro_spacing.yvals = yv;
+    }
+    if bp.pro_spacing.xvals_2.is_empty() {
+        bp.pro_spacing.xvals_2 = bp.pro_spacing.xvals.clone();
+        bp.pro_spacing.yvals_2 = bp.pro_spacing.yvals.clone();
+    }
+}
+
+#[inline]
+fn safe_div(a: f32, b: f32) -> f32 {
+    if b != 0.0 {
+        a / b
+    } else {
+        0.0
+    }
+}
+
+/// `geometry_collide_offset`.
+fn geometry_collide_offset(bm: &BMesh, bp: &BevelParams, bvi: usize, eb_i: usize) -> f32 {
+    let no_collide_offset = bp.offset + 1e6;
+    let mut limit = no_collide_offset;
+    if bp.offset == 0.0 {
+        return no_collide_offset;
+    }
+    let mut kb = bp.bverts[bvi].edges[eb_i].offset_l_spec;
+    let ea_i = bp.bverts[bvi].edges[eb_i].next;
+    let ka = bp.bverts[bvi].edges[ea_i].offset_r_spec;
+    let eb_e = bp.bverts[bvi].edges[eb_i].e;
+    let ea_e = bp.bverts[bvi].edges[ea_i].e;
+    let (vb, mut vc) = if bp.bverts[bvi].edges[eb_i].is_rev {
+        (bm.edge(eb_e).v2, bm.edge(eb_e).v1)
+    } else {
+        (bm.edge(eb_e).v1, bm.edge(eb_e).v2)
+    };
+    let va = if bp.bverts[bvi].edges[ea_i].is_rev {
+        bm.edge(ea_e).v1
+    } else {
+        bm.edge(ea_e).v2
+    };
+    let (ebother, bvc) = find_other_end_edge_half(bm, bp, (bvi, eb_i));
+    let mut ec_e = BM_NIL;
+    let mut kc = 0.0f32;
+    let mut vd;
+    if bp.offset_type == BEVEL_AMT_PERCENT || bp.offset_type == BEVEL_AMT_ABSOLUTE {
+        if bp.bverts[bvi].edges[ea_i].is_bev
+            && ebother != EH_NIL
+            && bp.bverts[ebother.0].edges[bp.bverts[ebother.0].edges[ebother.1].prev].is_bev
+        {
+            if bp.offset_type == BEVEL_AMT_PERCENT {
+                return 50.0;
+            }
+            let blen = crate::query::bm_edge_calc_length(bm, eb_e);
+            return if bp.offset > blen / 2.0 {
+                blen / 2.0
+            } else {
+                blen
+            };
+        }
+        return no_collide_offset;
+    }
+    if ebother != EH_NIL {
+        let eci = bp.bverts[ebother.0].edges[ebother.1].prev;
+        ec_e = bp.bverts[ebother.0].edges[eci].e;
+        vc = bp.bverts[ebother.0].v;
+        kc = bp.bverts[ebother.0].edges[eci].offset_l_spec;
+        vd = if bp.bverts[ebother.0].edges[eci].is_rev {
+            bm.edge(ec_e).v1
+        } else {
+            bm.edge(ec_e).v2
+        };
+    } else {
+        ec_e = BM_NIL;
+        if bp.bverts[bvi].edges[eb_i].fnext == BM_NIL {
+            return no_collide_offset;
+        }
+        let lb = crate::query::bm_face_edge_share_loop(bm, bp.bverts[bvi].edges[eb_i].fnext, eb_e);
+        if lb == BM_NIL {
+            return no_collide_offset;
+        }
+        if bm.lpool[bm.lpool[lb].next].v == vc {
+            vd = bm.lpool[bm.lpool[bm.lpool[lb].next].next].v;
+        } else if bm.lpool[lb].v == vc {
+            vd = bm.lpool[bm.lpool[lb].prev].v;
+        } else {
+            return no_collide_offset;
+        }
+    }
+    if ea_e == eb_e || (ec_e != BM_NIL && ec_e == eb_e) {
+        return no_collide_offset;
+    }
+    let th1 = blenders_math::vector::angle_v3v3v3(bm.vert(va).co, bm.vert(vb).co, bm.vert(vc).co);
+    let th2 = blenders_math::vector::angle_v3v3v3(bm.vert(vb).co, bm.vert(vc).co, bm.vert(vd).co);
+    let sin1 = th1.sin();
+    let sin2 = th2.sin();
+    let cos1 = th1.cos();
+    let cos2 = th2.cos();
+    let mut offsets_projected_on_b =
+        safe_div(ka + cos1 * kb, sin1) + safe_div(kc + cos2 * kb, sin2);
+    if offsets_projected_on_b > BEVEL_EPSILON {
+        offsets_projected_on_b = bp.offset
+            * ((bm.vert(vb).co - bm.vert(vc).co).length() / offsets_projected_on_b);
+        if offsets_projected_on_b > BEVEL_EPSILON {
+            limit = offsets_projected_on_b;
+        }
+    }
+    if kb > f32::EPSILON && (ka == 0.0 || kc == 0.0) {
+        kb = bp.offset / kb;
+        if ka == 0.0 {
+            let mut la =
+                crate::query::bm_face_edge_share_loop(bm, bp.bverts[bvi].edges[eb_i].fnext, ea_e);
+            if la != BM_NIL {
+                let mut a_side_slide = 0.0f32;
+                let mut exterior_angle = 0.0f32;
+                let mut first = true;
+                while exterior_angle < 0.0001 {
+                    if first {
+                        exterior_angle = std::f32::consts::PI - th1;
+                        first = false;
+                    } else {
+                        la = bm.lpool[la].prev;
+                        exterior_angle += std::f32::consts::PI
+                            - blenders_math::vector::angle_v3v3v3(
+                                bm.vert(bm.lpool[la].v).co,
+                                bm.vert(bm.lpool[bm.lpool[la].next].v).co,
+                                bm.vert(bm.lpool[bm.lpool[bm.lpool[la].next].next].v).co,
+                            );
+                    }
+                    a_side_slide += crate::query::bm_edge_calc_length(bm, bm.lpool[la].e)
+                        * exterior_angle.sin();
+                }
+                limit = limit.min(a_side_slide * kb);
+            }
+        }
+        if kc == 0.0 {
+            let mut lc =
+                crate::query::bm_face_edge_share_loop(bm, bp.bverts[bvi].edges[eb_i].fnext, eb_e);
+            if lc != BM_NIL {
+                lc = bm.lpool[lc].next;
+                let mut c_side_slide = 0.0f32;
+                let mut exterior_angle = 0.0f32;
+                let mut first = true;
+                while exterior_angle < 0.0001 {
+                    if first {
+                        exterior_angle = std::f32::consts::PI - th2;
+                        first = false;
+                    } else {
+                        lc = bm.lpool[lc].next;
+                        exterior_angle += std::f32::consts::PI
+                            - blenders_math::vector::angle_v3v3v3(
+                                bm.vert(bm.lpool[bm.lpool[lc].prev].v).co,
+                                bm.vert(bm.lpool[lc].v).co,
+                                bm.vert(bm.lpool[bm.lpool[lc].next].v).co,
+                            );
+                    }
+                    c_side_slide += crate::query::bm_edge_calc_length(bm, bm.lpool[lc].e)
+                        * exterior_angle.sin();
+                }
+                limit = limit.min(c_side_slide * kb);
+            }
+        }
+    }
+    limit
+}
+
+/// `vertex_collide_offset`.
+fn vertex_collide_offset(bm: &BMesh, bp: &BevelParams, bvi: usize, ea_i: usize) -> f32 {
+    let no_collide_offset = bp.offset + 1e6;
+    if bp.offset == 0.0 {
+        return no_collide_offset;
+    }
+    let ka = bp.bverts[bvi].edges[ea_i].offset_l_spec / bp.offset;
+    let (eb, _) = find_other_end_edge_half(bm, bp, (bvi, ea_i));
+    let kb = if eb != EH_NIL {
+        bp.bverts[eb.0].edges[eb.1].offset_l_spec / bp.offset
+    } else {
+        0.0
+    };
+    let kab = ka + kb;
+    let la = crate::query::bm_edge_calc_length(bm, bp.bverts[bvi].edges[ea_i].e);
+    if kab <= 0.0 {
+        return no_collide_offset;
+    }
+    la / kab
+}
+
+/// `bevel_limit_offset`.
+fn bevel_limit_offset(bm: &mut BMesh, bp: &mut BevelParams) {
+    let mut limited_offset = bp.offset;
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+            continue;
+        }
+        let bvi = find_bevvert(bp, v);
+        if bvi == BM_NIL {
+            continue;
+        }
+        for i in 0..bp.bverts[bvi].edgecount as usize {
+            let collision_offset = if bp.affect_type == BEVEL_AFFECT_VERTICES {
+                vertex_collide_offset(bm, bp, bvi, i)
+            } else {
+                geometry_collide_offset(bm, bp, bvi, i)
+            };
+            limited_offset = limited_offset.min(collision_offset);
+        }
+    }
+    if limited_offset < bp.offset {
+        let offset_factor = limited_offset / bp.offset;
+        for v in 0..bm.totvert as usize {
+            if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+                continue;
+            }
+            let bvi = find_bevvert(bp, v);
+            if bvi == BM_NIL {
+                continue;
+            }
+            for i in 0..bp.bverts[bvi].edgecount as usize {
+                bp.bverts[bvi].edges[i].offset_l_spec *= offset_factor;
+                bp.bverts[bvi].edges[i].offset_r_spec *= offset_factor;
+                bp.bverts[bvi].edges[i].offset_l *= offset_factor;
+                bp.bverts[bvi].edges[i].offset_r *= offset_factor;
+            }
+        }
+        bp.offset = limited_offset;
+    }
+}
+
+/// `BM_mesh_bevel` — the main entry: bevel all TAGged edges (or verts).
+#[allow(clippy::too_many_arguments)]
+pub fn bm_mesh_bevel(
+    bm: &mut BMesh,
+    offset: f32,
+    offset_type: i32,
+    profile_type: i32,
+    segments: i32,
+    profile: f32,
+    affect_type: i32,
+    use_weights: bool,
+    limit_offset: bool,
+    /* dvert */ _dvert: Option<&()>,
+    vertex_group: i32,
+    mat: i32,
+    loop_slide: bool,
+    mark_seam: bool,
+    mark_sharp: bool,
+    harden_normals: bool,
+    face_strength_mode: i32,
+    miter_outer: i32,
+    miter_inner: i32,
+    spread: f32,
+    /* custom_profile */ _custom_profile: Option<&()>,
+    vmesh_method: i32,
+    bweight_offset_vert: i32,
+    bweight_offset_edge: i32,
+) {
+    let mut bp = BevelParams::default();
+    bp.offset = offset;
+    bp.offset_type = offset_type;
+    bp.seg = segments.max(1);
+    bp.profile = profile;
+    bp.pro_super_r = -(2.0f32).ln() / profile.sqrt().ln();
+    bp.affect_type = affect_type;
+    bp.affect_vertices_odd = affect_type == BEVEL_AFFECT_VERTICES && bp.seg % 2 == 1;
+    bp.use_weights = use_weights;
+    bp.bweight_offset_vert = bweight_offset_vert;
+    bp.bweight_offset_edge = bweight_offset_edge;
+    bp.loop_slide = loop_slide;
+    bp.limit_offset = limit_offset;
+    bp.offset_adjust = bp.affect_type != BEVEL_AFFECT_VERTICES
+        && offset_type != BEVEL_AMT_PERCENT
+        && offset_type != BEVEL_AMT_ABSOLUTE;
+    let _ = vertex_group;
+    bp.mat_nr = mat;
+    bp.mark_seam = mark_seam;
+    bp.mark_sharp = mark_sharp;
+    bp.harden_normals = harden_normals;
+    bp.face_strength_mode = face_strength_mode;
+    bp.miter_outer = miter_outer;
+    bp.miter_inner = miter_inner;
+    bp.spread = spread;
+    bp.profile_type = profile_type;
+    bp.vmesh_method = vmesh_method;
+
+    if bp.offset <= 0.0 {
+        return;
+    }
+    if bp.vmesh_method == BEVEL_VMESH_CUTOFF {
+        bp.miter_outer = BEVEL_MITER_SHARP;
+        bp.miter_inner = BEVEL_MITER_SHARP;
+    }
+    if profile >= 0.950 {
+        bp.pro_super_r = PRO_SQUARE_R;
+    } else if (bp.pro_super_r - PRO_CIRCLE_R).abs() < 1e-4 {
+        bp.pro_super_r = PRO_CIRCLE_R;
+    } else if (bp.pro_super_r - PRO_LINE_R).abs() < 1e-4 {
+        bp.pro_super_r = PRO_LINE_R;
+    } else if bp.pro_super_r < 1e-4 {
+        bp.pro_super_r = PRO_SQUARE_IN_R;
+    }
+    let is_custom = bp.profile_type == BEVEL_PROFILE_CUSTOM;
+    set_profile_spacing(&mut bp, is_custom);
+    if bp.seg > 1 {
+        bp.pro_spacing.fullness = find_profile_fullness(&bp);
+    }
+    if bp.profile_type == BEVEL_PROFILE_CUSTOM
+        && (bp.miter_inner != BEVEL_MITER_SHARP || bp.miter_outer != BEVEL_MITER_SHARP)
+    {
+        /* set_profile_spacing(&bp.pro_spacing_miter): PORT_PENDING custom miter. */
+    }
+    bp.face_hash = Some(HashMap::new());
+    math_layer_info_init(bm, &mut bp);
+    uv_vert_map_init(&mut bp);
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+            continue;
+        }
+        let bvi = bevel_vert_construct(bm, &mut bp, v);
+        if !limit_offset && bvi != BM_NIL {
+            build_boundary(bm, &mut bp, bvi, true);
+            determine_uv_vert_connectivity(bm, &mut bp, v, None);
+        }
+    }
+    if limit_offset {
+        bevel_limit_offset(bm, &mut bp);
+        for v in 0..bm.totvert as usize {
+            if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+                continue;
+            }
+            let bvi = find_bevvert(&bp, v);
+            if bvi != BM_NIL {
+                build_boundary(bm, &mut bp, bvi, true);
+                determine_uv_vert_connectivity(bm, &mut bp, v, None);
+            }
+        }
+    }
+    if bp.offset_adjust {
+        adjust_offsets(bm, &mut bp);
+    }
+    if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+        for e in 0..bm.totedge as usize {
+            if bm.edge(e).head.hflag & crate::BM_ELEM_TAG != 0 {
+                regularize_profile_orientation(bm, &mut bp, e);
+            }
+        }
+    }
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+            continue;
+        }
+        let bvi = find_bevvert(&bp, v);
+        if bvi != BM_NIL {
+            build_vmesh(bm, &mut bp, bvi);
+        }
+    }
+    if bp.affect_type != BEVEL_AFFECT_VERTICES {
+        for e in 0..bm.totedge as usize {
+            if bm.edge(e).head.hflag & crate::BM_ELEM_TAG != 0 {
+                bevel_build_edge_polygons(bm, &mut bp, e);
+            }
+        }
+    }
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+            continue;
+        }
+        let bvi = find_bevvert(&bp, v);
+        if bvi != BM_NIL {
+            bevel_extend_edge_data(bm, &mut bp, bvi);
+        }
+    }
+    let mut rebuilt_orig_faces: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG == 0 {
+            continue;
+        }
+        bevel_rebuild_existing_polygons(bm, &mut bp, v, &mut rebuilt_orig_faces, None);
+        bevel_reattach_wires(bm, &mut bp, v);
+    }
+    for &f in &rebuilt_orig_faces {
+        crate::core::bm_face_kill(bm, f);
+    }
+    for v in 0..bm.totvert as usize {
+        if bm.vert(v).head.hflag & crate::BM_ELEM_TAG != 0 {
+            debug_assert!(find_bevvert(&bp, v) != BM_NIL);
+            uv_vert_map_pop(&mut bp, v);
+            crate::core::bm_vert_kill(bm, v);
+        }
+    }
+    bevel_merge_uvs(bm, &mut bp, None, None);
+    if bp.harden_normals {
+        bevel_harden_normals(bm, &bp);
+    }
+    if bp.face_strength_mode != BEVEL_FACE_STRENGTH_NONE {
+        bevel_set_weighted_normal_face_strength(bm, &bp);
+    }
+    if bm.use_toolflags {
+        for v in 0..bm.totvert as usize {
+            if bm.vert(v).head.api_flag & VERT_OUT != 0 {
+                bm.vpool[v].head.hflag |= crate::BM_ELEM_TAG;
+            }
+        }
+        for e in 0..bm.totedge as usize {
+            if bm.edge(e).head.api_flag & EDGE_OUT != 0 {
+                bm.epool[e].head.hflag |= crate::BM_ELEM_TAG;
+            }
+        }
+    }
+    for f in 0..bm.totface as usize {
+        if get_face_kind(&bp, f) != F_EDGE {
+            continue;
+        }
+        for l in LoopsOfFace::new(bm, f).collect::<Vec<_>>() {
+            bm.lpool[l].head.hflag &= !BM_ELEM_LONG_TAG;
+        }
+    }
+}

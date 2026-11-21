@@ -195,7 +195,9 @@ pub struct BMesh {
     pub elem_index_dirty: bool,
     // `uv_select_sync_valid` — UV selection state mirrors the mesh.
     pub uv_select_sync_valid: bool,
-    // Flag toolflags/CustomData and other BMesh fields are PORT_PENDING.
+    /// `use_toolflags` — honor BMO oflags (VERT_OUT/EDGE_OUT etc.) for operator output tagging.
+    pub use_toolflags: bool,
+    // Flag/CustomData and other BMesh fields are PORT_PENDING.
 }
 impl BMesh {
     /// `BM_mesh_create` — new empty mesh.
