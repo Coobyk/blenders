@@ -269,3 +269,4 @@ pub mod material;
 pub mod context;
 pub mod armature;
 pub mod collection;
+pub mod main_registry;
