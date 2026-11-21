@@ -9,3 +9,4 @@ blenders-bli = { path = "../blenders-bli" }
 blenders-bmesh = { path = "../blenders-bmesh" }
 blenders-core = { path = "../blenders-core" }
 blenders-dna = { path = "../blenders-dna" }
+xxhash-rust = { version = "0.8.21", features = ["xxh3"] }

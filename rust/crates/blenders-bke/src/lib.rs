@@ -8,6 +8,7 @@ pub mod file_handler;
 pub mod geometry_components;
 pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
+pub mod id_hash;
 pub mod idprop;
 pub mod kelvinlet;
 pub mod keyconfig;
