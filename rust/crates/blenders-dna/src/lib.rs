@@ -8,3 +8,4 @@ pub mod id_enums;
 pub mod vec_types;
 pub mod customdata_types;
 pub mod meshdata_types;
+pub mod mesh_types;
