@@ -15,6 +15,8 @@ pub mod subdiv_stats;
 pub mod editlattice;
 pub mod lib_id_eval;
 pub mod main_invariants;
+pub mod multires_subdiv;
+pub mod subdiv;
 pub mod cpp_types;
 pub mod mesh_flip_faces;
 pub mod node_enum_definition;
