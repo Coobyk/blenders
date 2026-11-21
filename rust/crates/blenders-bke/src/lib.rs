@@ -107,6 +107,7 @@ pub mod mesh_iterators;
 pub mod mesh_tangent;
 pub mod mesh_wrapper;
 pub mod image_gen;
+pub mod recents;
 pub mod main_idmap;
 pub mod mesh_tessellate;
 pub mod mesh_topology_state;
