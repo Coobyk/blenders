@@ -182,3 +182,4 @@ pub mod multires;
 pub mod bvhutils;
 pub mod object_deform;
 pub mod geometry_set;
+pub mod library;
