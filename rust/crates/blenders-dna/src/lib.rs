@@ -44,6 +44,7 @@ pub mod workspace_types;
 pub mod xr_types;
 pub mod fileglobal_types;
 pub mod gpu_types;
+pub mod grease_pencil_modifier_types;
 pub mod grease_pencil_types;
 pub mod image_enums;
 pub mod mask_types;
