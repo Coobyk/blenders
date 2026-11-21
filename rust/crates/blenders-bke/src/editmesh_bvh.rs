@@ -332,6 +332,7 @@ pub fn bke_bmbvh_find_vert_closest(
         index: -1,
         dist_sq: dist_max_sq,
         co: [0.0; 3],
+        no: [0.0; 3],
     };
 
     let (_, nearest) = kdopbvh::bvhtree_find_nearest(
@@ -373,6 +374,7 @@ pub fn bke_bmbvh_find_face_closest(
         index: -1,
         dist_sq: dist_max_sq,
         co: [0.0; 3],
+        no: [0.0; 3],
     };
 
     let (_, nearest) = kdopbvh::bvhtree_find_nearest(

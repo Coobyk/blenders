@@ -179,3 +179,4 @@ pub mod pbvh_pixels_copy;
 pub mod node_runtime;
 pub mod mesh_evaluate;
 pub mod multires;
+pub mod bvhutils;

@@ -106,6 +106,7 @@ pub struct BVHTreeNearest {
     pub index: i32,
     pub dist_sq: f32,
     pub co: [f32; 3],
+    pub no: [f32; 3],
 }
 
 /// `BVHTreeRay`.
@@ -1069,6 +1070,7 @@ pub fn bvhtree_find_nearest_ex(
             index: -1,
             dist_sq: f32::MAX,
             co: [0.0; 3],
+            no: [0.0; 3],
         }),
     };
     for a in tree.start_axis..tree.stop_axis {
@@ -1150,6 +1152,7 @@ pub fn bvhtree_find_nearest_first(
             index: -1,
             dist_sq,
             co: [0.0; 3],
+            no: [0.0; 3],
         },
     };
     for a in tree.start_axis..tree.stop_axis {
@@ -1592,6 +1595,7 @@ pub fn bvhtree_find_nearest_projected(
                 index: -1,
                 dist_sq: f32::MAX,
                 co: [0.0; 3],
+            no: [0.0; 3],
             }),
         );
     }
@@ -1619,6 +1623,7 @@ pub fn bvhtree_find_nearest_projected(
             index: -1,
             dist_sq: f32::MAX,
             co: [0.0; 3],
+            no: [0.0; 3],
         }),
         clip_plane: clip,
     };
