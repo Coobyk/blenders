@@ -51,15 +51,7 @@ pub fn me_using_mirror_x_vertex_groups(me: &Mesh) -> bool {
     me.editflag & ME_EDIT_MIRROR_VERTEX_GROUPS != 0 && me.symmetry & ME_SYMMETRY_X != 0
 }
 
-/// `AttributeStorage` (DNA_attribute_types.h subset needed by Mesh).
-#[derive(Clone, Default)]
-pub struct AttributeStorage {
-    /// `Attribute *dna_attributes` → Vec of raw attribute blobs (port pending).
-    pub dna_attributes: Vec<u8>,
-    pub dna_attributes_num: i32,
-    /// `bke::AttributeStorageRuntime *runtime` — opaque.
-    pub runtime: usize,
-}
+pub use crate::attribute_types::AttributeStorage;
 
 /// `Mesh` — the mesh data-block.
 #[derive(Clone)]

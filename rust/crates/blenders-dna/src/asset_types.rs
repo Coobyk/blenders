@@ -54,16 +54,7 @@ impl Default for AssetTag {
 pub type AssetMetaDataFlag = i32;
 pub const ASSETDATA_USE_OWN_IMPORT_METHOD: AssetMetaDataFlag = 1 << 0;
 
-/// `bUUID` — 128-bit UUID (DNA_uuid_types.h).
-#[derive(Clone, Copy, Default)]
-pub struct BUuid {
-    pub time_low: u32,
-    pub time_mid: u16,
-    pub time_hi_and_version: u16,
-    pub clock_seq_hi_and_reserved: u8,
-    pub clock_seq_low: u8,
-    pub node: [u8; 6],
-}
+pub use crate::uuid_types::BUuid;
 
 /// `AssetMetaData`.
 #[derive(Clone)]
