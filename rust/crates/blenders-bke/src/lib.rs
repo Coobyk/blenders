@@ -247,3 +247,4 @@ pub mod key;
 pub mod screen;
 pub mod movieclip;
 pub mod action;
+pub mod collision;
