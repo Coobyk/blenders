@@ -227,3 +227,4 @@ pub mod multires_reshape_smooth;
 pub mod main_db;
 pub mod subdiv_mesh;
 pub mod mesh_data_update;
+pub mod multires_unsubdivide;
