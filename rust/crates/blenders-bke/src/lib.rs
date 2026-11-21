@@ -127,6 +127,7 @@ pub mod mesh_topology_state;
 pub mod multires_reshape_subdivide;
 pub mod node_enum_definition;
 pub mod paint_canvas;
+pub mod pointcloud;
 pub mod pointcloud_attributes;
 pub mod pose_backup;
 pub mod node_tree_dot_export;
