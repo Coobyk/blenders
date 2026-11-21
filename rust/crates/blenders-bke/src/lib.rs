@@ -204,3 +204,4 @@ pub mod image_format;
 pub mod armature_update;
 pub mod volume;
 pub mod lib_query;
+pub mod image_gpu;
