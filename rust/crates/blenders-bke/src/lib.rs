@@ -15,6 +15,7 @@ pub mod anim_data_bmain_utils;
 pub mod appdir;
 pub mod armature_selection;
 pub mod asset;
+pub mod attribute_legacy_convert;
 pub mod asset_weak_reference;
 pub mod bake_data_block_map;
 pub mod autoexec;
