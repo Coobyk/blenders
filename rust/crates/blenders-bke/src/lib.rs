@@ -88,6 +88,7 @@ pub mod cpp_types;
 pub mod mesh_debug;
 pub mod mesh_merge_customdata;
 pub mod editmesh_cache;
+pub mod editmesh_tangent;
 pub mod mesh_flip_faces;
 pub mod main_idmap;
 pub mod mesh_tessellate;
