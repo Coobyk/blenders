@@ -1,5 +1,4 @@
-//! Port of `bmo_bevel.cc`. `BM_mesh_bevel` (tools/bmesh_bevel.cc, ~8.5k
-//! lines) is not yet ported — the call is a PORT_PENDING stub.
+//! Port of `bmo_bevel.cc` — bevel operator wrapper around `bm_mesh_bevel`.
 
 use crate::operators::*;
 use crate::{BMesh, BM_EDGE, BM_FACE, BM_VERT};
@@ -39,7 +38,33 @@ pub fn bmo_bevel_exec(bm: &mut BMesh, op: &mut BMOperator) {
                 }
             }
         }
-        /* PORT_PENDING: `BM_mesh_bevel` — tools/bmesh_bevel.cc. */
+        bm.use_toolflags = true;
+        crate::tools::bmesh_bevel::bm_mesh_bevel(
+            bm,
+            offset,
+            _offset_type,
+            _profile_type,
+            _seg,
+            _profile,
+            _affect_type,
+            false,
+            _clamp_overlap,
+            None,
+            -1,
+            _material,
+            _loop_slide,
+            _mark_seam,
+            _mark_sharp,
+            _harden_normals,
+            _face_strength_mode,
+            _miter_outer,
+            _miter_inner,
+            _spread,
+            None,
+            _vmesh_method,
+            -1, /* `bevel_weight_vert` CustomData offset: PORT_PENDING. */
+            -1, /* `bevel_weight_edge` CustomData offset: PORT_PENDING. */
+        );
         bmo_slot_buffer_from_enabled_hflag(bm, op, true, "faces.out", BM_FACE, crate::BM_ELEM_TAG);
         bmo_slot_buffer_from_enabled_hflag(bm, op, true, "edges.out", BM_EDGE, crate::BM_ELEM_TAG);
         bmo_slot_buffer_from_enabled_hflag(bm, op, true, "verts.out", BM_VERT, crate::BM_ELEM_TAG);
