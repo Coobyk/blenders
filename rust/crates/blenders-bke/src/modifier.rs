@@ -290,7 +290,7 @@ pub fn bke_modifiers_get_cage_index(
 
 /// `BKE_modifier_is_enabled` — mode bits + disabled callback +
 /// editmode support.
-pub fn bke_modifier_is_enabled(md: &ModifierData, required_mode: i32, has_scene: bool) -> bool {
+pub fn bke_modifier_is_enabled(md: &ModifierData, required_mode: Modifiermode, has_scene: bool) -> bool {
     let mti = match bke_modifier_get_info(md.type_) {
         Some(m) => m,
         None => return false,
