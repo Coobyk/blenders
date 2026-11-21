@@ -51,7 +51,7 @@ pub fn bke_autoexec_match_unchecked(
     for (path_cmp, flag) in autoexec_paths {
         if path_cmp.is_empty() {
             /* `if (path_cmp->path[0] == '\0') continue` */
-        } else if flag & USER_PATHCMP_GLOB != 0 {
+        } else if flag & USER_PATHCMP_GLOB as u32 != 0 {
             if fnmatch_str(path_cmp, &dirpath, fnmatch_flags) {
                 return true;
             }
