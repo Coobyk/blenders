@@ -278,3 +278,4 @@ pub mod vfont_curve;
 pub mod rigidbody;
 pub mod paint;
 pub mod sound;
+pub mod customdata;
