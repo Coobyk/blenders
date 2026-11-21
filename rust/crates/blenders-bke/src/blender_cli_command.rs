@@ -85,20 +85,42 @@ pub fn bke_blender_cli_command_exec(id: &str, argv: &[String]) -> i32 {
     (handlers[idx].exec)(argv)
 }
 
-/// `BKE_blender_cli_command_print_help` — sorted listing, then per-command
-/// help lines.
+/// `BKE_blender_cli_command_print_help` — sorted two-pass listing:
+/// commands, then duplicates, verbatim.
 pub fn bke_blender_cli_command_print_help() -> String {
     let mut handlers = cli_command_handlers().lock().unwrap();
     handlers.sort_by(|a, b| a.id.cmp(&b.id));
     let mut out = String::new();
-    out.push_str("convenience arguments:\n");
-    for cmd in handlers.iter() {
-        out.push_str(&format!("\t{}\n", cmd.id));
-    }
-    for cmd in handlers.iter() {
-        for line in &cmd.help {
-            out.push_str(&format!("{}\n", line));
+    for pass in 0..2 {
+        out.push_str(if pass == 0 {
+            "Blender Command Listing:\n"
+        } else {
+            "Duplicate Command Listing (ignored):\n"
+        });
+        let show_duplicates = pass > 0;
+        let mut found = false;
+        let mut has_duplicate = false;
+        for cmd in handlers.iter() {
+            if cmd.is_duplicate {
+                has_duplicate = true;
+            }
+            if cmd.is_duplicate != show_duplicates {
+                continue;
+            }
+            out.push_str(&format!("\t{}\n", cmd.id));
+            found = true;
+        }
+        if !found {
+            out.push_str("\tNone found\n");
+        }
+        if pass == 0 && !has_duplicate {
+            break;
         }
     }
     out
+}
+
+/// `BKE_blender_cli_command_free_all`.
+pub fn bke_blender_cli_command_free_all() {
+    cli_command_handlers().lock().unwrap().clear();
 }
