@@ -19,6 +19,7 @@ pub mod speaker;
 pub mod action_bones;
 pub mod action_mirror;
 pub mod addon;
+pub mod blender_copybuffer;
 pub mod anim_data_bmain_utils;
 pub mod appdir;
 pub mod armature_selection;
