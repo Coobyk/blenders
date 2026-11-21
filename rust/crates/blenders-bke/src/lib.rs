@@ -261,3 +261,4 @@ pub mod fcurve;
 pub mod mesh_legacy_convert;
 pub mod nla;
 pub mod pointcache;
+pub mod anim_sys;
