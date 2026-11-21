@@ -6,6 +6,7 @@
 pub mod id;
 pub mod collection_types;
 pub mod action_types;
+pub mod anim_enums;
 pub mod anim_types;
 pub mod id_enums;
 pub mod layer_types;

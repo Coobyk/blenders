@@ -4,40 +4,20 @@
 use crate::id::{ID, NIL};
 use blenders_bli::listbase::ListBase;
 
-/* Enum placeholders from `DNA_anim_enums.h`/`BKE_fcurve.hh` — kept as
-   integer typedefs to be replaced when those headers are ported. */
+pub use crate::anim_enums::{
+    AnimDataFlag, DriverFlags, DriverTargetContextProperty, DriverTargetFlag,
+    DriverTargetOptions, DriverTargetRotationMode, DriverTargetTransformChannels, DriverTypes,
+    DriverVarFlags, DriverVarTypes, FCurveColoring, FCurveExtend, FCurveFlags, FCurveSmoothing,
+    FModCyclingModes, FModGeneratorFunctions, FModGeneratorModes, FModNoiseModifications,
+    InsertKeyFlags, KsSettings, KspGrouping, NlaStripBlendMode, NlaStripExtrapolateMode,
+    NlaStripFlag, NlaStripType, NlaTrackFlag,
+};
 pub type FModifierTypes = i16;
-pub type FModifierFlags = u8;
-pub type FModGeneratorModes = i16;
-pub type FModGeneratorFlags = i16;
-pub type FModGeneratorFunctions = i16;
-pub type FModCyclingModes = i16;
-pub type FModLimitFlags = i16;
-pub type FModNoiseModifications = i16;
-pub type FModSteppedFlags = i16;
-pub type DriverTargetTransformChannels = i16;
-pub type DriverTargetRotationMode = i16;
-pub type DriverTargetFlag = i16;
-pub type DriverTargetOptions = i16;
-pub type DriverTargetContextProperty = i16;
-pub type DriverVarTypes = i16;
-pub type DriverVarFlags = i16;
-pub type DriverTypes = i16;
-pub type DriverFlags = i16;
-pub type FCurveFlags = i16;
-pub type FCurveExtend = i16;
-pub type FCurveSmoothing = i16;
-pub type FCurveColoring = i16;
-pub type NlaStripBlendMode = i16;
-pub type NlaStripExtrapolateMode = i16;
-pub type NlaStripType = i16;
-pub type NlaStripFlag = i16;
-pub type NlaTrackFlag = i16;
-pub type KspGrouping = i16;
+pub type FModifierFlags = i16;
+pub type FModGeneratorFlags = i32;
+pub type FModLimitFlags = i32;
+pub type FModSteppedFlags = i32;
 pub type KspSettings = i16;
-pub type InsertKeyFlags = i32;
-pub type KsSettings = i16;
-pub type AnimDataFlag = i16;
 
 /// `BezTriple` (DNA_curve_types.h) — placeholder until curve types port.
 #[derive(Clone, Copy, Default)]
