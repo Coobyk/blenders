@@ -7,3 +7,4 @@ pub mod bmesh_bisect_plane;
 pub mod bmesh_separate;
 pub mod bmesh_triangulate;
 pub mod bmesh_decimate_dissolve;
+pub mod bmesh_path;
