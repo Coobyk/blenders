@@ -173,3 +173,4 @@ pub mod preview_image;
 pub mod mesh_remesh_voxel;
 pub mod main_namemap;
 pub mod node_socket_value;
+pub mod pbvh_pixels;
