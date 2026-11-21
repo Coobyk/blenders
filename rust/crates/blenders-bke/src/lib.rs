@@ -239,3 +239,4 @@ pub mod fmodifier;
 pub mod ocean;
 pub mod boids;
 pub mod mesh_normals;
+pub mod deform;
