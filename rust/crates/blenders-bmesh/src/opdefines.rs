@@ -1231,7 +1231,7 @@ pub const OPDEF_TRIANGLE_FILL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_triangulate::bmo_triangle_fill_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
