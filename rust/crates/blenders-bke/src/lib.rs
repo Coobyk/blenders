@@ -259,3 +259,4 @@ pub mod pbvh_bmesh;
 pub mod blendfile_link_append;
 pub mod fcurve;
 pub mod mesh_legacy_convert;
+pub mod nla;

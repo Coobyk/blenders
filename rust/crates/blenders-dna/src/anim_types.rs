@@ -324,8 +324,8 @@ impl FCurve {
 pub struct NlaStrip {
     pub next: usize,
     pub prev: usize,
-    /// `ListBaseT<NlaStrip>` children.
-    pub strips: ListBase,
+    /// `ListBaseT<NlaStrip>` children → Vec.
+    pub strips: Vec<NlaStrip>,
     /// `bAction *act`.
     pub act: usize,
     pub action_slot_handle: i32,
@@ -361,7 +361,7 @@ impl Default for NlaStrip {
         Self {
             next: NIL,
             prev: NIL,
-            strips: ListBase::new(),
+            strips: Vec::new(),
             act: NIL,
             action_slot_handle: 0,
             last_slot_identifier: [0; 258],
@@ -393,8 +393,8 @@ impl Default for NlaStrip {
 pub struct NlaTrack {
     pub next: usize,
     pub prev: usize,
-    /// `ListBaseT<NlaStrip>`.
-    pub strips: ListBase,
+    /// `ListBaseT<NlaStrip>` → Vec.
+    pub strips: Vec<NlaStrip>,
     pub flag: NlaTrackFlag,
     pub index: i32,
     /// `char name[64]`.
@@ -405,7 +405,7 @@ impl Default for NlaTrack {
         Self {
             next: NIL,
             prev: NIL,
-            strips: ListBase::new(),
+            strips: Vec::new(),
             flag: 0,
             index: 0,
             name: [0; 64],
@@ -519,8 +519,8 @@ pub struct AnimData {
     pub tmp_slot_handle: i32,
     /// `char tmp_last_slot_identifier[258]`.
     pub tmp_last_slot_identifier: [u8; 258],
-    /// `ListBaseT<NlaTrack>`.
-    pub nla_tracks: ListBase,
+    /// `ListBaseT<NlaTrack>` → Vec.
+    pub nla_tracks: Vec<NlaTrack>,
     /// `NlaTrack *act_track`.
     pub act_track: usize,
     /// `NlaStrip *actstrip`.
@@ -545,7 +545,7 @@ impl Default for AnimData {
             tmpact: NIL,
             tmp_slot_handle: 0,
             tmp_last_slot_identifier: [0; 258],
-            nla_tracks: ListBase::new(),
+            nla_tracks: Vec::new(),
             act_track: NIL,
             actstrip: NIL,
             drivers: ListBase::new(),
