@@ -210,3 +210,4 @@ pub mod attribute;
 pub mod mesh_attributes;
 pub mod attribute_access;
 pub mod compositor;
+pub mod volume_grid;
