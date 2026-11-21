@@ -60,6 +60,7 @@ pub mod curve_convert;
 pub mod curve_catmull_rom;
 pub mod curve_bevel;
 pub mod curves_utils;
+pub mod volume_grid_file_cache;
 pub mod curve_poly;
 pub mod wm_runtime;
 pub mod subdiv_ccg_mask;
