@@ -9,6 +9,7 @@ pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
 pub mod idprop;
 pub mod kelvinlet;
+pub mod ocean_spectrum;
 pub mod idtype;
 pub mod speaker;
 pub mod action_bones;
