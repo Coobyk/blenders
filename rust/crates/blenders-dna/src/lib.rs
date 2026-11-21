@@ -7,6 +7,7 @@ pub mod id;
 pub mod collection_types;
 pub mod id_enums;
 pub mod layer_types;
+pub mod material_types;
 pub mod vec_types;
 pub mod customdata_types;
 pub mod meshdata_types;
