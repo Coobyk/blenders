@@ -56,6 +56,7 @@ pub mod subdiv_stats;
 pub mod subdiv_topology;
 pub mod editlattice;
 pub mod lib_id_eval;
+pub mod lib_override_proxy_conversion;
 pub mod lib_id_remapper;
 pub mod main_invariants;
 pub mod multires_reshape_apply_base;
