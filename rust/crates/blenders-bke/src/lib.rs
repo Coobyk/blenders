@@ -5,6 +5,7 @@
 
 pub mod anonymous_attribute_id;
 pub mod geometry_components;
+pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
 pub mod idprop;
 pub mod idtype;
