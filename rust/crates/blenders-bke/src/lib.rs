@@ -219,3 +219,4 @@ pub mod tracking_auto;
 pub mod particle_distribute;
 pub mod curveprofile;
 pub mod effect;
+pub mod geometry_compare;
