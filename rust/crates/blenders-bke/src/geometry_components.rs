@@ -347,3 +347,45 @@ impl GeometryComponentEditData {
         !self.deform_verts.is_empty() || !self.crease_verts.is_empty() || !self.crease_edges.is_empty()
     }
 }
+
+/// `mesh_normals_varray` — normals per domain as a plain `Vec<Vec3>`
+/// (`VArray` → `Vec` here). `adapt_face_to_corner` is `attributes().adapt_
+/// domain(face→corner)` — the attribute accessor system is PORT_PENDING, so
+/// callers inject it until it lands.
+///
+/// `face_normals`/`vert_normals` are the `_true` variants when `true_normals`,
+/// else the computed caches — the caller picks the mesh's arrays.
+pub fn mesh_normals_varray(
+    face_normals: &[blenders_math::vector::Vec3],
+    vert_normals: &[blenders_math::vector::Vec3],
+    edges: &[[i32; 2]],
+    corner_normals: &[blenders_math::vector::Vec3],
+    mask: &blenders_bli::index_mask::IndexMask,
+    domain: crate::attribute_legacy_convert::AttrDomain,
+    no_corner_normals: bool,
+    true_normals: bool,
+    adapt_face_to_corner: &mut dyn FnMut(&[blenders_math::vector::Vec3]) -> Vec<blenders_math::vector::Vec3>,
+) -> Vec<blenders_math::vector::Vec3> {
+    let _ = true_normals; /* caller already resolved _true vs cached. */
+    match domain {
+        crate::attribute_legacy_convert::AttrDomain::Face => face_normals.to_vec(),
+        crate::attribute_legacy_convert::AttrDomain::Point => vert_normals.to_vec(),
+        crate::attribute_legacy_convert::AttrDomain::Edge => {
+            let mut edge_normals = vec![blenders_math::vector::Vec3::ZERO; mask.min_array_size() as usize];
+            for i in mask.iter() {
+                let e = edges[i as usize];
+                let n = (vert_normals[e[0] as usize] + vert_normals[e[1] as usize]) * 0.5;
+                edge_normals[i as usize] = n.normalized();
+            }
+            edge_normals
+        }
+        crate::attribute_legacy_convert::AttrDomain::Corner => {
+            if no_corner_normals || true_normals {
+                adapt_face_to_corner(face_normals)
+            } else {
+                corner_normals.to_vec()
+            }
+        }
+        _ => Vec::new(), /* `default: return {};` */
+    }
+}
