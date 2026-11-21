@@ -294,3 +294,4 @@ pub mod particle;
 pub mod particle_system;
 pub mod lib_override;
 pub mod grease_pencil;
+pub mod scene;
