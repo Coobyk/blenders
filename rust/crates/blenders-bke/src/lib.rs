@@ -7,6 +7,7 @@ pub mod anonymous_attribute_id;
 pub mod file_handler;
 pub mod freestyle;
 pub mod geometry_components;
+pub mod geometry_component_edit_data;
 pub mod geometry_set_instances;
 pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
