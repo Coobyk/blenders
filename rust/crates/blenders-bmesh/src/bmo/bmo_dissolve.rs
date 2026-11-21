@@ -429,3 +429,160 @@ pub fn bmo_dissolve_edges_exec(bm: &mut BMesh, op: &mut BMOperator) {
         }
     }
 }
+
+const EDGE_MARK2: u8 = 1;
+const EDGE_COLLAPSE: u8 = 2;
+
+/// `bm_mesh_edge_collapse_flagged` — collapse EDGE_COLLAPSE-flagged edges.
+fn bm_mesh_edge_collapse_flagged(bm: &mut BMesh, flag: i32, oflag: u8) {
+    let mut cop = bmo_op_init(bm, &crate::opdefines::OPDEF_COLLAPSE, flag);
+    if let Some(si) = cop.slots_in.iter().position(|s| s.name == "edges") {
+        cop.slots_in[si].buf = crate::iterators::EdgesOfMesh::new(bm)
+            .filter(|&e| bm.edge(e).head.api_flag & oflag != 0)
+            .map(|e| (crate::BM_EDGE, e))
+            .collect();
+    }
+    if let Some(si) = cop.slots_in.iter().position(|s| s.name == "uvs") {
+        cop.slots_in[si].b = true;
+    }
+    bmo_op_exec(bm, &mut cop, crate::bmo::bmo_removedoubles::bmo_collapse_exec);
+    bmo_op_finish(bm, cop);
+}
+
+/// `bmo_dissolve_degenerate_exec` — collapse zero-length edges + clip degenerate ears.
+pub fn bmo_dissolve_degenerate_exec(bm: &mut BMesh, op: &mut BMOperator) {
+    let dist = bmo_slot_float_get(op, false, "dist");
+    let dist_sq = dist * dist;
+
+    bmo_slot_buffer_flag_enable(bm, op, false, "edges", EDGE_MARK2);
+
+    /* collapse zero length edges (also catches zero-area faces) */
+    let mut found = false;
+    for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.edge(e).head.api_flag & EDGE_MARK2 != 0 {
+            let len_sq =
+                (bm.vert(bm.edge(e).v1).co - bm.vert(bm.edge(e).v2).co).length_squared();
+            if len_sq < dist_sq {
+                bm.epool[e].head.api_flag |= EDGE_COLLAPSE;
+                found = true;
+            }
+        }
+        /* clear all loop tags (checked later) */
+        if bm.edge(e).l != BM_NIL {
+            let l_first = bm.edge(e).l;
+            let mut l_iter = l_first;
+            loop {
+                bm.lpool[l_iter].head.hflag &= !crate::BM_ELEM_TAG;
+                l_iter = bm.loo(l_iter).radial_next;
+                if l_iter == l_first {
+                    break;
+                }
+            }
+        }
+    }
+    if found {
+        bm_mesh_edge_collapse_flagged(bm, op.flag, EDGE_COLLAPSE);
+    }
+
+    /* clip degenerate ears from the face */
+    let mut found = false;
+    for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+        if bm.edge(e).l == BM_NIL || bm.edge(e).head.api_flag & EDGE_MARK2 == 0 {
+            continue;
+        }
+        let mut l_first = bm.edge(e).l;
+        let mut l_iter = l_first;
+        loop {
+            let (lp_v, lp_e, lp_f) = (bm.loo(l_iter).v, bm.loo(l_iter).e, bm.loo(l_iter).f);
+            if bm.loo(l_iter).head.hflag & crate::BM_ELEM_TAG == 0 {
+                bm.lpool[l_iter].head.hflag |= crate::BM_ELEM_TAG;
+                let l_prev = bm.loo(l_iter).prev;
+                let l_next = bm.loo(l_iter).next;
+                if bm.edge(bm.loo(l_prev).e).head.api_flag & EDGE_MARK2 != 0
+                    && bm.edge(bm.loo(l_iter).e).head.api_flag & EDGE_COLLAPSE == 0
+                    && bm.edge(bm.loo(l_prev).e).head.api_flag & EDGE_COLLAPSE == 0
+                {
+                    /* test if the face's loop (ear) is degenerate */
+                    let co_v = bm.vert(lp_v).co;
+                    let dir_prev = bm.vert(bm.loo(l_prev).v).co - co_v;
+                    let dir_next = bm.vert(bm.loo(l_next).v).co - co_v;
+                    let len_prev = dir_prev.length();
+                    let len_next = dir_next.length();
+                    if len_prev > f32::EPSILON && len_next > f32::EPSILON {
+                        let dir_prev_n = dir_prev / len_prev;
+                        let dir_next_n = dir_next / len_next;
+                        if (dir_prev_n - dir_next_n).length() * len_prev.min(len_next) <= dist {
+                            let mut reset = false;
+                            if (len_prev - len_next).abs() <= dist {
+                                /* both edges the same length */
+                                if bm.face(lp_f).len == 3 {
+                                    let en = bm.loo(l_next).e;
+                                    bm.epool[en].head.api_flag |= EDGE_COLLAPSE;
+                                    found = true;
+                                } else {
+                                    /* add a joining edge and tag for removal */
+                                    let mut l_split = BM_NIL;
+                                    if crate::mods::bm_face_split(
+                                        bm, lp_f, l_prev, l_next,
+                                        Some(&mut l_split), true,
+                                    ) != BM_NIL
+                                    {
+                                        let es = bm.loo(l_split).e;
+                                        bm.epool[es].head.api_flag |= EDGE_COLLAPSE;
+                                        found = true;
+                                        reset = true;
+                                    }
+                                }
+                            } else if len_prev < len_next {
+                                /* split 'l_iter->e', then join the vert with next */
+                                let mut _e_new = BM_NIL;
+                                crate::mods::bm_edge_split(
+                                    bm, lp_e, lp_v, Some(&mut _e_new),
+                                    len_prev / len_next);
+                                let mut l_split = BM_NIL;
+                                if crate::mods::bm_face_split(
+                                    bm, lp_f, l_prev, l_next,
+                                    Some(&mut l_split), true,
+                                ) != BM_NIL
+                                {
+                                    let es = bm.loo(l_split).e;
+                                    bm.epool[es].head.api_flag |= EDGE_COLLAPSE;
+                                    found = true;
+                                }
+                                reset = true;
+                            } else {
+                                /* len_next < len_prev: split 'l_iter->prev->e' */
+                                let mut _e_new = BM_NIL;
+                                crate::mods::bm_edge_split(
+                                    bm, bm.loo(l_prev).e, lp_v, Some(&mut _e_new),
+                                    len_next / len_prev);
+                                let mut l_split = BM_NIL;
+                                if crate::mods::bm_face_split(
+                                    bm, lp_f, l_prev, l_next,
+                                    Some(&mut l_split), true,
+                                ) != BM_NIL
+                                {
+                                    let es = bm.loo(l_split).e;
+                                    bm.epool[es].head.api_flag |= EDGE_COLLAPSE;
+                                    found = true;
+                                }
+                                reset = true;
+                            }
+                            if reset {
+                                /* can't track position on the radial edge — restart. */
+                                l_first = l_iter;
+                            }
+                        }
+                    }
+                }
+            }
+            l_iter = bm.loo(l_iter).radial_next;
+            if l_iter == l_first {
+                break;
+            }
+        }
+    }
+    if found {
+        bm_mesh_edge_collapse_flagged(bm, op.flag, EDGE_COLLAPSE);
+    }
+}

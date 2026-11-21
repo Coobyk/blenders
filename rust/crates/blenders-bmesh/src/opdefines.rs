@@ -799,7 +799,7 @@ pub const OPDEF_DISSOLVE_DEGENERATE: BMOpDefine = BMOpDefine {
         ("edges", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dissolve::bmo_dissolve_degenerate_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
