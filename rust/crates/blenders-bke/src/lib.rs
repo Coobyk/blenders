@@ -46,6 +46,7 @@ pub mod multires_subdiv;
 pub mod subdiv;
 pub mod text_suggestions;
 pub mod tracking_detect;
+pub mod tracking_plane_tracker;
 pub mod subdiv_deform;
 pub mod cpp_types;
 pub mod mesh_debug;

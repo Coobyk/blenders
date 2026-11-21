@@ -4,11 +4,11 @@
 //! libmv (the detector) and `BKE_tracking_track_add` stay behind closures —
 //! PORT_PENDING until the tracking store + libmv backend land.
 
-use blenders_dna::gpencil_legacy_types::bGPDstroke;
+use blenders_dna::gpencil_legacy_types::{bGPDspoint, bGPDstroke};
 
-/// `check_point_in_stroke` — winding count, odd = inside.
-pub fn check_point_in_stroke(stroke: &bGPDstroke, x: f32, y: f32) -> bool {
-    let points = &stroke.points;
+/// `check_point_in_stroke` — winding count, odd = inside. `points` is the
+/// stroke's point array (the stroke's `points` field is an arena handle).
+pub fn check_point_in_stroke(stroke: &bGPDstroke, points: &[bGPDspoint], x: f32, y: f32) -> bool {
     let mut count = 0i32;
     let mut prev = stroke.totpoints as usize - 1;
     for i in 0..stroke.totpoints as usize {
@@ -24,10 +24,15 @@ pub fn check_point_in_stroke(stroke: &bGPDstroke, x: f32, y: f32) -> bool {
 }
 
 /// `check_point_in_layer` — true when `(x,y)` is inside any stroke of the
-/// layer's frames.
-pub fn check_point_in_layer<'a>(strokes: impl IntoIterator<Item = &'a bGPDstroke>, x: f32, y: f32) -> bool {
+/// layer's frames. `points_of` resolves a stroke's point arena.
+pub fn check_point_in_layer<'a>(
+    strokes: impl IntoIterator<Item = &'a bGPDstroke>,
+    points_of: &dyn Fn(&bGPDstroke) -> &[bGPDspoint],
+    x: f32,
+    y: f32,
+) -> bool {
     for stroke in strokes {
-        if check_point_in_stroke(stroke, x, y) {
+        if check_point_in_stroke(stroke, points_of(stroke), x, y) {
             return true;
         }
     }
