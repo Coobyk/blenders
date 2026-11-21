@@ -27,6 +27,9 @@ pub struct AnnotationStore {
     pub points: Vec<bGPDspoint>,
     pub dverts: Vec<MDeformVert>,
     pub triangles: Vec<bGPDtriangle>,
+    /// `bGPdata` active-layer handle (runtime; C re-derives it via
+    /// GP_LAYER_ACTIVE scans).
+    pub actlayer: usize,
 }
 
 /// `BKE_annotations_free_point_weights` — `MDeformVert.dw` drop.
@@ -77,7 +80,11 @@ pub fn annotations_free_frames(store: &mut AnnotationStore, gpl: &mut bGPDlayer)
     let mut idx = lb_get(gpl.frames.first as usize);
     while idx != NIL {
         let next = store.frames[idx].next;
-        annotations_free_strokes(store, &mut store.frames[idx]);
+        {
+            let mut f = std::mem::take(&mut store.frames[idx]);
+            annotations_free_strokes(store, &mut f);
+            store.frames[idx] = f;
+        }
         idx = next;
     }
     gpl.frames.first = lb_put(NIL);
@@ -87,8 +94,8 @@ pub fn annotations_free_frames(store: &mut AnnotationStore, gpl: &mut bGPDlayer)
 
 /// `BKE_annotations_free_layer_masks` — mask list clear.
 pub fn annotations_free_layer_masks(_store: &mut AnnotationStore, gpl: &mut bGPDlayer) {
-    gpl.masks.first = lb_put(NIL);
-    gpl.masks.last = lb_put(NIL);
+    gpl.mask_layers.first = lb_put(NIL);
+    gpl.mask_layers.last = lb_put(NIL);
 }
 
 /// `BKE_annotations_free_layers` — full layer teardown.
@@ -96,20 +103,24 @@ pub fn annotations_free_layers(store: &mut AnnotationStore, gpd: &mut bGPdata) {
     let mut idx = lb_get(gpd.layers.first as usize);
     while idx != NIL {
         let next = store.layers[idx].next;
-        annotations_free_frames(store, &mut store.layers[idx]);
-        annotations_free_layer_masks(store, &mut store.layers[idx]);
+        {
+            let mut l = std::mem::take(&mut store.layers[idx]);
+            annotations_free_frames(store, &mut l);
+            annotations_free_layer_masks(store, &mut l);
+            store.layers[idx] = l;
+        }
         idx = next;
     }
     gpd.layers.first = lb_put(NIL);
     gpd.layers.last = lb_put(NIL);
-    gpd.actlayer = NIL;
+    store.actlayer = NIL;
 }
 
 /// `BKE_annotations_free_data` — layers + legacy palettes.
 pub fn annotations_free_data(store: &mut AnnotationStore, gpd: &mut bGPdata) {
     annotations_free_layers(store, gpd);
-    gpd.palette.first = lb_put(NIL);
-    gpd.palette.last = lb_put(NIL);
+    gpd.palettes.first = lb_put(NIL);
+    gpd.palettes.last = lb_put(NIL);
 }
 
 /// `BKE_annotations_tag` — `gpd->flag |= GP_DATA_CACHE_IS_DIRTY`.
@@ -171,7 +182,11 @@ pub fn annotations_frame_addnew(store: &mut AnnotationStore, gpl_idx: usize, cfr
             break;
         }
         if f > cframe {
-            frames_insertlinkbefore(store, &mut store.layers[gpl_idx], gf, gpf);
+            {
+                let mut l = std::mem::take(&mut store.layers[gpl_idx]);
+                frames_insertlinkbefore(store, &mut l, gf, gpf);
+                store.layers[gpl_idx] = l;
+            }
             state = 1;
             break;
         }
@@ -182,7 +197,11 @@ pub fn annotations_frame_addnew(store: &mut AnnotationStore, gpl_idx: usize, cfr
         store.frames.pop();
         gpf = gf;
     } else if state == 0 {
-        frames_addtail(store, &mut store.layers[gpl_idx], gpf);
+        {
+            let mut l = std::mem::take(&mut store.layers[gpl_idx]);
+            frames_addtail(store, &mut l, gpf);
+            store.layers[gpl_idx] = l;
+        }
     }
     gpf
 }
@@ -203,7 +222,7 @@ pub fn gpencil_stroke_weights_duplicate(store: &mut AnnotationStore, src: &bGPDs
 /// `BKE_gpencil_stroke_duplicate` — full copy (points, weights, tri, curve).
 pub fn gpencil_stroke_duplicate(store: &mut AnnotationStore, src_idx: usize, dup_points: bool, dup_curve: bool) -> usize {
     let src = store.strokes[src_idx].clone();
-    let mut dst = src;
+    let mut dst = src.clone();
     dst.next = NIL;
     dst.prev = NIL;
     if dup_points {
@@ -211,7 +230,7 @@ pub fn gpencil_stroke_duplicate(store: &mut AnnotationStore, src_idx: usize, dup
         if src.points != NIL {
             let base = store.points.len();
             for i in 0..n {
-                store.points.push(store.points[src.points + i]);
+                store.points.push(store.points[src.points + i].clone());
             }
             dst.points = base;
         }
@@ -220,7 +239,7 @@ pub fn gpencil_stroke_duplicate(store: &mut AnnotationStore, src_idx: usize, dup
             let tn = src.tot_triangles.max(0) as usize;
             let base = store.triangles.len();
             for i in 0..tn {
-                store.triangles.push(store.triangles[src.triangles + i]);
+                store.triangles.push(store.triangles[src.triangles + i].clone());
             }
             dst.triangles = base;
         }
@@ -257,7 +276,7 @@ fn strokes_addtail(store: &mut AnnotationStore, gpf_idx: usize, s_idx: usize) {
 /// `BKE_annotations_frame_duplicate` — strokes dup'd when `dup_strokes`.
 pub fn annotations_frame_duplicate(store: &mut AnnotationStore, gpf_src: usize, dup_strokes: bool) -> usize {
     let src = store.frames[gpf_src].clone();
-    let mut dst = src;
+    let mut dst = src.clone();
     dst.next = NIL;
     dst.prev = NIL;
     dst.strokes.first = NIL as *mut blenders_bli::listbase::Link;
@@ -287,12 +306,20 @@ pub fn annotations_frame_addcopy(store: &mut AnnotationStore, gpl_idx: usize, cf
     while gf != NIL {
         let f = store.frames[gf].framenum;
         if f > cframe {
-            frames_insertlinkbefore(store, &mut store.layers[gpl_idx], gf, new_frame);
+            {
+                let mut l = std::mem::take(&mut store.layers[gpl_idx]);
+                frames_insertlinkbefore(store, &mut l, gf, new_frame);
+                store.layers[gpl_idx] = l;
+            }
             found = true;
             break;
         }
         if f == cframe {
-            annotations_free_strokes(store, &mut store.frames[new_frame]);
+            {
+                let mut f = std::mem::take(&mut store.frames[new_frame]);
+                annotations_free_strokes(store, &mut f);
+                store.frames[new_frame] = f;
+            }
             /* C deletes the frame — mark it dead (index stays valid). */
             store.frames[new_frame] = bGPDframe::default();
             return gf;
@@ -300,7 +327,11 @@ pub fn annotations_frame_addcopy(store: &mut AnnotationStore, gpl_idx: usize, cf
         gf = store.frames[gf].next;
     }
     if !found {
-        frames_addtail(store, &mut store.layers[gpl_idx], new_frame);
+        {
+            let mut l = std::mem::take(&mut store.layers[gpl_idx]);
+            frames_addtail(store, &mut l, new_frame);
+            store.layers[gpl_idx] = l;
+        }
     }
     store.frames[new_frame].framenum = cframe;
     new_frame
@@ -471,13 +502,21 @@ pub fn annotations_layer_frames_sort(store: &mut AnnotationStore, gpl_idx: usize
 }
 
 /// `BKE_annotations_layer_active_get`.
-pub fn annotations_layer_active_get(gpd: &bGPdata) -> usize {
-    gpd.actlayer
+pub fn annotations_layer_active_get(store: &AnnotationStore) -> usize {
+    store.actlayer
 }
 
-/// `BKE_annotations_layer_active_set`.
-pub fn annotations_layer_active_set(gpd: &mut bGPdata, gpl: usize) {
-    gpd.actlayer = gpl;
+/// `BKE_annotations_layer_active_set` — sets the handle plus the
+/// `GP_LAYER_ACTIVE` flag (cleared elsewhere).
+pub fn annotations_layer_active_set(store: &mut AnnotationStore, gpl: usize) {
+    store.actlayer = gpl;
+    for (i, l) in store.layers.iter_mut().enumerate() {
+        if i == gpl {
+            l.flag |= GP_LAYER_ACTIVE;
+        } else {
+            l.flag &= !GP_LAYER_ACTIVE;
+        }
+    }
 }
 
 /// `BKE_annotations_layer_named_get` — layer by `info` name.

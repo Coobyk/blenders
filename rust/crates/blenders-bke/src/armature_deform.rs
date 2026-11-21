@@ -12,7 +12,27 @@ use blenders_math::matrix::{Mat3, Mat4};
 use blenders_math::quaternion::{
     add_weighted_dq_dq_pivot, mul_v3m3_dq, normalize_dq, DualQuat,
 };
-use blenders_math::vector::Vec3;
+use blenders_math::vector::{Vec3, Vec4};
+
+/// `[[f32; 4]; 4]` DNA matrix → math `Mat4`.
+fn mat4_of(a: &[[f32; 4]; 4]) -> Mat4 {
+    Mat4::from_cols(
+        Vec4::new(a[0][0], a[0][1], a[0][2], a[0][3]),
+        Vec4::new(a[1][0], a[1][1], a[1][2], a[1][3]),
+        Vec4::new(a[2][0], a[2][1], a[2][2], a[2][3]),
+        Vec4::new(a[3][0], a[3][1], a[3][2], a[3][3]),
+    )
+}
+
+/// `vec_types::DualQuat` → math `DualQuat`.
+fn dq_of(a: &blenders_dna::vec_types::DualQuat) -> DualQuat {
+    DualQuat {
+        quat: blenders_math::quaternion::Quaternion::new(a.quat[0], a.quat[1], a.quat[2], a.quat[3]),
+        trans: blenders_math::quaternion::Quaternion::new(a.trans[0], a.trans[1], a.trans[2], a.trans[3]),
+        scale: mat4_of(&a.scale),
+        scale_weight: a.scale_weight,
+    }
+}
 
 /// `MAX_BBONE_SUBDIV`.
 pub const MAX_BBONE_SUBDIV: usize = 8;
@@ -77,7 +97,7 @@ fn bbone_segment_bsp_signed_distance(b: &BPoseChannelBboneSegmentBoundary, co: V
 /// `runtime.bbone_deform_mats[0]` (inverse world→bone-space matrix).
 fn find_bbone_segment_index_straight(
     bone: &Bone,
-    mat0: &Mat4,
+    mat0: &[[f32; 4]; 4],
     co: Vec3,
 ) -> (i32, f32) {
     let m = mat0;
@@ -185,11 +205,11 @@ impl BoneDeformLinearMixer {
         Self { position_delta: Vec3::ZERO, deform: Mat3::ZERO }
     }
     /// `accumulate` — `transform_point(pose_mat, co) - co` weighted.
-    pub fn accumulate(&mut self, pose_mat: &Mat4, co: Vec3, weight: f32, full_deform: bool) {
-        self.position_delta += (*pose_mat * co.extend(1.0)).xyz() * weight
-            - co * weight;
+    pub fn accumulate(&mut self, pose_mat: &[[f32; 4]; 4], co: Vec3, weight: f32, full_deform: bool) {
+        let m = mat4_of(pose_mat);
+        self.position_delta += m.transform_point(co) * weight - co * weight;
         if full_deform {
-            self.deform += Mat3::from(*pose_mat) * weight;
+            self.deform = self.deform + Mat3::from(m) * weight;
         }
     }
     /// `accumulate_bbone` — uses `bbone_deform_mats[index + 1]`.
@@ -219,7 +239,14 @@ pub struct BoneDeformDualQuaternionMixer {
 
 impl BoneDeformDualQuaternionMixer {
     pub fn new() -> Self {
-        Self { dq: DualQuat::default() }
+        Self {
+            dq: DualQuat {
+                quat: blenders_math::quaternion::Quaternion::IDENTITY,
+                trans: blenders_math::quaternion::Quaternion::IDENTITY,
+                scale: Mat4::IDENTITY,
+                scale_weight: 0.0,
+            },
+        }
     }
     pub fn accumulate(&mut self, deform_quat: &DualQuat, co: Vec3, weight: f32, full_deform: bool) {
         add_weighted_dq_dq_pivot(&mut self.dq, deform_quat, co, weight, full_deform);
@@ -234,7 +261,7 @@ impl BoneDeformDualQuaternionMixer {
         full_deform: bool,
     ) {
         let quats = &pchan.runtime.bbone_dual_quats;
-        self.accumulate(&quats[index], co, weight, full_deform);
+        self.accumulate(&dq_of(&quats[index]), co, weight, full_deform);
     }
     /// `finalize` → `(delta_co, deform_mat)` from normalized dq.
     pub fn finalize(mut self, co: Vec3, total: f32, armature_weight: f32) -> (Vec3, Mat3) {

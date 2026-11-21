@@ -113,7 +113,7 @@ pub fn bke_light_color(light: &Light, blackbody_to_rgb: &dyn Fn(f32) -> [f32; 4]
     let mut color = Vec3::new(light.r, light.g, light.b);
     if light.mode & LA_USE_TEMPERATURE != 0 {
         let t = blackbody_to_rgb(light.temperature);
-        color *= Vec3::new(t[0], t[1], t[2]);
+        color = Vec3::new(color.x * t[0], color.y * t[1], color.z * t[2]);
     }
     color
 }

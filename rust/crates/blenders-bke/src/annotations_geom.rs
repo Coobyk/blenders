@@ -2,6 +2,7 @@
 //! updates (`BKE_annotation_stroke_geometry_update`).
 
 use blenders_bli::polyfill_2d::polyfill_calc_pub;
+use blenders_dna::id::NIL;
 use blenders_dna::gpencil_legacy_types::{bGPDspoint, bGPDstroke, bGPDtriangle};
 use blenders_math::vector::{Vec2, Vec3};
 
@@ -73,50 +74,55 @@ fn gpencil_calc_stroke_fill_uv(points2d: &[[f32; 2]], gps: &bGPDstroke, minv: [f
     r_uv
 }
 
-/// `stroke_fill_triangulate`.
-pub fn stroke_fill_triangulate(gps: &mut bGPDstroke) {
+/// `stroke_fill_triangulate` — `store` arena holds `gps.points`/
+/// `gps.triangles` as base offsets.
+pub fn stroke_fill_triangulate(store: &mut crate::annotations::AnnotationStore, gps: &mut bGPDstroke) {
     debug_assert!(gps.totpoints >= 3);
     gps.tot_triangles = gps.totpoints - 2;
-    let (points2d, cross) = stroke_2d_flat(&gps.points);
+    let n = gps.totpoints as usize;
+    let (points2d, cross) = stroke_2d_flat(&store.points[gps.points..gps.points + n]);
     let direction = if cross > 0.0 { 1 } else { -1 };
     let tmp_triangles = polyfill_calc_pub(&points2d, direction);
     let uv = gpencil_calc_stroke_fill_uv(&points2d, gps, [-1.0, -1.0], [1.0, 1.0]);
     gps.tot_triangles = tmp_triangles.len() as i32;
     if gps.tot_triangles > 0 {
-        gps.triangles = tmp_triangles
-            .into_iter()
-            .map(|verts| bGPDtriangle { verts })
-            .collect();
+        let base = store.triangles.len();
+        for verts in tmp_triangles {
+            store.triangles.push(bGPDtriangle { verts });
+        }
+        gps.triangles = base;
         for (i, u) in uv.iter().enumerate() {
-            gps.points[i].uv_fill = [u.x, u.y];
+            store.points[gps.points + i].uv_fill = [u.x, u.y];
         }
     } else {
-        gps.triangles = Vec::new();
+        gps.triangles = NIL;
     }
 }
 
 /// `stroke_uv_update` — cumulative length into `uv_fac`.
-fn stroke_uv_update(gps: &mut bGPDstroke) {
+fn stroke_uv_update(store: &mut crate::annotations::AnnotationStore, gps: &mut bGPDstroke) {
     if gps.totpoints == 0 {
         return;
     }
+    let base = gps.points;
+    let n = gps.totpoints as usize;
     let mut totlen = 0.0f32;
-    gps.points[0].uv_fac = totlen;
-    for i in 1..gps.totpoints as usize {
-        let a = Vec3::new(gps.points[i - 1].x, gps.points[i - 1].y, gps.points[i - 1].z);
-        let b = Vec3::new(gps.points[i].x, gps.points[i].y, gps.points[i].z);
+    store.points[base].uv_fac = totlen;
+    for i in 1..n {
+        let a = Vec3::new(store.points[base + i - 1].x, store.points[base + i - 1].y, store.points[base + i - 1].z);
+        let b = Vec3::new(store.points[base + i].x, store.points[base + i].y, store.points[base + i].z);
         totlen += (b - a).length();
-        gps.points[i].uv_fac = totlen;
+        store.points[base + i].uv_fac = totlen;
     }
 }
 
 /// `BKE_annotation_stroke_geometry_update`.
-pub fn bke_annotation_stroke_geometry_update(gps: &mut bGPDstroke) {
+pub fn bke_annotation_stroke_geometry_update(store: &mut crate::annotations::AnnotationStore, gps: &mut bGPDstroke) {
     if gps.totpoints > 2 {
-        stroke_fill_triangulate(gps);
+        stroke_fill_triangulate(store, gps);
     } else {
         gps.tot_triangles = 0;
-        gps.triangles = Vec::new();
+        gps.triangles = NIL;
     }
-    stroke_uv_update(gps);
+    stroke_uv_update(store, gps);
 }

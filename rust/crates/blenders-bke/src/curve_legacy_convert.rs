@@ -10,7 +10,7 @@
 use blenders_dna::curve_enums::*;
 use blenders_dna::curve_types::{Curve, Nurb};
 use blenders_dna::curves_types::*;
-use blenders_dna::vec::Vec3;
+use blenders_math::vector::Vec3;
 
 /// `curve_type_from_legacy`.
 fn curve_type_from_legacy(type_: NurbType) -> CurveType {
