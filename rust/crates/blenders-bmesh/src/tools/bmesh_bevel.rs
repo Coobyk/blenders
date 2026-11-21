@@ -2978,3 +2978,808 @@ fn adjust_offsets(bm: &mut BMesh, bp: &mut BevelParams) {
         }
     }
 }
+
+/* ===== vmesh construction (C ~4345-5250) ===== */
+
+/// `pipe_test` — boundvert whose two ebev edges form a pipe, else None.
+fn pipe_test(bm: &BMesh, bp: &BevelParams, bvi: usize) -> usize {
+    let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+    if vm.count < 3 || vm.count > 4 || bp.bverts[bvi].selcount < 3 || bp.bverts[bvi].selcount > 4 {
+        return BM_NIL;
+    }
+    let mut epipe = BM_NIL;
+    let mut v1 = vm.boundstart;
+    let boundstart = vm.boundstart;
+    let mut dir1 = Vec3::ZERO;
+    let mut dir3 = Vec3::ZERO;
+    let mut v1_found = BM_NIL;
+    loop {
+        let v2 = bp.boundverts[v1].next;
+        let v3 = bp.boundverts[v2].next;
+        if bp.boundverts[v1].ebev != BM_NIL
+            && bp.boundverts[v2].ebev != BM_NIL
+            && bp.boundverts[v3].ebev != BM_NIL
+        {
+            let e1 = bp.bverts[bvi].edges[bp.boundverts[v1].ebev].e;
+            let e3 = bp.bverts[bvi].edges[bp.boundverts[v3].ebev].e;
+            dir1 = bm.vert(bp.bverts[bvi].v).co
+                - bm.vert(other_vert(bm, e1, bp.bverts[bvi].v)).co;
+            dir3 = bm.vert(other_vert(bm, e3, bp.bverts[bvi].v)).co - bm.vert(bp.bverts[bvi].v).co;
+            dir1.normalize();
+            dir3.normalize();
+            if blenders_math::geom::angle_normalized_v3v3(dir1, dir3) < BEVEL_EPSILON_ANG {
+                epipe = bp.boundverts[v1].ebev;
+                v1_found = v1;
+                break;
+            }
+        }
+        v1 = bp.boundverts[v1].next;
+        if v1 == boundstart {
+            break;
+        }
+    }
+    let _ = epipe;
+    if v1_found == BM_NIL {
+        return BM_NIL;
+    }
+    for ei in 0..bp.bverts[bvi].edgecount as usize {
+        let fnext = bp.bverts[bvi].edges[ei].fnext;
+        if fnext != BM_NIL && dir1.dot(bm.face(fnext).no).abs() > BEVEL_EPSILON_BIG {
+            return BM_NIL;
+        }
+    }
+    v1_found
+}
+
+/// `new_adj_vmesh` — empty VMesh with the canonical-index size.
+fn new_adj_vmesh(count: i32, seg: i32, boundstart: usize) -> VMesh {
+    VMesh {
+        mesh: vec![
+            NewVert {
+                v: BM_NIL,
+                co: Vec3::ZERO
+            };
+            (count * (1 + seg / 2) * (1 + seg)) as usize
+        ],
+        boundstart,
+        count,
+        seg,
+        mesh_kind: MeshKind::Adj,
+    }
+}
+
+/// `add_new_bound_vert` variant for a standalone VMesh (cube-corner builders).
+fn add_bound_vert_vm(bp: &mut BevelParams, vm: &mut VMesh, co: Vec3) -> usize {
+    let bndv = BoundVert {
+        nv: NewVert { v: BM_NIL, co },
+        index: vm.count,
+        sinratio: 1.0,
+        ..BoundVert::default()
+    };
+    bp.boundverts.push(bndv);
+    let idx = bp.boundverts.len() - 1;
+    if vm.count == 0 || vm.boundstart == BM_NIL {
+        vm.boundstart = idx;
+        bp.boundverts[idx].next = idx;
+        bp.boundverts[idx].prev = idx;
+    } else {
+        let bs = vm.boundstart;
+        let prev = bp.boundverts[bs].prev;
+        bp.boundverts[idx].next = bs;
+        bp.boundverts[idx].prev = prev;
+        bp.boundverts[prev].next = idx;
+        bp.boundverts[bs].prev = idx;
+    }
+    vm.count += 1;
+    idx
+}
+
+/// `mesh_vert_canon` — canonical index for equivalent (i,j,k).
+fn mesh_vert_canon(vm: &VMesh, i: i32, j: i32, k: i32) -> usize {
+    let n = vm.count;
+    let ns = vm.seg;
+    let ns2 = ns / 2;
+    let odd = ns % 2;
+    debug_assert!(0 <= i && i <= n && 0 <= j && j <= ns && 0 <= k && k <= ns);
+    if odd == 0 && j == ns2 && k == ns2 {
+        return mesh_vert(vm, 0, j, k);
+    }
+    if j <= ns2 - 1 + odd && k <= ns2 {
+        return mesh_vert(vm, i, j, k);
+    }
+    if k <= ns2 {
+        return mesh_vert(vm, (i + n - 1) % n, k, ns - j);
+    }
+    mesh_vert(vm, (i + 1) % n, ns - k, j)
+}
+
+/// `is_canon`.
+fn is_canon(vm: &VMesh, i: i32, j: i32, k: i32) -> bool {
+    let ns2 = vm.seg / 2;
+    if vm.seg % 2 == 1 {
+        return j <= ns2 && k <= ns2;
+    }
+    (j < ns2 && k <= ns2) || (j == ns2 && k == ns2 && i == 0)
+}
+
+/// `vmesh_copy_equiv_verts`.
+fn vmesh_copy_equiv_verts(vm: &mut VMesh) {
+    let n = vm.count;
+    let ns = vm.seg;
+    let ns2 = ns / 2;
+    for i in 0..n {
+        for j in 0..=ns2 {
+            for k in 0..=ns {
+                if is_canon(vm, i, j, k) {
+                    continue;
+                }
+                let c = mesh_vert_canon(vm, i, j, k);
+                let idx = mesh_vert(vm, i, j, k);
+                vm.mesh[idx].co = vm.mesh[c].co;
+                vm.mesh[idx].v = vm.mesh[c].v;
+            }
+        }
+    }
+}
+
+/// `vmesh_center`.
+fn vmesh_center(vm: &VMesh) -> Vec3 {
+    let n = vm.count;
+    let ns2 = vm.seg / 2;
+    if vm.seg % 2 == 1 {
+        let mut cent = Vec3::ZERO;
+        for i in 0..n {
+            cent += vm.mesh[mesh_vert(vm, i, ns2, ns2)].co;
+        }
+        cent / n as f32
+    } else {
+        vm.mesh[mesh_vert(vm, 0, ns2, ns2)].co
+    }
+}
+
+/// `avg4`.
+fn avg4(v0: &NewVert, v1: &NewVert, v2: &NewVert, v3: &NewVert) -> Vec3 {
+    (v0.co + v1.co + v2.co + v3.co) * 0.25
+}
+
+/// `sabin_gamma`.
+fn sabin_gamma(n: i32) -> f32 {
+    if n < 3 {
+        return 0.0;
+    }
+    match n {
+        3 => return 0.065247584,
+        4 => return 0.25,
+        5 => return 0.401983447,
+        6 => return 0.523423277,
+        _ => {}
+    }
+    let n = n as f64;
+    let k = (std::f64::consts::PI / n).cos();
+    let k2 = k * k;
+    let k4 = k2 * k2;
+    let k6 = k4 * k2;
+    let y = (3f64.sqrt() * (64.0 * k6 - 144.0 * k4 + 135.0 * k2 - 27.0).sqrt() + 9.0 * k)
+        .powf(1.0 / 3.0);
+    let x = 0.480749856769136 * y - (0.231120424783545 * (12.0 * k2 - 9.0)) / y;
+    ((k * x + 2.0 * k2 - 1.0) / (x * x * (k * x + 1.0))) as f32
+}
+
+/// `fill_vmesh_fracs` — cumulative arc-length fractions along boundary i.
+fn fill_vmesh_fracs(vm: &VMesh, frac: &mut [f32], i: i32) {
+    let ns = vm.seg;
+    let mut total = 0.0f32;
+    frac[0] = 0.0;
+    for k in 0..ns as usize {
+        total += (vm.mesh[mesh_vert(vm, i, 0, k as i32)].co
+            - vm.mesh[mesh_vert(vm, i, 0, k as i32 + 1)].co)
+            .length();
+        frac[k + 1] = total;
+    }
+    if total > 0.0 {
+        for k in 1..=ns as usize {
+            frac[k] /= total;
+        }
+    } else {
+        frac[ns as usize] = 1.0;
+    }
+}
+
+/// `fill_profile_fracs`.
+fn fill_profile_fracs(bp: &BevelParams, bndv: &BoundVert, frac: &mut [f32], ns: i32) {
+    let mut total = 0.0f32;
+    frac[0] = 0.0;
+    let mut co = bndv.nv.co;
+    for k in 0..ns as usize {
+        let nextco = get_profile_point(bp, &bndv.profile, k as i32 + 1, ns);
+        total += (co - nextco).length();
+        frac[k + 1] = total;
+        co = nextco;
+    }
+    if total > 0.0 {
+        for k in 1..=ns as usize {
+            frac[k] /= total;
+        }
+    } else {
+        frac[ns as usize] = 1.0;
+    }
+}
+
+/// `interp_range` — segment index containing fraction f + residual.
+fn interp_range(frac: &[f32], n: i32, f: f32) -> (i32, f32) {
+    for i in 0..n as usize {
+        if f <= frac[i + 1] {
+            let mut i = i as i32;
+            let mut rest = f - frac[i as usize];
+            if rest == 0.0 {
+                rest = 0.0;
+            } else {
+                rest /= frac[i as usize + 1] - frac[i as usize];
+            }
+            if i == n - 1 && rest == 1.0 {
+                i = n;
+            }
+            return (i, rest);
+        }
+    }
+    (n, 0.0)
+}
+
+/// `interp_vmesh` — resample an ADJ vmesh to nseg.
+fn interp_vmesh(bp: &BevelParams, vm_in: &VMesh, nseg: i32) -> VMesh {
+    let n_bndv = vm_in.count;
+    let ns_in = vm_in.seg;
+    let nseg2 = nseg / 2;
+    let odd = nseg % 2;
+    let mut vm_out = new_adj_vmesh(n_bndv, nseg, vm_in.boundstart);
+    let mut prev_frac = vec![0.0f32; ns_in as usize + 1];
+    let mut frac = vec![0.0f32; ns_in as usize + 1];
+    let mut new_frac = vec![0.0f32; nseg as usize + 1];
+    let mut prev_new_frac = vec![0.0f32; nseg as usize + 1];
+    fill_vmesh_fracs(vm_in, &mut prev_frac, n_bndv - 1);
+    let mut bndv = vm_in.boundstart;
+    let start = bndv;
+    fill_profile_fracs(
+        bp,
+        &bp.boundverts[bp.boundverts[bndv].prev],
+        &mut prev_new_frac,
+        nseg,
+    );
+    for i in 0..n_bndv {
+        fill_vmesh_fracs(vm_in, &mut frac, i);
+        fill_profile_fracs(bp, &bp.boundverts[bndv], &mut new_frac, nseg);
+        for j in 0..=(nseg2 - 1 + odd) {
+            for k in 0..=nseg2 {
+                let mut fraction = new_frac[k as usize];
+                let (k_in, restk) = interp_range(&frac, ns_in, fraction);
+                fraction = prev_new_frac[(nseg - j) as usize];
+                let (k_in_prev, restkprev) = interp_range(&prev_frac, ns_in, fraction);
+                let mut j_in = ns_in - k_in_prev;
+                let mut restj = -restkprev;
+                if restj > -BEVEL_EPSILON {
+                    restj = 0.0;
+                } else {
+                    j_in -= 1;
+                    restj = 1.0 + restj;
+                }
+                let co = if restj < BEVEL_EPSILON && restk < BEVEL_EPSILON {
+                    vm_in.mesh[mesh_vert_canon(vm_in, i, j_in, k_in)].co
+                } else {
+                    let j0inc = if restj < BEVEL_EPSILON || j_in == ns_in { 0 } else { 1 };
+                    let k0inc = if restk < BEVEL_EPSILON || k_in == ns_in { 0 } else { 1 };
+                    let quad = [
+                        vm_in.mesh[mesh_vert_canon(vm_in, i, j_in, k_in)].co,
+                        vm_in.mesh[mesh_vert_canon(vm_in, i, j_in, k_in + k0inc)].co,
+                        vm_in.mesh[mesh_vert_canon(vm_in, i, j_in + j0inc, k_in + k0inc)].co,
+                        vm_in.mesh[mesh_vert_canon(vm_in, i, j_in + j0inc, k_in)].co,
+                    ];
+                    blenders_math::geom::interp_bilinear_quad_v3(&quad, restk, restj)
+                };
+                let idx = mesh_vert(&vm_out, i, j, k);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+        bndv = bp.boundverts[bndv].next;
+        prev_frac.copy_from_slice(&frac);
+        prev_new_frac.copy_from_slice(&new_frac);
+    }
+    let _ = start;
+    if odd == 0 {
+        let center = vmesh_center(vm_in);
+        let idx = mesh_vert(&vm_out, 0, nseg2, nseg2);
+        vm_out.mesh[idx].co = center;
+    }
+    vmesh_copy_equiv_verts(&mut vm_out);
+    vm_out
+}
+
+/// `cubic_subdiv` — one cubic-subdivision step doubling segments.
+fn cubic_subdiv(bp: &BevelParams, vm_in: &VMesh) -> VMesh {
+    let n_boundary = vm_in.count;
+    let ns_in = vm_in.seg;
+    let ns_in2 = ns_in / 2;
+    debug_assert!(ns_in % 2 == 0);
+    let ns_out = 2 * ns_in;
+    let mut vm_out = new_adj_vmesh(n_boundary, ns_out, vm_in.boundstart);
+    let mut co;
+    for i in 0..n_boundary {
+        let idx = mesh_vert(&vm_out, i, 0, 0);
+        vm_out.mesh[idx].co = vm_in.mesh[mesh_vert(vm_in, i, 0, 0)].co;
+        for k in 1..ns_in {
+            co = vm_in.mesh[mesh_vert(vm_in, i, 0, k)].co;
+            if bp.profile_type != BEVEL_PROFILE_CUSTOM {
+                let co1 = vm_in.mesh[mesh_vert(vm_in, i, 0, k - 1)].co;
+                let co2 = vm_in.mesh[mesh_vert(vm_in, i, 0, k + 1)].co;
+                let mut acc = co1 + co2;
+                acc += co * -2.0;
+                co += acc * (-1.0 / 6.0);
+            }
+            let idx = mesh_vert_canon(&vm_out, i, 0, 2 * k);
+            vm_out.mesh[idx].co = co;
+        }
+    }
+    let mut bndv = vm_out.boundstart;
+    for i in 0..n_boundary {
+        for k in (1..ns_out).step_by(2) {
+            co = get_profile_point(bp, &bp.boundverts[bndv].profile, k, ns_out);
+            if bp.profile_type != BEVEL_PROFILE_CUSTOM {
+                let co1 = vm_out.mesh[mesh_vert_canon(&vm_out, i, 0, k - 1)].co;
+                let co2 = vm_out.mesh[mesh_vert_canon(&vm_out, i, 0, k + 1)].co;
+                let mut acc = co1 + co2;
+                acc += co * -2.0;
+                co += acc * (-1.0 / 6.0);
+            }
+            let idx = mesh_vert_canon(&vm_out, i, 0, k);
+            vm_out.mesh[idx].co = co;
+        }
+        bndv = bp.boundverts[bndv].next;
+    }
+    vmesh_copy_equiv_verts(&mut vm_out);
+    let mut vm_in_mut = vm_in.clone();
+    for i in 0..n_boundary {
+        for k in 0..ns_in {
+            let im = mesh_vert(&vm_in_mut, i, 0, k);
+            vm_in_mut.mesh[im].co = vm_out.mesh[mesh_vert(&vm_out, i, 0, 2 * k)].co;
+        }
+    }
+    vmesh_copy_equiv_verts(&mut vm_in_mut);
+    let vm_in = &vm_in_mut;
+    for i in 0..n_boundary {
+        for j in 0..ns_in2 {
+            for k in 0..ns_in2 {
+                co = avg4(
+                    &vm_in.mesh[mesh_vert(vm_in, i, j, k)],
+                    &vm_in.mesh[mesh_vert(vm_in, i, j, k + 1)],
+                    &vm_in.mesh[mesh_vert(vm_in, i, j + 1, k)],
+                    &vm_in.mesh[mesh_vert(vm_in, i, j + 1, k + 1)],
+                );
+                let idx = mesh_vert(&vm_out, i, 2 * j + 1, 2 * k + 1);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+    }
+    for i in 0..n_boundary {
+        for j in 0..ns_in2 {
+            for k in 1..=ns_in2 {
+                co = avg4(
+                    &vm_in.mesh[mesh_vert(vm_in, i, j, k)],
+                    &vm_in.mesh[mesh_vert(vm_in, i, j + 1, k)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k - 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k + 1)],
+                );
+                let idx = mesh_vert(&vm_out, i, 2 * j + 1, 2 * k);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+    }
+    for i in 0..n_boundary {
+        for j in 1..ns_in2 {
+            for k in 0..ns_in2 {
+                co = avg4(
+                    &vm_in.mesh[mesh_vert(vm_in, i, j, k)],
+                    &vm_in.mesh[mesh_vert(vm_in, i, j, k + 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j - 1, 2 * k + 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k + 1)],
+                );
+                let idx = mesh_vert(&vm_out, i, 2 * j, 2 * k + 1);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+    }
+    let mut gamma = 0.25f32;
+    let mut beta = -gamma;
+    for i in 0..n_boundary {
+        for j in 1..ns_in2 {
+            for k in 1..=ns_in2 {
+                let co1 = avg4(
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j, 2 * k - 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j, 2 * k + 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j - 1, 2 * k)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k)],
+                );
+                let co2 = avg4(
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j - 1, 2 * k - 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k - 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j - 1, 2 * k + 1)],
+                    &vm_out.mesh[mesh_vert_canon(&vm_out, i, 2 * j + 1, 2 * k + 1)],
+                );
+                co = co1;
+                co += co2 * beta;
+                co += vm_in.mesh[mesh_vert(vm_in, i, j, k)].co * gamma;
+                let idx = mesh_vert(&vm_out, i, 2 * j, 2 * k);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+    }
+    vmesh_copy_equiv_verts(&mut vm_out);
+    gamma = sabin_gamma(n_boundary);
+    beta = -gamma;
+    let mut co1 = Vec3::ZERO;
+    let mut co2 = Vec3::ZERO;
+    for i in 0..n_boundary {
+        co1 += vm_out.mesh[mesh_vert(&vm_out, i, ns_in, ns_in - 1)].co;
+        co2 += vm_out.mesh[mesh_vert(&vm_out, i, ns_in - 1, ns_in - 1)].co;
+        co2 += vm_out.mesh[mesh_vert(&vm_out, i, ns_in - 1, ns_in + 1)].co;
+    }
+    co = co1 / n_boundary as f32;
+    co += co2 * (beta / (2.0 * n_boundary as f32));
+    co += vm_in.mesh[mesh_vert(vm_in, 0, ns_in2, ns_in2)].co * gamma;
+    for i in 0..n_boundary {
+        let idx = mesh_vert(&vm_out, i, ns_in, ns_in);
+        vm_out.mesh[idx].co = co;
+    }
+    bndv = vm_out.boundstart;
+    for i in 0..n_boundary {
+        let inext = (i + 1) % n_boundary;
+        for k in 0..=ns_out {
+            co = get_profile_point(bp, &bp.boundverts[bndv].profile, k, ns_out);
+            let idx = mesh_vert(&vm_out, i, 0, k);
+            vm_out.mesh[idx].co = co;
+            if k >= ns_in && k < ns_out {
+                let idx = mesh_vert(&vm_out, inext, ns_out - k, 0);
+                vm_out.mesh[idx].co = co;
+            }
+        }
+        bndv = bp.boundverts[bndv].next;
+    }
+    vm_out
+}
+
+/// `make_cube_corner_square`.
+fn make_cube_corner_square(bp: &mut BevelParams, nseg: i32) -> VMesh {
+    let ns2 = nseg / 2;
+    let mut vm = new_adj_vmesh(3, nseg, BM_NIL);
+    vm.count = 0;
+    for i in 0..3 {
+        let mut co = Vec3::ZERO;
+        co[i as usize] = 1.0;
+        add_bound_vert_vm(bp, &mut vm, co);
+    }
+    for i in 0..3 {
+        for j in 0..=ns2 {
+            for k in 0..=ns2 {
+                if !is_canon(&vm, i, j, k) {
+                    continue;
+                }
+                let mut co = Vec3::ZERO;
+                co[i as usize] = 1.0;
+                co[((i + 1) % 3) as usize] = k as f32 * 2.0 / nseg as f32;
+                co[((i + 2) % 3) as usize] = j as f32 * 2.0 / nseg as f32;
+                let idx = mesh_vert(&vm, i, j, k);
+                vm.mesh[idx].co = co;
+            }
+        }
+    }
+    vmesh_copy_equiv_verts(&mut vm);
+    vm
+}
+
+/// `make_cube_corner_square_in`.
+fn make_cube_corner_square_in(bp: &mut BevelParams, nseg: i32) -> VMesh {
+    let ns2 = nseg / 2;
+    let odd = nseg % 2;
+    let mut vm = new_adj_vmesh(3, nseg, BM_NIL);
+    vm.count = 0;
+    for i in 0..3 {
+        let mut co = Vec3::ZERO;
+        co[i as usize] = 1.0;
+        add_bound_vert_vm(bp, &mut vm, co);
+    }
+    let b = if odd != 0 {
+        2.0 / (2.0 * ns2 as f32 + std::f32::consts::SQRT_2)
+    } else {
+        2.0 / nseg as f32
+    };
+    for i in 0..3 {
+        for k in 0..=ns2 {
+            let mut co = Vec3::ZERO;
+            co[i as usize] = 1.0 - k as f32 * b;
+            co[((i + 1) % 3) as usize] = 0.0;
+            co[((i + 2) % 3) as usize] = 0.0;
+            let idx = mesh_vert(&vm, i, 0, k);
+            vm.mesh[idx].co = co;
+            co[((i + 1) % 3) as usize] = 1.0 - k as f32 * b;
+            co[((i + 2) % 3) as usize] = 0.0;
+            co[i as usize] = 0.0;
+            let idx = mesh_vert(&vm, i, 0, nseg - k);
+            vm.mesh[idx].co = co;
+        }
+    }
+    vm
+}
+
+/// `make_cube_corner_adj_vmesh`.
+fn make_cube_corner_adj_vmesh(bp: &mut BevelParams) -> VMesh {
+    let nseg = bp.seg;
+    let r = bp.pro_super_r;
+    if bp.profile_type != BEVEL_PROFILE_CUSTOM {
+        if r == PRO_SQUARE_R {
+            return make_cube_corner_square(bp, nseg);
+        }
+        if r == PRO_SQUARE_IN_R {
+            return make_cube_corner_square_in(bp, nseg);
+        }
+    }
+    let mut vm0 = new_adj_vmesh(3, 2, BM_NIL);
+    vm0.count = 0;
+    for i in 0..3 {
+        let mut co = Vec3::ZERO;
+        co[i as usize] = 1.0;
+        add_bound_vert_vm(bp, &mut vm0, co);
+    }
+    let mut bndv = vm0.boundstart;
+    for i in 0..3 {
+        let mut coc = Vec3::ZERO;
+        coc[i as usize] = 1.0;
+        coc[((i + 1) % 3) as usize] = 1.0;
+        coc[((i + 2) % 3) as usize] = 0.0;
+        bp.boundverts[bndv].profile.super_r = r;
+        let s = bp.boundverts[bndv].nv.co;
+        let e = bp.boundverts[bp.boundverts[bndv].next].nv.co;
+        bp.boundverts[bndv].profile.start = s;
+        bp.boundverts[bndv].profile.end = e;
+        bp.boundverts[bndv].profile.middle = coc;
+        bp.boundverts[bndv].profile.plane_co = s;
+        bp.boundverts[bndv].profile.plane_no = s.cross(e);
+        bp.boundverts[bndv].profile.proj_dir = bp.boundverts[bndv].profile.plane_no;
+        let mut tmp = bp.boundverts[bndv].clone();
+        calculate_profile(bp, &mut tmp, false, false);
+        bp.boundverts[bndv].profile = tmp.profile;
+        let idx = mesh_vert(&vm0, i, 0, 0);
+        vm0.mesh[idx].co = bp.boundverts[bndv].profile.start;
+        let im = mesh_vert(&vm0, i, 0, 1);
+        vm0.mesh[im].co = get_profile_point(bp, &bp.boundverts[bndv].profile, 1, 2);
+        bndv = bp.boundverts[bndv].next;
+    }
+    let mut co = Vec3::splat(0.5773502691896258);
+    if nseg > 2 {
+        if r > 1.5 {
+            co *= 1.4;
+        } else if r < 0.75 {
+            co *= 0.6;
+        }
+    }
+    let idx = mesh_vert(&vm0, 0, 1, 1);
+    vm0.mesh[idx].co = co;
+    vmesh_copy_equiv_verts(&mut vm0);
+    let mut vm1 = vm0;
+    while vm1.seg < nseg && (vm1.seg * 2) <= nseg {
+        vm1 = cubic_subdiv(bp, &vm1);
+    }
+    if vm1.seg != nseg {
+        vm1 = interp_vmesh(bp, &vm1, nseg);
+    }
+    let ns2 = nseg / 2;
+    for i in 0..3 {
+        for j in 0..=ns2 {
+            for k in 0..=nseg {
+                let idx = mesh_vert(&vm1, i, j, k);
+                snap_to_superellipsoid(&mut vm1.mesh[idx].co, r, false);
+            }
+        }
+    }
+    vm1
+}
+
+/// `tri_corner_test`.
+fn tri_corner_test(bm: &BMesh, bp: &BevelParams, bvi: usize) -> i32 {
+    let mut in_plane_e = 0;
+    if bp.affect_type == BEVEL_AFFECT_VERTICES || bp.profile_type == BEVEL_PROFILE_CUSTOM {
+        return -1;
+    }
+    if bp.bverts[bvi].vmesh.as_ref().unwrap().count != 3 {
+        return 0;
+    }
+    let offset = bp.bverts[bvi].edges[0].offset_l;
+    let mut totang = 0.0f32;
+    for i in 0..bp.bverts[bvi].edgecount as usize {
+        let e = &bp.bverts[bvi].edges[i];
+        let ang = crate::query::bm_edge_calc_face_angle_signed_ex(bm, e.e, 0.0);
+        let absang = ang.abs();
+        if absang <= std::f32::consts::FRAC_PI_4 {
+            in_plane_e += 1;
+        } else if absang >= 3.0 * std::f32::consts::FRAC_PI_4 {
+            return -1;
+        }
+        if e.is_bev && !blenders_math::base::compare_ff(e.offset_l, offset, BEVEL_EPSILON) {
+            return -1;
+        }
+        totang += ang;
+    }
+    if in_plane_e != bp.bverts[bvi].edgecount - 3 {
+        return -1;
+    }
+    let angdiff = (totang.abs() - 3.0 * std::f32::consts::FRAC_PI_2).abs();
+    if (bp.pro_super_r == PRO_SQUARE_R && angdiff > std::f32::consts::PI / 16.0)
+        || angdiff > std::f32::consts::FRAC_PI_4
+    {
+        return -1;
+    }
+    if bp.bverts[bvi].edgecount != 3 || bp.bverts[bvi].selcount != 3 {
+        return 0;
+    }
+    1
+}
+
+/// `tri_corner_adj_vmesh`.
+fn tri_corner_adj_vmesh(bm: &BMesh, bp: &mut BevelParams, bvi: usize) -> VMesh {
+    let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let co0 = bp.boundverts[boundstart].nv.co;
+    let co1 = bp.boundverts[bp.boundverts[boundstart].next].nv.co;
+    let co2 = bp.boundverts[bp.boundverts[bp.boundverts[boundstart].next].next].nv.co;
+    let mat = make_unit_cube_map(co0, co1, co2, bm.vert(bp.bverts[bvi].v).co);
+    let ns = bp.seg;
+    let ns2 = ns / 2;
+    let mut vm = make_cube_corner_adj_vmesh(bp);
+    for i in 0..3 {
+        for j in 0..=ns2 {
+            for k in 0..=ns {
+                let idx = mesh_vert(&vm, i, j, k);
+                let v = vm.mesh[idx].co;
+                vm.mesh[idx].co = blenders_math::matrix_c::mul_v3_m4v3(mat, v);
+            }
+        }
+    }
+    vm
+}
+
+/// `adj_vmesh` — main ADJ vmesh: subdivide from seg-2 seed.
+fn adj_vmesh(bp: &mut BevelParams, bm: &BMesh, bvi: usize) -> VMesh {
+    let n_bndv = bp.bverts[bvi].vmesh.as_ref().unwrap().count;
+    if n_bndv == 3
+        && tri_corner_test(bm, bp, bvi) != -1
+        && bp.pro_super_r != PRO_SQUARE_IN_R
+    {
+        return tri_corner_adj_vmesh(bm, bp, bvi);
+    }
+    let nseg = bp.bverts[bvi].vmesh.as_ref().unwrap().seg;
+    let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let mut vm0 = new_adj_vmesh(n_bndv, 2, boundstart);
+    let mut bndv = boundstart;
+    let mut boundverts_center = Vec3::ZERO;
+    for i in 0..n_bndv {
+        let im0 = mesh_vert(&vm0, i, 0, 0);
+        vm0.mesh[im0].co = bp.boundverts[bndv].nv.co;
+        let im = mesh_vert(&vm0, i, 0, 1);
+        vm0.mesh[im].co = get_profile_point(bp, &bp.boundverts[bndv].profile, 1, 2);
+        boundverts_center += bp.boundverts[bndv].nv.co;
+        bndv = bp.boundverts[bndv].next;
+    }
+    boundverts_center /= n_bndv as f32;
+    let original_vertex = bm.vert(bp.bverts[bvi].v).co;
+    let negative_fullest = (boundverts_center - original_vertex) + boundverts_center;
+    let mut fullness = bp.pro_spacing.fullness as f32;
+    let center_direction = original_vertex - boundverts_center;
+    if center_direction.length_squared() > BEVEL_EPSILON_SQ {
+        if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+            fullness *= 2.0;
+            let im = mesh_vert(&vm0, 0, 1, 1);
+            vm0.mesh[im].co = negative_fullest + center_direction * fullness;
+        } else {
+            let im = mesh_vert(&vm0, 0, 1, 1);
+            vm0.mesh[im].co = boundverts_center + center_direction * fullness;
+        }
+    } else {
+        let im = mesh_vert(&vm0, 0, 1, 1);
+        vm0.mesh[im].co = boundverts_center;
+    }
+    vmesh_copy_equiv_verts(&mut vm0);
+    let mut vm1 = vm0;
+    loop {
+        vm1 = cubic_subdiv(bp, &vm1);
+        if vm1.seg >= nseg {
+            break;
+        }
+    }
+    if vm1.seg != nseg {
+        vm1 = interp_vmesh(bp, &vm1, nseg);
+    }
+    vm1
+}
+
+/// `snap_to_pipe_profile`.
+fn snap_to_pipe_profile(bm: &BMesh, bp: &BevelParams, vpipe: usize, midline: bool, co: &mut Vec3) {
+    let bvi = bp.boundverts[vpipe].bv;
+    let pro = &bp.boundverts[vpipe].profile;
+    let e = bp.boundverts[vpipe].ebev;
+    if (pro.start - pro.end).length_squared() < BEVEL_EPSILON_D * BEVEL_EPSILON_D {
+        *co = pro.start;
+        return;
+    }
+    let ee = bp.bverts[bvi].edges[e].e;
+    let edir = bm.vert(bm.edge(ee).v1).co - bm.vert(bm.edge(ee).v2).co;
+    let plane = blenders_math::geom::plane_from_point_normal(*co, edir);
+    let start_plane = blenders_math::geom::closest_to_plane(plane, pro.start);
+    let end_plane = blenders_math::geom::closest_to_plane(plane, pro.end);
+    let middle_plane = blenders_math::geom::closest_to_plane(plane, pro.middle);
+    let super_r = pro.super_r;
+    if let Some(m) = make_unit_square_map(start_plane, middle_plane, end_plane) {
+        if let Some(minv) = m.inverted() {
+            let mut p = blenders_math::matrix_c::mul_v3_m4v3(minv, *co);
+            snap_to_superellipsoid(&mut p, super_r, midline);
+            *co = blenders_math::matrix_c::mul_v3_m4v3(m, p);
+            return;
+        }
+    }
+    *co = blenders_math::geom::closest_to_line_segment_v3(*co, start_plane, end_plane).0;
+}
+
+/// `pipe_adj_vmesh`.
+fn pipe_adj_vmesh(bp: &mut BevelParams, bm: &BMesh, bvi: usize, vpipe: usize) -> VMesh {
+    let mut vm = adj_vmesh(bp, bm, bvi);
+    let n_bndv = bp.bverts[bvi].vmesh.as_ref().unwrap().count;
+    let ns = bp.bverts[bvi].vmesh.as_ref().unwrap().seg;
+    let half_ns = ns / 2;
+    let ipipe1 = bp.boundverts[vpipe].index;
+    let ipipe2 = bp.boundverts[bp.boundverts[bp.boundverts[vpipe].next].next].index;
+    for i in 0..n_bndv {
+        for j in 1..=half_ns {
+            for k in 0..=half_ns {
+                if !is_canon(&vm, i, j, k) {
+                    continue;
+                }
+                if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+                    let (p1, p2, f);
+                    if i == ipipe1 || i == ipipe2 {
+                        if n_bndv == 3 && i == ipipe1 {
+                            let ring = j.max(k);
+                            p2 = vm.mesh[mesh_vert(&vm, i, 0, ring)].co;
+                            p1 = vm.mesh[mesh_vert(&vm, i, ring, 0)].co;
+                            f = if k < j {
+                                j.min(k) as f32 / (2.0 * ring as f32)
+                            } else {
+                                (2.0 * ring as f32 - j as f32) / (2.0 * ring as f32)
+                            };
+                        } else {
+                            p1 = vm.mesh[mesh_vert(&vm, i, 0, k)].co;
+                            p2 = vm.mesh[mesh_vert(
+                                &vm,
+                                if i == ipipe1 { ipipe2 } else { ipipe1 },
+                                0,
+                                ns - k,
+                            )]
+                            .co;
+                            f = j as f32 / ns as f32;
+                        }
+                    } else {
+                        p1 = vm.mesh[mesh_vert(&vm, i, j, 0)].co;
+                        p2 = vm.mesh[mesh_vert(&vm, i, j, ns)].co;
+                        f = k as f32 / ns as f32;
+                    }
+                    let idx = mesh_vert(&vm, i, j, k);
+                    vm.mesh[idx].co = p1 + (p2 - p1) * f;
+                } else {
+                    let even = (ns % 2) == 0;
+                    let midline = even
+                        && k == half_ns
+                        && ((i == 0 && j == half_ns) || i == ipipe1 || i == ipipe2);
+                    let idx = mesh_vert(&vm, i, j, k);
+                    let mut co = vm.mesh[idx].co;
+                    snap_to_pipe_profile(bm, bp, vpipe, midline, &mut co);
+                    vm.mesh[idx].co = co;
+                }
+            }
+        }
+    }
+    vm
+}
