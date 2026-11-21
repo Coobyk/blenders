@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod anonymous_attribute_id;
+pub mod geometry_components;
 pub mod icons_rasterize;
 pub mod idtype;
 pub mod speaker;
