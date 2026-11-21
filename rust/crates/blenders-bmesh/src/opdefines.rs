@@ -343,7 +343,7 @@ pub const OPDEF_CURVE_EDGE_LOOPS_BETWEEN_SELECTED: BMOpDefine = BMOpDefine {
         ("interpolation", BMOSlotType::Int)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_curve_edge_loops::bmo_curve_edge_loops_between_selected_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
