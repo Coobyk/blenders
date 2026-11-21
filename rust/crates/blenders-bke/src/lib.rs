@@ -275,3 +275,4 @@ pub mod pbvh;
 pub mod object_dupli;
 pub mod mesh_remap;
 pub mod vfont_curve;
+pub mod rigidbody;
