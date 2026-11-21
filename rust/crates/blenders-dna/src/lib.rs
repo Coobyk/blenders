@@ -76,5 +76,6 @@ pub mod meshdata_types;
 pub mod modifier_enums;
 pub mod mesh_types;
 pub mod object_fluidsim_types;
+pub mod object_force_types;
 pub mod object_types;
 pub mod small_types;
