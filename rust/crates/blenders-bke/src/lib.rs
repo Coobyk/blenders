@@ -86,6 +86,7 @@ pub mod editmesh_cache;
 pub mod mesh_flip_faces;
 pub mod mesh_tessellate;
 pub mod mesh_topology_state;
+pub mod multires_reshape_subdivide;
 pub mod node_enum_definition;
 pub mod paint_canvas;
 pub mod pointcloud_attributes;
