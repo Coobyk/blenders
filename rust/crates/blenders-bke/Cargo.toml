@@ -1,0 +1,10 @@
+[package]
+name = "blenders-bke"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+blenders-math = { path = "../blenders-math" }
+blenders-bli = { path = "../blenders-bli" }
+blenders-bmesh = { path = "../blenders-bmesh" }
+blenders-core = { path = "../blenders-core" }
