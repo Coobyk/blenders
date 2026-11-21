@@ -14,6 +14,7 @@ pub mod grease_pencil_vertex_groups;
 pub mod icons_rasterize;
 pub mod id_hash;
 pub mod idprop;
+pub mod instances_attributes;
 pub mod kelvinlet;
 pub mod keyconfig;
 pub mod ocean_spectrum;
