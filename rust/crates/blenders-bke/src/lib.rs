@@ -83,6 +83,7 @@ pub mod subdiv_displacement;
 pub mod subdiv_stats;
 pub mod subdiv_topology;
 pub mod editlattice;
+pub mod lattice_deform;
 pub mod layer_utils;
 pub mod lib_id_eval;
 pub mod lib_override_proxy_conversion;
