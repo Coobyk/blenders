@@ -27,6 +27,7 @@ pub mod blender_user_menu;
 pub mod bpath;
 pub mod callbacks;
 pub mod curve_convert;
+pub mod curve_catmull_rom;
 pub mod wm_runtime;
 pub mod subdiv_stats;
 pub mod editlattice;
