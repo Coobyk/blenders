@@ -162,3 +162,4 @@ pub mod blender_project_config;
 pub mod light_linking;
 pub mod editmesh_bvh;
 pub mod blender_project;
+pub mod icons;
