@@ -16,6 +16,7 @@ pub mod callbacks;
 pub mod subdiv_stats;
 pub mod editlattice;
 pub mod lib_id_eval;
+pub mod lib_id_remapper;
 pub mod main_invariants;
 pub mod multires_subdiv;
 pub mod subdiv;
