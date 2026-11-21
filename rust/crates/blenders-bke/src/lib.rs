@@ -46,6 +46,7 @@ pub mod asset;
 pub mod asset_edit;
 pub mod attribute_math;
 pub mod attribute_legacy_convert;
+pub mod attribute_storage_access;
 pub mod autoexec;
 pub mod asset_weak_reference;
 pub mod bake_data_block_map;
