@@ -49,6 +49,7 @@ pub mod lib_id_remapper;
 pub mod main_invariants;
 pub mod multires_reshape_apply_base;
 pub mod multires_reshape_ccg;
+pub mod multires_reshape_vertcos;
 pub mod multires_reshape;
 pub mod multires_subdiv;
 pub mod subdiv;
