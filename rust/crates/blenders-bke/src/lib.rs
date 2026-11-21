@@ -7,6 +7,7 @@ pub mod anonymous_attribute_id;
 pub mod idtype;
 pub mod speaker;
 pub mod armature_selection;
+pub mod callbacks;
 pub mod lib_id_eval;
 pub mod mesh_flip_faces;
 pub mod paint_runtime;
