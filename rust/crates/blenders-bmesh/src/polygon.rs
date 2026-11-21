@@ -392,6 +392,27 @@ pub fn bm_face_calc_center_bounds_vcos(bm: &BMesh, f: usize, vcos: &[Vec3]) -> V
     (min + max) * 0.5
 }
 
+/// `BM_face_calc_center_median_vcos` — median center over explicit coords.
+pub fn bm_face_calc_center_median_vcos(bm: &BMesh, f: usize, vertex_cos: &[Vec3]) -> Vec3 {
+    let l_first = bm.face(f).l_first;
+    let mut l = l_first;
+    let mut cent = Vec3::ZERO;
+    let mut n = 0i32;
+    loop {
+        cent = cent + vertex_cos[bm.loo(l).v];
+        n += 1;
+        l = bm.loo(l).next;
+        if l == l_first {
+            break;
+        }
+    }
+    if n > 0 {
+        cent / n as f32
+    } else {
+        cent
+    }
+}
+
 /// `BM_face_calc_center_median_weighted` — center weighted by edge length.
 pub fn bm_face_calc_center_median_weighted(bm: &BMesh, f: usize) -> Vec3 {
     let l_first = bm.face(f).l_first;
