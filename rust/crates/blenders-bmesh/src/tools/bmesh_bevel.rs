@@ -2163,3 +2163,476 @@ fn calculate_vm_profiles(bm: &BMesh, bp: &mut BevelParams, bvi: usize) {
         }
     }
 }
+
+/* ===== boundary construction (C ~3200-3840) ===== */
+
+/// `adjust_bound_vert` — update boundvert pos + profile plane.
+fn adjust_bound_vert(bp: &mut BevelParams, bm: &BMesh, bndv: usize, co: Vec3) {
+    bp.boundverts[bndv].nv.co = co;
+    if !bp.boundverts[bndv].profile.special_params {
+        set_profile_params(bm, bp, bndv);
+    }
+}
+
+/// `build_boundary_vertex_only`.
+fn build_boundary_vertex_only(bm: &BMesh, bp: &mut BevelParams, bvi: usize, construct: bool) {
+    let efirst = 0usize;
+    let mut e = efirst;
+    loop {
+        let co = slide_dist(bm, (bvi, e), bp, bp.bverts[bvi].v, bp.bverts[bvi].edges[e].offset_l);
+        if construct {
+            let v = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[v].efirst = e;
+            bp.boundverts[v].elast = e;
+            bp.bverts[bvi].edges[e].leftv = v;
+            bp.bverts[bvi].edges[e].rightv = v;
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].leftv, co);
+        }
+        e = bp.bverts[bvi].edges[e].next;
+        if e == efirst {
+            break;
+        }
+    }
+    if construct {
+        set_bound_vert_seams(bp, bm, bvi, bp.mark_seam, bp.mark_sharp);
+        if bp.affect_vertices_odd && !bp.bverts[bvi].any_seam {
+            /* contig_ldata_around_vert → no ldata → false */
+            bp.bverts[bvi].any_seam = true;
+        }
+        let count = bp.bverts[bvi].vmesh.as_ref().unwrap().count;
+        let kind = if count == 2 {
+            MeshKind::None
+        } else if bp.seg == 1 {
+            MeshKind::Poly
+        } else {
+            MeshKind::Adj
+        };
+        bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = kind;
+    }
+}
+
+/// `build_boundary_terminal_edge`.
+fn build_boundary_terminal_edge(bm: &BMesh, bp: &mut BevelParams, bvi: usize, efirst: EHRef, construct: bool) {
+    let bvv = bp.bverts[bvi].v;
+    let mut e = efirst.1;
+    if bp.bverts[bvi].edgecount == 2 {
+        let eh = &bp.bverts[bvi].edges[e];
+        let no = if eh.fprev != BM_NIL { Some(bm.face(eh.fprev).no) } else if eh.fnext != BM_NIL { Some(bm.face(eh.fnext).no) } else { None };
+        let co = offset_in_plane(bm, eh, no, true);
+        if construct {
+            let bndv = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[bndv].efirst = e;
+            bp.boundverts[bndv].elast = e;
+            bp.boundverts[bndv].ebev = e;
+            bp.bverts[bvi].edges[e].leftv = bndv;
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].leftv, co);
+        }
+        let eh = &bp.bverts[bvi].edges[e];
+        let no = if eh.fnext != BM_NIL { Some(bm.face(eh.fnext).no) } else if eh.fprev != BM_NIL { Some(bm.face(eh.fprev).no) } else { None };
+        let co = offset_in_plane(bm, eh, no, false);
+        if construct {
+            let bndv = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[bndv].efirst = e;
+            bp.boundverts[bndv].elast = e;
+            bp.bverts[bvi].edges[e].rightv = bndv;
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].rightv, co);
+        }
+        let enext = bp.bverts[bvi].edges[e].next;
+        let co = slide_dist(bm, (bvi, enext), bp, bvv, bp.bverts[bvi].edges[e].offset_l);
+        if construct {
+            let bndv = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[bndv].efirst = enext;
+            bp.boundverts[bndv].elast = enext;
+            bp.bverts[bvi].edges[enext].leftv = bndv;
+            bp.bverts[bvi].edges[enext].rightv = bndv;
+            set_bound_vert_seams(bp, bm, bvi, bp.mark_seam, bp.mark_sharp);
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[enext].leftv, co);
+        }
+    } else {
+        let leg_slide =
+            bp.offset_type == BEVEL_AMT_PERCENT || bp.offset_type == BEVEL_AMT_ABSOLUTE;
+        let eprev = bp.bverts[bvi].edges[e].prev;
+        let co = if leg_slide {
+            slide_dist(bm, (bvi, eprev), bp, bvv, bp.bverts[bvi].edges[e].offset_l)
+        } else {
+            offset_meet(bm, bp, (bvi, eprev), (bvi, e), bvv, bp.bverts[bvi].edges[e].fprev, false, EH_NIL)
+        };
+        if construct {
+            let bndv = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[bndv].efirst = eprev;
+            bp.boundverts[bndv].elast = e;
+            bp.boundverts[bndv].ebev = e;
+            bp.bverts[bvi].edges[e].leftv = bndv;
+            bp.bverts[bvi].edges[eprev].leftv = bndv;
+            bp.bverts[bvi].edges[eprev].rightv = bndv;
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].leftv, co);
+        }
+        e = bp.bverts[bvi].edges[e].next;
+        let eprev = bp.bverts[bvi].edges[e].prev;
+        let co = if leg_slide {
+            slide_dist(bm, (bvi, e), bp, bvv, bp.bverts[bvi].edges[eprev].offset_r)
+        } else {
+            offset_meet(bm, bp, (bvi, eprev), (bvi, e), bvv, bp.bverts[bvi].edges[e].fprev, false, EH_NIL)
+        };
+        if construct {
+            let bndv = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[bndv].efirst = eprev;
+            bp.boundverts[bndv].elast = e;
+            bp.bverts[bvi].edges[e].leftv = bndv;
+            bp.bverts[bvi].edges[e].rightv = bndv;
+            bp.bverts[bvi].edges[eprev].rightv = bndv;
+        } else {
+            adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].leftv, co);
+        }
+        let mut d = bp.bverts[bvi].edges[efirst.1].offset_l_spec;
+        if bp.profile_type == BEVEL_PROFILE_CUSTOM || bp.profile < 0.25 {
+            d *= 2.0f32.sqrt();
+        }
+        e = bp.bverts[bvi].edges[e].next;
+        while bp.bverts[bvi].edges[e].next != efirst.1 {
+            let co = slide_dist(bm, (bvi, e), bp, bvv, d);
+            if construct {
+                let bndv = add_new_bound_vert(bp, bvi, co);
+                bp.boundverts[bndv].efirst = e;
+                bp.boundverts[bndv].elast = e;
+                bp.bverts[bvi].edges[e].leftv = bndv;
+                bp.bverts[bvi].edges[e].rightv = bndv;
+            } else {
+                adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].leftv, co);
+            }
+            e = bp.bverts[bvi].edges[e].next;
+        }
+    }
+    if bp.bverts[bvi].edgecount >= 3 {
+        let bndv = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+        debug_assert!(bp.boundverts[bndv].ebev != BM_NIL);
+        set_profile_params(bm, bp, bndv);
+        move_profile_plane(bp, bm, bndv, bvv);
+    }
+    if construct {
+        set_bound_vert_seams(bp, bm, bvi, bp.mark_seam, bp.mark_sharp);
+        let count = bp.bverts[bvi].vmesh.as_ref().unwrap().count;
+        let kind = if count == 2 && bp.bverts[bvi].edgecount == 3 {
+            MeshKind::None
+        } else if count == 3 {
+            let mut use_tri_fan = true;
+            if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+                let bndv = bp.bverts[bvi].edges[efirst.1].leftv;
+                let plane = blenders_math::geom::plane_from_point_normal(
+                    bp.boundverts[bndv].profile.plane_co,
+                    bp.boundverts[bndv].profile.plane_no,
+                );
+                let bndv = bp.boundverts[bp.bverts[bvi].edges[efirst.1].rightv].next;
+                if blenders_math::geom::dist_squared_to_plane(
+                    bp.boundverts[bndv].nv.co,
+                    plane,
+                ) < BEVEL_EPSILON_BIG
+                {
+                    use_tri_fan = false;
+                }
+            }
+            if use_tri_fan { MeshKind::TriFan } else { MeshKind::Poly }
+        } else {
+            MeshKind::Poly
+        };
+        bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = kind;
+    }
+}
+
+/// `adjust_miter_coords`.
+fn adjust_miter_coords(bm: &BMesh, bp: &mut BevelParams, bvi: usize, emiter: EHRef) {
+    let miter_outer = bp.miter_outer;
+    let v1 = bp.bverts[emiter.0].edges[emiter.1].rightv;
+    let (v2, v3) = if miter_outer == BEVEL_MITER_PATCH {
+        let v2 = bp.boundverts[v1].next;
+        (v2, bp.boundverts[v2].next)
+    } else {
+        debug_assert!(miter_outer == BEVEL_MITER_ARC);
+        (BM_NIL, bp.boundverts[v1].next)
+    };
+    let v1prev = bp.boundverts[v1].prev;
+    let v3next = bp.boundverts[v3].next;
+    let co2 = bp.boundverts[v1].nv.co;
+    if bp.boundverts[v1].is_arc_start {
+        bp.boundverts[v1].profile.middle = co2;
+    }
+    let vother = other_vert(bm, bp.bverts[bvi].edges[emiter.1].e, bp.bverts[bvi].v);
+    let mut edge_dir = bm.vert(bp.bverts[bvi].v).co - bm.vert(vother).co;
+    edge_dir.normalize();
+    let d = bp.offset / (bp.seg as f32 / 2.0);
+    let line_p = co2 + edge_dir * d;
+    let co1 = blenders_math::geom::isect_line_plane(
+        co2,
+        line_p,
+        bp.boundverts[v1prev].nv.co,
+        edge_dir,
+    )
+    .unwrap_or(line_p);
+    adjust_bound_vert(bp, bm, v1, co1);
+    let emiter_other = bp.boundverts[v3].elast;
+    let vother = other_vert(bm, bp.bverts[bvi].edges[emiter_other].e, bp.bverts[bvi].v);
+    let mut edge_dir = bm.vert(bp.bverts[bvi].v).co - bm.vert(vother).co;
+    edge_dir.normalize();
+    let line_p = co2 + edge_dir * d;
+    let co3 = blenders_math::geom::isect_line_plane(
+        co2,
+        line_p,
+        bp.boundverts[v3next].nv.co,
+        edge_dir,
+    )
+    .unwrap_or(co1);
+    adjust_bound_vert(bp, bm, v3, co3);
+    let _ = v2;
+}
+
+/// `adjust_miter_inner_coords`.
+fn adjust_miter_inner_coords(bm: &BMesh, bp: &mut BevelParams, bvi: usize, emiter: EHRef) {
+    let vstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let mut v = vstart;
+    loop {
+        if bp.boundverts[v].is_arc_start {
+            let v3 = bp.boundverts[v].next;
+            let e = bp.boundverts[v].efirst;
+            if e != emiter.1 {
+                let co = bp.boundverts[v].nv.co;
+                let vother = other_vert(bm, bp.bverts[bvi].edges[e].e, bp.bverts[bvi].v);
+                let mut edge_dir = bm.vert(vother).co - bm.vert(bp.bverts[bvi].v).co;
+                edge_dir.normalize();
+                let d = bp.offset / (bp.seg as f32 / 2.0);
+                let line_p = co + edge_dir * d;
+                let conew = blenders_math::geom::isect_line_plane(
+                    co,
+                    line_p,
+                    bp.boundverts[v3].nv.co,
+                    edge_dir,
+                )
+                .unwrap_or(line_p);
+                adjust_bound_vert(bp, bm, v, conew);
+            }
+        } else {
+            v = bp.boundverts[v].next;
+        }
+        if v == vstart {
+            break;
+        }
+    }
+}
+
+/// `build_boundary`.
+fn build_boundary(bm: &BMesh, bp: &mut BevelParams, bvi: usize, construct: bool) {
+    if bp.bverts[bvi].edgecount <= 1 {
+        return;
+    }
+    if bp.affect_type == BEVEL_AFFECT_VERTICES {
+        build_boundary_vertex_only(bm, bp, bvi, construct);
+        return;
+    }
+    let efirst = next_bev(bp, bvi, EH_NIL);
+    debug_assert!(bp.eh(efirst).is_bev);
+    if bp.bverts[bvi].selcount == 1 {
+        build_boundary_terminal_edge(bm, bp, bvi, efirst, construct);
+        return;
+    }
+    let miter_outer = if bp.bverts[bvi].selcount >= 3 { bp.miter_outer } else { BEVEL_MITER_SHARP };
+    let miter_inner = bp.miter_inner;
+    let mut emiter = EH_NIL;
+    let bvv = bp.bverts[bvi].v;
+    let mut e = efirst.1;
+    loop {
+        debug_assert!(bp.bverts[bvi].edges[e].is_bev);
+        let mut eon = EH_NIL;
+        let mut in_plane = 0;
+        let mut not_in_plane = 0;
+        let mut enip = 0usize;
+        let mut eip = 0usize;
+        let mut e2 = bp.bverts[bvi].edges[e].next;
+        while !bp.bverts[bvi].edges[e2].is_bev {
+            if eh_on_plane(bm, &bp.bverts[bvi].edges[e2]) {
+                in_plane += 1;
+                eip = e2;
+            } else {
+                not_in_plane += 1;
+                enip = e2;
+            }
+            e2 = bp.bverts[bvi].edges[e2].next;
+        }
+        let mut r = 0f32;
+        let co;
+        if in_plane == 0 && not_in_plane == 0 {
+            co = offset_meet(bm, bp, (bvi, e), (bvi, e2), bvv, bp.bverts[bvi].edges[e].fnext, false, EH_NIL);
+        } else if not_in_plane > 0 {
+            if bp.loop_slide
+                && not_in_plane == 1
+                && good_offset_on_edge_between(bm, bp, (bvi, e), (bvi, e2), (bvi, enip), bvv)
+            {
+                match offset_on_edge_between(bm, bp, (bvi, e), (bvi, e2), (bvi, enip), bvv) {
+                    Some((c, sr)) => {
+                        co = c;
+                        r = sr;
+                        eon = (bvi, enip);
+                    }
+                    None => {
+                        co = offset_meet(bm, bp, (bvi, e), (bvi, e2), bvv, BM_NIL, true, (bvi, eip));
+                    }
+                }
+            } else {
+                co = offset_meet(bm, bp, (bvi, e), (bvi, e2), bvv, BM_NIL, true, (bvi, eip));
+            }
+        } else if bp.loop_slide
+            && in_plane == 1
+            && good_offset_on_edge_between(bm, bp, (bvi, e), (bvi, e2), (bvi, eip), bvv)
+        {
+            match offset_on_edge_between(bm, bp, (bvi, e), (bvi, e2), (bvi, eip), bvv) {
+                Some((c, sr)) => {
+                    co = c;
+                    r = sr;
+                    eon = (bvi, eip);
+                }
+                None => {
+                    co = offset_meet(bm, bp, (bvi, e), (bvi, e2), bvv, bp.bverts[bvi].edges[e].fnext, false, EH_NIL);
+                }
+            }
+        } else {
+            co = offset_meet(bm, bp, (bvi, e), (bvi, e2), bvv, bp.bverts[bvi].edges[e].fnext, false, EH_NIL);
+        }
+        if construct {
+            let v = add_new_bound_vert(bp, bvi, co);
+            bp.boundverts[v].efirst = e;
+            bp.boundverts[v].elast = e2;
+            bp.boundverts[v].ebev = e2;
+            bp.boundverts[v].eon = eon.1;
+            if eon != EH_NIL {
+                bp.boundverts[v].sinratio = r;
+            }
+            bp.bverts[bvi].edges[e].rightv = v;
+            bp.bverts[bvi].edges[e2].leftv = v;
+            let mut e3 = bp.bverts[bvi].edges[e].next;
+            while e3 != e2 {
+                bp.bverts[bvi].edges[e3].leftv = v;
+                bp.bverts[bvi].edges[e3].rightv = v;
+                e3 = bp.bverts[bvi].edges[e3].next;
+            }
+            let ang_kind = edges_angle_kind(bm, bp, (bvi, e), (bvi, e2), bvv);
+            if (miter_outer != BEVEL_MITER_SHARP && emiter == EH_NIL && ang_kind == ANGLE_LARGER)
+                || (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER)
+            {
+                if ang_kind == ANGLE_LARGER {
+                    emiter = (bvi, e);
+                }
+                let v1 = v;
+                bp.boundverts[v1].ebev = BM_NIL;
+                let v2 = if ang_kind == ANGLE_LARGER && miter_outer == BEVEL_MITER_PATCH {
+                    add_new_bound_vert(bp, bvi, co)
+                } else {
+                    BM_NIL
+                };
+                let v3 = add_new_bound_vert(bp, bvi, co);
+                bp.boundverts[v3].ebev = e2;
+                bp.boundverts[v3].efirst = e2;
+                bp.boundverts[v3].elast = e2;
+                bp.boundverts[v3].eon = BM_NIL;
+                bp.bverts[bvi].edges[e2].leftv = v3;
+                if ang_kind == ANGLE_LARGER && miter_outer == BEVEL_MITER_PATCH {
+                    bp.boundverts[v1].is_patch_start = true;
+                    bp.boundverts[v2].eon = bp.boundverts[v1].eon;
+                    bp.boundverts[v2].sinratio = bp.boundverts[v1].sinratio;
+                    bp.boundverts[v2].ebev = BM_NIL;
+                    bp.boundverts[v1].eon = BM_NIL;
+                    bp.boundverts[v1].sinratio = 1.0;
+                    bp.boundverts[v1].elast = e;
+                    if bp.bverts[bvi].edges[e].next == e2 {
+                        bp.boundverts[v2].efirst = BM_NIL;
+                        bp.boundverts[v2].elast = BM_NIL;
+                    } else {
+                        bp.boundverts[v2].efirst = bp.bverts[bvi].edges[e].next;
+                        let mut e3 = bp.bverts[bvi].edges[e].next;
+                        while e3 != e2 {
+                            bp.bverts[bvi].edges[e3].leftv = v2;
+                            bp.bverts[bvi].edges[e3].rightv = v2;
+                            bp.boundverts[v2].elast = e3;
+                            e3 = bp.bverts[bvi].edges[e3].next;
+                        }
+                    }
+                } else {
+                    bp.boundverts[v1].is_arc_start = true;
+                    bp.boundverts[v1].profile.middle = co;
+                    if bp.bverts[bvi].edges[e].next == e2 {
+                        bp.boundverts[v1].elast = bp.boundverts[v1].efirst;
+                    } else {
+                        let between = in_plane + not_in_plane;
+                        let bet2 = between / 2;
+                        let betodd = (between % 2) == 1;
+                        let mut i = 0;
+                        let mut e3 = bp.bverts[bvi].edges[e].next;
+                        while e3 != e2 {
+                            bp.boundverts[v1].elast = e3;
+                            if i < bet2 {
+                                bp.bverts[bvi].edges[e3].profile_index = 0;
+                            } else if betodd && i == bet2 {
+                                bp.bverts[bvi].edges[e3].profile_index = bp.seg / 2;
+                            } else {
+                                bp.bverts[bvi].edges[e3].profile_index = bp.seg;
+                            }
+                            i += 1;
+                            e3 = bp.bverts[bvi].edges[e3].next;
+                        }
+                    }
+                }
+            }
+        } else {
+            let ang_kind = edges_angle_kind(bm, bp, (bvi, e), (bvi, e2), bvv);
+            if (miter_outer != BEVEL_MITER_SHARP && emiter == EH_NIL && ang_kind == ANGLE_LARGER)
+                || (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER)
+            {
+                if ang_kind == ANGLE_LARGER {
+                    emiter = (bvi, e);
+                }
+                let v1 = bp.bverts[bvi].edges[e].rightv;
+                let (v2, v3) = if ang_kind == ANGLE_LARGER && miter_outer == BEVEL_MITER_PATCH {
+                    let v2 = bp.boundverts[v1].next;
+                    (v2, bp.boundverts[v2].next)
+                } else {
+                    (BM_NIL, bp.boundverts[v1].next)
+                };
+                adjust_bound_vert(bp, bm, v1, co);
+                if v2 != BM_NIL {
+                    adjust_bound_vert(bp, bm, v2, co);
+                }
+                adjust_bound_vert(bp, bm, v3, co);
+            } else {
+                adjust_bound_vert(bp, bm, bp.bverts[bvi].edges[e].rightv, co);
+            }
+        }
+        e = e2;
+        if e == efirst.1 {
+            break;
+        }
+    }
+    if miter_inner != BEVEL_MITER_SHARP {
+        adjust_miter_inner_coords(bm, bp, bvi, emiter);
+    }
+    if emiter != EH_NIL {
+        adjust_miter_coords(bm, bp, bvi, emiter);
+    }
+    if construct {
+        set_bound_vert_seams(bp, bm, bvi, bp.mark_seam, bp.mark_sharp);
+        let count = bp.bverts[bvi].vmesh.as_ref().unwrap().count;
+        let kind = if count == 2 {
+            MeshKind::None
+        } else if bp.bverts[bvi].edges[efirst.1].seg == 1 {
+            MeshKind::Poly
+        } else {
+            match bp.vmesh_method {
+                BEVEL_VMESH_ADJ => MeshKind::Adj,
+                BEVEL_VMESH_CUTOFF => MeshKind::Cutoff,
+                _ => MeshKind::Adj,
+            }
+        };
+        bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = kind;
+    }
+}
