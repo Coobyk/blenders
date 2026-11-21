@@ -722,3 +722,22 @@ pub fn bm_elem_flag_merge_into(bm: &mut BMesh, elem: (u8, usize), a: (u8, usize)
         _ => bm.fpool[elem.1].head.hflag |= fa | fb,
     }
 }
+
+/// `BM_mesh_elem_hflag_enable_all` — enable hflag on all elems of htype.
+pub fn bm_mesh_elem_hflag_enable_all(bm: &mut BMesh, htype: u8, hflag: u8) {
+    if htype & (1 << crate::BM_VERT) != 0 {
+        for v in crate::iterators::VertsOfMesh::new(bm).collect::<Vec<_>>() {
+            bm.vpool[v].head.hflag |= hflag;
+        }
+    }
+    if htype & (1 << crate::BM_EDGE) != 0 {
+        for e in crate::iterators::EdgesOfMesh::new(bm).collect::<Vec<_>>() {
+            bm.epool[e].head.hflag |= hflag;
+        }
+    }
+    if htype & (1 << crate::BM_FACE) != 0 {
+        for f in crate::iterators::FacesOfMesh::new(bm).collect::<Vec<_>>() {
+            bm.fpool[f].head.hflag |= hflag;
+        }
+    }
+}

@@ -603,3 +603,19 @@ pub fn bmo_op_callf(bm: &mut BMesh, flag: i32, opname: &str, args: &[CallfArg]) 
     }
     op
 }
+
+/// `BMO_slot_buffer_hflag_disable` — clear hflag on all elems in a slot buffer.
+pub fn bmo_slot_buffer_hflag_disable(bm: &mut BMesh, op: &mut BMOperator, out: bool, name: &str, htype: u8, hflag: u8, only_named: bool) {
+    let _ = only_named;
+    for i in 0..bmo_slot_buffer_len(op, out, name) {
+        let (t, i_) = bmo_slot_buffer(op, out, name)[i];
+        if t == htype {
+            match t {
+                crate::BM_VERT => bm.vpool[i_].head.hflag &= !hflag,
+                crate::BM_EDGE => bm.epool[i_].head.hflag &= !hflag,
+                crate::BM_FACE => bm.fpool[i_].head.hflag &= !hflag,
+                _ => {}
+            }
+        }
+    }
+}

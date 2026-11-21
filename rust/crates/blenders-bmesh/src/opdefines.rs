@@ -1263,7 +1263,7 @@ pub const OPDEF_INSET_INDIVIDUAL: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_inset::bmo_inset_individual_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1285,7 +1285,7 @@ pub const OPDEF_INSET_REGION: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("faces.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_inset::bmo_inset_region_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

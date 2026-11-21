@@ -34,3 +34,4 @@ pub mod primitive_data;
 pub mod bmo_primitive;
 pub mod bmo_connect_pair;
 pub mod bmo_subdivide;
+pub mod bmo_inset;
