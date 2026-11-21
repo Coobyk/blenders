@@ -234,3 +234,4 @@ pub mod shrinkwrap;
 pub mod modifier;
 pub mod subdiv_ccg;
 pub mod geometry_fields;
+pub mod image_save;
