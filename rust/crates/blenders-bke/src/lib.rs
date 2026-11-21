@@ -189,3 +189,4 @@ pub mod bvh;
 pub mod preferences;
 pub mod multires_reshape_util;
 pub mod idprop_serialize;
+pub mod particle_child;
