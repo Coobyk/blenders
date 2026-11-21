@@ -288,3 +288,4 @@ pub mod node_tree_update;
 pub mod dynamicpaint;
 pub mod image;
 pub mod fluid;
+pub mod grease_pencil_convert_legacy;
