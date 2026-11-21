@@ -87,6 +87,7 @@ pub mod mesh_debug;
 pub mod mesh_merge_customdata;
 pub mod editmesh_cache;
 pub mod mesh_flip_faces;
+pub mod main_idmap;
 pub mod mesh_tessellate;
 pub mod mesh_topology_state;
 pub mod multires_reshape_subdivide;
