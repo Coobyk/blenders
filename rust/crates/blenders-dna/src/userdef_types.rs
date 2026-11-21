@@ -1004,6 +1004,8 @@ pub struct UserDef {
     pub border_width: i8,
     /// `eUserpref_MiniAxisType mini_axis_type`
     pub mini_axis_type: UserprefMiniaxistype,
+    /// `eUserpref_UI_Flag uiflag`
+    pub uiflag: UserprefUiFlag,
     /// `eUserpref_UI_Flag2 uiflag2`
     pub uiflag2: UserprefUiFlag2,
     /// `char date_format`
@@ -1058,6 +1060,10 @@ pub struct UserDef {
     pub uifonts: ListBase,
     /// `ListBaseT<uiStyle>`
     pub uistyles: ListBase,
+    /// `ListBaseT<struct wmKeyMap>`
+    pub user_keymaps: ListBase,
+    /// `ListBaseT<struct wmKeyConfigPref>`
+    pub user_keyconfig_prefs: ListBase,
     /// `ListBaseT<bAddon>`
     pub addons: ListBase,
     /// `ListBaseT<bPathCompare>`
@@ -1292,6 +1298,11 @@ impl Default for UserDef {
             asset_access: 0,
             border_width: 2,
             mini_axis_type: USER_MINI_AXIS_TYPE_GIZMO,
+            uiflag: USER_FILTERFILEEXTS | USER_DRAWVIEWINFO | USER_PLAINMENUS
+                | USER_LOCK_CURSOR_ADJUST | USER_DEPTH_CURSOR | USER_AUTOPERSP
+                | USER_NODE_AUTO_OFFSET | USER_GLOBALUNDO | USER_SHOW_GIZMO_NAVIGATE
+                | USER_SHOW_VIEWPORTNAME | USER_SHOW_FPS | USER_CONTINUOUS_MOUSE
+                | USER_SAVE_PROMPT,
             uiflag2: USER_REGION_OVERLAP,
             date_format: 0,
             time_format: 0,
@@ -1319,6 +1330,8 @@ impl Default for UserDef {
             themes: ListBase::default(),
             uifonts: ListBase::default(),
             uistyles: ListBase::default(),
+            user_keymaps: ListBase::default(),
+            user_keyconfig_prefs: ListBase::default(),
             addons: ListBase::default(),
             autoexec_paths: ListBase::default(),
             script_directories: ListBase::default(),

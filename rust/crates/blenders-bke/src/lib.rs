@@ -22,6 +22,7 @@ pub mod action_bones;
 pub mod action_mirror;
 pub mod addon;
 pub mod blender_copybuffer;
+pub mod blender;
 pub mod blender_undo;
 pub mod anim_data_bmain_utils;
 pub mod anim_path;
