@@ -67,6 +67,7 @@ pub mod mesh_debug;
 pub mod mesh_merge_customdata;
 pub mod editmesh_cache;
 pub mod mesh_flip_faces;
+pub mod mesh_tessellate;
 pub mod mesh_topology_state;
 pub mod node_enum_definition;
 pub mod paint_canvas;
