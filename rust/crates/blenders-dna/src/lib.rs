@@ -45,6 +45,7 @@ pub mod space_enums;
 pub mod movieclip_types;
 pub mod rigidbody_types;
 pub mod scene_types;
+pub mod shader_fx_types;
 pub mod vec_types;
 pub mod view3d_enums;
 pub mod view3d_types;
