@@ -576,7 +576,6 @@ ctx_wm!(wm_space_dopesheet, "space_dopesheet");
 
 /* ---- `CTX_data_*` getters ---- */
 
-ctx_wm!(data_main, "main");
 /// `CTX_data_main` fallback to `C->data.main`.
 pub fn data_main(c: &mut BContext) -> usize {
     let v = ctx_data_pointer_get(c, "main");
