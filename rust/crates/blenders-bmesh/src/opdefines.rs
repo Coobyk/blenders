@@ -908,7 +908,7 @@ pub const OPDEF_DELETE: BMOpDefine = BMOpDefine {
         ("context", BMOSlotType::Int)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dupe::bmo_delete_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -930,7 +930,7 @@ pub const OPDEF_DUPLICATE: BMOpDefine = BMOpDefine {
         ("boundary_map.out", BMOSlotType::Map),
         ("isovert_map.out", BMOSlotType::Map)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dupe::bmo_duplicate_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -947,7 +947,7 @@ pub const OPDEF_SPLIT: BMOpDefine = BMOpDefine {
         ("boundary_map.out", BMOSlotType::Map),
         ("isovert_map.out", BMOSlotType::Map)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dupe::bmo_split_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -969,7 +969,7 @@ pub const OPDEF_SPIN: BMOpDefine = BMOpDefine {
     slot_types_out: &[
         ("geom_last.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_dupe::bmo_spin_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
