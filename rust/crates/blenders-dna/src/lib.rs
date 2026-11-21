@@ -32,6 +32,7 @@ pub mod xr_types;
 pub mod image_enums;
 pub mod mask_types;
 pub mod pointcache_types;
+pub mod pointcloud_types;
 pub mod nla_types;
 pub mod id_enums;
 pub mod layer_types;
