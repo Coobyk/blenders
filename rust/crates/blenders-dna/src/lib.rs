@@ -49,6 +49,7 @@ pub mod mask_types;
 pub mod pointcache_types;
 pub mod pointcloud_types;
 pub mod nla_types;
+pub mod node_tree_interface_types;
 pub mod packedfile_types;
 pub mod session_uid_types;
 pub mod uuid_types;
