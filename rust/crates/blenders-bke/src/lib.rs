@@ -253,3 +253,4 @@ pub mod cloth;
 pub mod node_tree_interface;
 pub mod brush;
 pub mod colortools;
+pub mod linestyle;
