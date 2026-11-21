@@ -19,6 +19,7 @@ pub mod vfont_types;
 pub mod meta_types;
 pub mod lattice_types;
 pub mod brush_enums;
+pub mod brush_types;
 pub mod camera_types;
 pub mod light_types;
 pub mod lightprobe_types;
