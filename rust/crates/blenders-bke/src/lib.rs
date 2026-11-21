@@ -228,3 +228,4 @@ pub mod main_db;
 pub mod subdiv_mesh;
 pub mod mesh_data_update;
 pub mod multires_unsubdivide;
+pub mod fcurve_driver;
