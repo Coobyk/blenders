@@ -40,6 +40,7 @@ pub mod bake_geometry_nodes_modifier_pack;
 pub mod bake_items_paths;
 pub mod blender_user_menu;
 pub mod bpath;
+pub mod cachefile;
 pub mod callbacks;
 pub mod colorband;
 pub mod curve_convert;
