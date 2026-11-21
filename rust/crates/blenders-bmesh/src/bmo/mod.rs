@@ -35,3 +35,4 @@ pub mod bmo_primitive;
 pub mod bmo_connect_pair;
 pub mod bmo_subdivide;
 pub mod bmo_inset;
+pub mod bmo_join_triangles;

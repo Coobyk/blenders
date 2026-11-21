@@ -4349,3 +4349,19 @@ pub fn isect_seg_seg_v2_point_ex(
     }
     -1
 }
+
+/// `is_quad_flip_v3` — returns bitmask of flipped corner pairs (0 = convex quad).
+pub fn is_quad_flip_v3(v1: Vec3, v2: Vec3, v3: Vec3, v4: Vec3) -> i32 {
+    let d_12 = v1 - v2;
+    let d_23 = v2 - v3;
+    let d_34 = v3 - v4;
+    let d_41 = v4 - v1;
+    let mut ret = 0;
+    let mut cross_a = d_12.cross(d_23);
+    let mut cross_b = d_34.cross(d_41);
+    ret |= ((cross_a.dot(cross_b) < 0.0) as i32) << 0;
+    cross_a = d_23.cross(d_34);
+    cross_b = d_41.cross(d_12);
+    ret |= ((cross_a.dot(cross_b) < 0.0) as i32) << 1;
+    ret
+}
