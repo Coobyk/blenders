@@ -24,6 +24,7 @@ pub mod anim_types;
 pub mod key_types;
 pub mod vfont_types;
 pub mod meta_types;
+pub mod dynamicpaint_types;
 pub mod effect_types;
 pub mod freestyle_types;
 pub mod lattice_types;
