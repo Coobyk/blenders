@@ -156,3 +156,4 @@ pub mod vfont;
 pub mod volume_grid_multi_function_eval;
 pub mod tracking_solver;
 pub mod instances;
+pub mod grease_pencil_modifiers;
