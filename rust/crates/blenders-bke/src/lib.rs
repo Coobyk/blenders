@@ -15,6 +15,7 @@ pub mod anim_data_bmain_utils;
 pub mod appdir;
 pub mod armature_selection;
 pub mod asset;
+pub mod asset_edit;
 pub mod attribute_math;
 pub mod attribute_legacy_convert;
 pub mod asset_weak_reference;
