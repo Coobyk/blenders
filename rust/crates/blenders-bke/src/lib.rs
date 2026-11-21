@@ -11,6 +11,8 @@ pub mod autoexec;
 pub mod callbacks;
 pub mod editlattice;
 pub mod lib_id_eval;
+pub mod main_invariants;
+pub mod cpp_types;
 pub mod mesh_flip_faces;
 pub mod node_tree_dot_export;
 pub mod paint_runtime;
