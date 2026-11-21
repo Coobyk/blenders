@@ -607,6 +607,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-bke"
+version = "0.0.1"
+dependencies = [
+ "blenders-bli",
+ "blenders-bmesh",
+ "blenders-core",
+ "blenders-math",
+]
+
+[[package]]
 name = "blenders-bli"
 version = "0.1.0"
 dependencies = [
@@ -632,6 +642,14 @@ dependencies = [
 name = "blenders-core"
 version = "0.1.0"
 dependencies = [
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-dna"
+version = "0.0.1"
+dependencies = [
+ "blenders-bli",
  "blenders-math",
 ]
 

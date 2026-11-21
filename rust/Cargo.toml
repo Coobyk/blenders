@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/blenders-dna",
     "crates/blenders-bke","crates/*"]
 resolver = "3"
 
