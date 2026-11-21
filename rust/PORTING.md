@@ -73,6 +73,16 @@ Next: `blenkernel/intern/*.cc` (~330k lines) into `blenders-bke`.
   `node_tree_dot_export.cc`, `node_enum_definition.cc`,
   `main_invariants.cc`, `addon.cc`, `blender_user_menu.cc`,
   `blender_undo.cc`, `blender_copybuffer.cc`, `anim_data_bmain_utils.cc`,
+  `attribute_access.cc`, `compositor.cc` (frame cache + effect registry),
+  `volume_grid.cc` (`GVolumeGrid` + `GridImpl` trait), `mesh_convert.cc`
+  (nurbs→mesh + polyline chains), `anim_data.cc` (path rename/remove fix),
+  `camera.cc` (params/viewplane/frame math), `mball_tessellate.cc` (full
+  Bloomenthal polygonizer, runtime cube table), `particle_distribute.cc`
+  (grid fill, hammersley, jitter), `tracking_auto.cc` (libmv marker
+  conversions), `curveprofile.cc` (handles/insert/reverse + adaptive
+  sampling tables), `effect.cc` (all `PFIELD_*` falloffs + physical
+  effector forces), `geometry_compare.cc` (set-based index sorting +
+  `compare_meshes`/`compare_lattices`),
   `curve_convert.cc`, `action_bones.cc`, `lib_id_remapper.cc`,
   `sound_reader_cache.cc`, `volume_grid_fields.cc`,
   `geometry_component_{mesh,curves,instances,volume,pointcloud,grease_pencil,edit_data}.cc`,
