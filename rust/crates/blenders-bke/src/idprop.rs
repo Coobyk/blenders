@@ -340,6 +340,20 @@ pub mod idprop_create {
         }
         p
     }
+    /// `create` f32 array.
+    pub fn create_array_f32(name: &str, values: &[f32], flags: u8) -> IDProperty {
+        let mut t = IDPropertyTemplate::default();
+        t.array_type = IDP_FLOAT;
+        t.array_len = values.len() as i32;
+        let mut p = idp_new(IDP_ARRAY, &t, name, flags).unwrap();
+        if let IDPData::Array(buf) = &mut p.data {
+            buf.clear();
+            for v in values {
+                buf.extend_from_slice(&v.to_ne_bytes());
+            }
+        }
+        p
+    }
     /// `create` f64 array.
     pub fn create_array_f64(name: &str, values: &[f64], flags: u8) -> IDProperty {
         let mut t = IDPropertyTemplate::default();
@@ -353,6 +367,11 @@ pub mod idprop_create {
             }
         }
         p
+    }
+    /// `idprop::create_group`.
+    pub fn create_group(name: &str, flags: u8) -> IDProperty {
+        let t = IDPropertyTemplate::default();
+        idp_new(IDP_GROUP, &t, name, flags).unwrap()
     }
 }
 
