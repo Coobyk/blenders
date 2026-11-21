@@ -4756,3 +4756,387 @@ fn bevel_build_cutoff(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) {
         );
     }
 }
+
+/* ===== vmesh dispatch + poly/trifan (C ~6263-6600) ===== */
+
+/// `bevel_build_poly` — fill the boundary with one ngon (+ profile verts).
+fn bevel_build_poly(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) -> usize {
+    let boundstart = bp.bverts[bvi].vmesh.as_ref().unwrap().boundstart;
+    let mut repface = BM_NIL;
+    let mut repface_e1 = BM_NIL;
+    let mut repface_e2 = BM_NIL;
+    let mut unsnapped = [BM_NIL; 3];
+    if bp.bverts[bvi].any_seam {
+        repface = frep_for_center_poly(bm, bp, bvi);
+        let (e1, e2) = get_incident_edges(bm, repface, bp.bverts[bvi].v);
+        repface_e1 = e1;
+        repface_e2 = e2;
+        unsnapped = find_face_internal_boundverts(bm, bp, bvi, repface);
+    }
+    let mut bmverts: Vec<usize> = Vec::new();
+    let mut bmfaces: Vec<usize> = Vec::new();
+    let mut bmedges: Vec<usize> = Vec::new();
+    let mut n = 0usize;
+    let mut bndv = boundstart;
+    loop {
+        bmverts.push(bp.boundverts[bndv].nv.v);
+        if repface != BM_NIL {
+            bmfaces.push(repface);
+            if unsnapped.contains(&bndv) {
+                bmedges.push(BM_NIL);
+            } else {
+                bmedges.push(find_closer_edge(
+                    bm,
+                    bm.vert(bp.boundverts[bndv].nv.v).co,
+                    repface_e1,
+                    repface_e2,
+                ));
+            }
+        } else {
+            bmfaces.push(boundvert_rep_face(bp, bndv).0);
+            bmedges.push(BM_NIL);
+        }
+        n += 1;
+        let ebev = bp.boundverts[bndv].ebev;
+        if ebev != BM_NIL && bp.bverts[bvi].edges[ebev].seg > 1 {
+            for k in 1..bp.bverts[bvi].edges[ebev].seg {
+                let mv = {
+                    let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                    vm.mesh[mesh_vert(vm, bp.boundverts[bndv].index, 0, k)].v
+                };
+                bmverts.push(mv);
+                if repface != BM_NIL {
+                    bmfaces.push(repface);
+                    let frep_e =
+                        find_closer_edge(bm, bm.vert(mv).co, repface_e1, repface_e2);
+                    bmedges.push(if k < bp.bverts[bvi].edges[ebev].seg / 2 {
+                        BM_NIL
+                    } else {
+                        frep_e
+                    });
+                } else {
+                    bmfaces.push(boundvert_rep_face(bp, bndv).0);
+                    bmedges.push(BM_NIL);
+                }
+                n += 1;
+            }
+        }
+        bndv = bp.boundverts[bndv].next;
+        if bndv == boundstart {
+            break;
+        }
+    }
+    if n > 2 {
+        let f = bev_create_ngon(
+            bm,
+            bp,
+            &bmverts,
+            Some(&bmfaces),
+            repface,
+            Some(&bmedges),
+            bp.bverts[bvi].v,
+            None,
+            bp.mat_nr,
+            true,
+        );
+        record_face_kind(bp, f, F_VERT);
+        f
+    } else {
+        BM_NIL
+    }
+}
+
+/// `bevel_build_trifan` — poly then fan-split from one corner vert.
+fn bevel_build_trifan(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) {
+    debug_assert!(
+        bp.bverts[bvi].edges[next_bev(bp, bvi, EH_NIL).1].seg == 1 || bp.bverts[bvi].selcount == 1
+    );
+    let mut f = bevel_build_poly(bm, bp, bvi);
+    if f == BM_NIL {
+        return;
+    }
+    let mut l_fan = bm.lpool[bm.face(f).l_first].prev;
+    let v_fan = bm.lpool[l_fan].v;
+    while bm.face(f).len > 3 {
+        let mut l_new = BM_NIL;
+        let next2 = bm.lpool[bm.lpool[l_fan].next].next;
+        let f_new = crate::mods::bm_face_split(bm, f, l_fan, next2, Some(&mut l_new), false);
+        flag_out_edge(bm, bm.lpool[l_new].e);
+        if bm.face(f_new).len > bm.face(f).len {
+            f = f_new;
+            if bm.lpool[l_new].v == v_fan {
+                l_fan = l_new;
+            } else if bm.lpool[bm.lpool[l_new].next].v == v_fan {
+                l_fan = bm.lpool[l_new].next;
+            } else if bm.lpool[bm.lpool[l_new].prev].v == v_fan {
+                l_fan = bm.lpool[l_new].prev;
+            } else {
+                debug_assert!(false);
+            }
+        } else if bm.lpool[l_fan].v == v_fan {
+            /* l_fan = l_fan */
+        } else if bm.lpool[bm.lpool[l_fan].next].v == v_fan {
+            l_fan = bm.lpool[l_fan].next;
+        } else if bm.lpool[bm.lpool[l_fan].prev].v == v_fan {
+            l_fan = bm.lpool[l_fan].prev;
+        } else {
+            debug_assert!(false);
+        }
+        record_face_kind(bp, f_new, F_VERT);
+    }
+}
+
+/// `bevel_vert_two_edges`.
+fn bevel_vert_two_edges(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) {
+    let (count, ns, boundstart);
+    {
+        let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+        count = vm.count;
+        ns = vm.seg;
+        boundstart = vm.boundstart;
+    }
+    debug_assert!(count == 2 && bp.affect_type == BEVEL_AFFECT_VERTICES);
+    let v1;
+    let v2;
+    {
+        let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+        v1 = vm.mesh[mesh_vert(vm, 0, 0, 0)].v;
+        v2 = vm.mesh[mesh_vert(vm, 1, 0, 0)].v;
+    }
+    if ns > 1 {
+        {
+            let pro = &mut bp.boundverts[boundstart].profile;
+            pro.super_r = bp.pro_super_r;
+            pro.start = bm.vert(v1).co;
+            pro.end = bm.vert(v2).co;
+            pro.middle = bm.vert(bp.bverts[bvi].v).co;
+            pro.plane_co = Vec3::ZERO;
+            pro.plane_no = Vec3::ZERO;
+            pro.proj_dir = Vec3::ZERO;
+        }
+        for k in 1..ns {
+            let co = get_profile_point(bp, &bp.boundverts[boundstart].profile, k, ns);
+            {
+                let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+                let im = mesh_vert(vm, 0, 0, k);
+                vm.mesh[im].co = co;
+            }
+            let bvv = bp.bverts[bvi].v;
+            create_mesh_bmvert(bm, bp.bverts[bvi].vmesh.as_mut().unwrap(), 0, 0, k, Some(bvv));
+        }
+        {
+            let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+            let im = mesh_vert(vm, 0, 0, ns);
+            vm.mesh[im].co = bm.vert(v2).co;
+        }
+        for k in 1..ns {
+            let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+            copy_mesh_vert(vm, 1, 0, ns - k, 0, 0, k);
+        }
+    }
+    if !crate::query::bm_vert_face_check(bm, bp.bverts[bvi].v) {
+        let e_eg = bp.bverts[bvi].edges[0].e;
+        debug_assert!(e_eg != BM_NIL);
+        for k in 0..ns {
+            let (v1, v2);
+            {
+                let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                v1 = vm.mesh[mesh_vert(vm, 0, 0, k)].v;
+                v2 = vm.mesh[mesh_vert(vm, 0, 0, k + 1)].v;
+            }
+            debug_assert!(v1 != BM_NIL && v2 != BM_NIL);
+            let bme = crate::core::bm_edge_create(
+                bm,
+                v1,
+                v2,
+                Some(e_eg),
+                crate::BM_CREATE_NO_DOUBLE,
+            );
+            if bme != BM_NIL {
+                flag_out_edge(bm, bme);
+            }
+        }
+    }
+}
+
+/// `build_vmesh` — fill boundstart mesh verts, profiles, weld merge, dispatch.
+fn build_vmesh(bm: &mut BMesh, bp: &mut BevelParams, bvi: usize) {
+    let (n, ns, boundstart);
+    {
+        let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+        n = vm.count;
+        ns = vm.seg;
+        boundstart = vm.boundstart;
+    }
+    {
+        let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+        vm.mesh = vec![
+            NewVert {
+                v: BM_NIL,
+                co: Vec3::ZERO
+            };
+            (n * (ns / 2 + 1) * (ns + 1)) as usize
+        ];
+    }
+    let weld = bp.bverts[bvi].selcount == 2 && n == 2;
+    let mut weld1 = BM_NIL;
+    let mut weld2 = BM_NIL;
+    let mut bndv = boundstart;
+    loop {
+        let i = bp.boundverts[bndv].index;
+        {
+            let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+            let im = mesh_vert(vm, i, 0, 0);
+            vm.mesh[im].co = bp.boundverts[bndv].nv.co;
+        }
+        let bvv = bp.bverts[bvi].v;
+        create_mesh_bmvert(bm, bp.bverts[bvi].vmesh.as_mut().unwrap(), i, 0, 0, Some(bvv));
+        {
+            let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+            bp.boundverts[bndv].nv.v = vm.mesh[mesh_vert(vm, i, 0, 0)].v;
+        }
+        if weld && bp.boundverts[bndv].ebev != BM_NIL {
+            if weld1 == BM_NIL {
+                weld1 = bndv;
+            } else {
+                weld2 = bndv;
+                set_profile_params(bm, bp, weld1);
+                set_profile_params(bm, bp, weld2);
+                move_weld_profile_planes(bm, bp, weld1, weld2);
+            }
+        }
+        bndv = bp.boundverts[bndv].next;
+        if bndv == boundstart {
+            break;
+        }
+    }
+    calculate_vm_profiles(bm, bp, bvi);
+    bndv = boundstart;
+    loop {
+        let i = bp.boundverts[bndv].index;
+        let inext = bp.boundverts[bp.boundverts[bndv].next].index;
+        {
+            let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+            copy_mesh_vert(vm, i, 0, ns, inext, 0, 0);
+        }
+        if bp.bverts[bvi].vmesh.as_ref().unwrap().mesh_kind != MeshKind::Adj {
+            for k in 1..ns {
+                if bp.boundverts[bndv].ebev != BM_NIL {
+                    let co = get_profile_point(bp, &bp.boundverts[bndv].profile, k, ns);
+                    {
+                        let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+                        let im = mesh_vert(vm, i, 0, k);
+                        vm.mesh[im].co = co;
+                    }
+                    if !weld {
+                        let bvv = bp.bverts[bvi].v;
+                        create_mesh_bmvert(
+                            bm,
+                            bp.bverts[bvi].vmesh.as_mut().unwrap(),
+                            i,
+                            0,
+                            k,
+                            Some(bvv),
+                        );
+                    }
+                } else if n == 2 {
+                    let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+                    copy_mesh_vert(vm, i, 0, k, 1 - i, 0, ns - k);
+                }
+            }
+        }
+        bndv = bp.boundverts[bndv].next;
+        if bndv == boundstart {
+            break;
+        }
+    }
+    if weld {
+        bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = MeshKind::None;
+        for k in 1..ns {
+            let (v_weld1, v_weld2);
+            {
+                let vm = bp.bverts[bvi].vmesh.as_ref().unwrap();
+                v_weld1 = vm.mesh[mesh_vert(vm, bp.boundverts[weld1].index, 0, k)].co;
+                v_weld2 = vm.mesh[mesh_vert(vm, bp.boundverts[weld2].index, 0, ns - k)].co;
+            }
+            let co = if bp.profile_type == BEVEL_PROFILE_CUSTOM {
+                (v_weld1 + v_weld2) * 0.5
+            } else if bp.boundverts[weld1].profile.super_r == PRO_LINE_R
+                && bp.boundverts[weld2].profile.super_r != PRO_LINE_R
+            {
+                v_weld2
+            } else if bp.boundverts[weld2].profile.super_r == PRO_LINE_R
+                && bp.boundverts[weld1].profile.super_r != PRO_LINE_R
+            {
+                v_weld1
+            } else {
+                (v_weld1 + v_weld2) * 0.5
+            };
+            {
+                let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+                let im = mesh_vert(vm, bp.boundverts[weld1].index, 0, k);
+                vm.mesh[im].co = co;
+            }
+            let bvv = bp.bverts[bvi].v;
+            create_mesh_bmvert(
+                bm,
+                bp.bverts[bvi].vmesh.as_mut().unwrap(),
+                bp.boundverts[weld1].index,
+                0,
+                k,
+                Some(bvv),
+            );
+        }
+        for k in 1..ns {
+            let vm = bp.bverts[bvi].vmesh.as_mut().unwrap();
+            copy_mesh_vert(
+                vm,
+                bp.boundverts[weld2].index,
+                0,
+                ns - k,
+                bp.boundverts[weld1].index,
+                0,
+                k,
+            );
+        }
+    }
+    let mut vpipe = BM_NIL;
+    if (n == 3 || n == 4) && bp.seg > 1 {
+        vpipe = pipe_test(bm, bp, bvi);
+        if vpipe != BM_NIL {
+            bp.bverts[bvi].vmesh.as_mut().unwrap().mesh_kind = MeshKind::Adj;
+        }
+    }
+    match bp.bverts[bvi].vmesh.as_ref().unwrap().mesh_kind {
+        MeshKind::None => {
+            if n == 2 && bp.affect_type == BEVEL_AFFECT_VERTICES {
+                bevel_vert_two_edges(bm, bp, bvi);
+            }
+        }
+        MeshKind::Poly => {
+            bevel_build_poly(bm, bp, bvi);
+        }
+        MeshKind::Adj => {
+            bevel_build_rings(bm, bp, bvi, vpipe);
+        }
+        MeshKind::TriFan => {
+            bevel_build_trifan(bm, bp, bvi);
+        }
+        MeshKind::Cutoff => {
+            bevel_build_cutoff(bm, bp, bvi);
+        }
+    }
+}
+
+/// `edge_face_angle` — π minus signed dihedral, or 0.
+fn edge_face_angle(bm: &BMesh, bp: &BevelParams, e: EHRef) -> f32 {
+    let eh = bp.eh(e);
+    if eh.fprev != BM_NIL && eh.fnext != BM_NIL {
+        return std::f32::consts::PI
+            - blenders_math::geom::angle_normalized_v3v3(
+                bm.face(eh.fprev).no,
+                bm.face(eh.fnext).no,
+            );
+    }
+    0.0
+}
