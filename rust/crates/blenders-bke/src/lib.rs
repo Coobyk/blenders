@@ -238,3 +238,4 @@ pub mod image_save;
 pub mod fmodifier;
 pub mod ocean;
 pub mod boids;
+pub mod mesh_normals;
