@@ -981,7 +981,7 @@ pub const OPDEF_ROTATE_UVS: BMOpDefine = BMOpDefine {
         ("use_ccw", BMOSlotType::Bool)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_rotate_uvs_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -992,7 +992,7 @@ pub const OPDEF_REVERSE_UVS: BMOpDefine = BMOpDefine {
         ("faces", BMOSlotType::ElemBuf)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_reverse_uvs_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1005,7 +1005,7 @@ pub const OPDEF_ROTATE_COLORS: BMOpDefine = BMOpDefine {
         ("color_index", BMOSlotType::Int)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_rotate_colors_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 
@@ -1017,7 +1017,7 @@ pub const OPDEF_REVERSE_COLORS: BMOpDefine = BMOpDefine {
         ("color_index", BMOSlotType::Int)
     ],
     slot_types_out: &[],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_utils::bmo_reverse_colors_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

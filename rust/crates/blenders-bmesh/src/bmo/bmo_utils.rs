@@ -285,3 +285,9 @@ pub fn bmo_smooth_vert_exec(bm: &mut BMesh, op: &mut BMOperator) {
         if zaxis { bm.vpool[v].co.z = cos[i].z; }
     }
 }
+
+/* CustomData-bound ops — PORT_PENDING stubs (loop UV/color layers). */
+pub fn bmo_rotate_uvs_exec(_bm: &mut BMesh, _op: &mut BMOperator) {}
+pub fn bmo_reverse_uvs_exec(_bm: &mut BMesh, _op: &mut BMOperator) {}
+pub fn bmo_rotate_colors_exec(_bm: &mut BMesh, _op: &mut BMOperator) {}
+pub fn bmo_reverse_colors_exec(_bm: &mut BMesh, _op: &mut BMOperator) {}
