@@ -96,6 +96,7 @@ pub mod cpp_types;
 pub mod mesh_debug;
 pub mod mesh_merge_customdata;
 pub mod editmesh_cache;
+pub mod editmesh;
 pub mod displist;
 pub mod editmesh_tangent;
 pub mod mesh_flip_faces;
