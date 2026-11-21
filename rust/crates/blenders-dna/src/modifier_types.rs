@@ -3587,12 +3587,15 @@ impl Default for NodesModifierDataBlock {
 /// `NodesModifierBakeFile`.
 #[derive(Clone)]
 pub struct NodesModifierBakeFile {
+    /// `const char *name`
+    pub name: usize,
     /// `PackedFile *packed_file`
     pub packed_file: usize,
 }
 impl Default for NodesModifierBakeFile {
     fn default() -> Self {
         Self {
+            name: NIL,
             packed_file: NIL,
         }
     }
