@@ -163,3 +163,4 @@ pub mod light_linking;
 pub mod editmesh_bvh;
 pub mod blender_project;
 pub mod icons;
+pub mod node_tree_zones;
