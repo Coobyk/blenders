@@ -200,3 +200,4 @@ pub mod mesh_validate;
 pub mod undo_system;
 pub mod studiolight;
 pub mod type_conversions;
+pub mod image_format;
