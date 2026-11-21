@@ -202,3 +202,5 @@ pub mod studiolight;
 pub mod type_conversions;
 pub mod image_format;
 pub mod armature_update;
+pub mod volume;
+pub mod volume;
