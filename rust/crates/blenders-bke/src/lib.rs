@@ -256,3 +256,4 @@ pub mod colortools;
 pub mod linestyle;
 pub mod bake_items_serialize;
 pub mod pbvh_bmesh;
+pub mod blendfile_link_append;
