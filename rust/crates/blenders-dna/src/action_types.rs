@@ -725,9 +725,7 @@ pub struct SpaceActionOverlays {
     pub flag: i32,
 }
 
-/// `View2D` placeholder (DNA_view2d_types.h).
-#[derive(Clone, Default)]
-pub struct View2D(pub [u64; 20]);
+pub use crate::view2d_types::View2D;
 
 /// `SpaceAction`.
 #[derive(Clone)]
