@@ -402,7 +402,7 @@ pub const OPDEF_BRIDGE_LOOPS: BMOpDefine = BMOpDefine {
         ("faces.out", BMOSlotType::ElemBuf),
         ("edges.out", BMOSlotType::ElemBuf)
     ],
-    init: None, exec: None,
+    init: None, exec: Some(crate::bmo::bmo_bridge::bmo_bridge_loops_exec),
     type_flag: BMO_OPTYPE_FLAG_NOP,
 };
 

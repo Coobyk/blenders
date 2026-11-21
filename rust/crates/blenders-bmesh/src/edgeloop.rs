@@ -669,3 +669,8 @@ pub fn bm_edgeloop_expand(
     }
     debug_assert_eq!(el_store.len, el_store_len);
 }
+
+/// Mutable `bm_edgeloop_verts_get` (for `BLI_listbase_rotate_first` ports).
+pub fn bm_edgeloop_verts_get_mut(el: &mut BMEdgeLoopStore) -> &mut VecDeque<usize> {
+    &mut el.verts
+}
