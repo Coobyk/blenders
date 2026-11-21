@@ -207,3 +207,4 @@ pub mod lib_query;
 pub mod image_gpu;
 pub mod subdiv_mesh_layout;
 pub mod attribute;
+pub mod mesh_attributes;
