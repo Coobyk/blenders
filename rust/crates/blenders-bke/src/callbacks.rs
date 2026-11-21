@@ -53,7 +53,14 @@ pub const BKE_CB_EVT_COMPOSITE_CANCEL: usize = 32;
 pub const BKE_CB_EVT_ANIMATION_PLAYBACK_PRE: usize = 33;
 pub const BKE_CB_EVT_ANIMATION_PLAYBACK_POST: usize = 34;
 pub const BKE_CB_EVT_TRANSLATION_UPDATE_POST: usize = 35;
-pub const BKE_CB_EVT_TOT: usize = 36;
+pub const BKE_CB_EVT_EXTENSION_REPOS_UPDATE_PRE: usize = 36;
+pub const BKE_CB_EVT_EXTENSION_REPOS_UPDATE_POST: usize = 37;
+pub const BKE_CB_EVT_EXTENSION_REPOS_SYNC: usize = 38;
+pub const BKE_CB_EVT_EXTENSION_REPOS_FILES_CLEAR: usize = 39;
+pub const BKE_CB_EVT_BLENDIMPORT_PRE: usize = 40;
+pub const BKE_CB_EVT_BLENDIMPORT_POST: usize = 41;
+pub const BKE_CB_EVT_EXIT_PRE: usize = 42;
+pub const BKE_CB_EVT_TOT: usize = 43;
 
 /// `callback_slots[BKE_CB_EVT_TOT]` — the global registry.
 pub struct CallbackRegistry {
