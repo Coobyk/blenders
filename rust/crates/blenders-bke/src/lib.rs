@@ -175,3 +175,4 @@ pub mod main_namemap;
 pub mod node_socket_value;
 pub mod pbvh_pixels;
 pub mod bake_values;
+pub mod pbvh_pixels_copy;
