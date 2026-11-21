@@ -7,19 +7,12 @@ use crate::layer_types::ViewLayer;
 use blenders_bli::listbase::ListBase;
 
 /* Foreign-type placeholders (ported in their own headers when reached). */
-/// `CurveMapping` (DNA_color_types.h).
+pub use crate::color_types::{
+    ColorManagedColorspaceSettings, ColorManagedDisplaySettings, ColorManagedViewSettings,
+};
+pub use crate::image_types::ImageUser;
+/// `CurveMapping` ref (DNA_color_types.h).
 pub type CurveMappingRef = usize;
-/// `ImageUser` (DNA_image_types.h).
-#[derive(Clone, Default)]
-pub struct ImageUser(pub u64);
-/// `ColorManagedViewSettings` / `ColorManagedDisplaySettings` /
-/// `ColorManagedColorspaceSettings` (DNA_color_types.h).
-#[derive(Clone, Default)]
-pub struct ColorManagedViewSettings(pub u64);
-#[derive(Clone, Default)]
-pub struct ColorManagedDisplaySettings(pub u64);
-#[derive(Clone, Default)]
-pub struct ColorManagedColorspaceSettings(pub u64);
 /// `View3DCursor` (DNA_view3d_types.h).
 #[derive(Clone, Default)]
 pub struct View3DCursor {

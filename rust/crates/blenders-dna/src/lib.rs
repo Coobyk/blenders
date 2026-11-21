@@ -4,10 +4,12 @@
 #![allow(dead_code)]
 
 pub mod id;
+pub mod image_types;
 pub mod collection_types;
 pub mod action_types;
 pub mod anim_enums;
 pub mod armature_types;
+pub mod color_types;
 pub mod anim_types;
 pub mod id_enums;
 pub mod layer_types;
