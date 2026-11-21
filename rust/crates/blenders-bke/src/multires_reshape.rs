@@ -152,3 +152,29 @@ pub fn multires_reshape_write_ccg(
     }
     true
 }
+
+// --- intern/multires_versioning.cc ---------------------------------------
+
+/// `OPENSUBDIV_SHARPNESS_INFINITE`.
+pub const OPENSUBDIV_SHARPNESS_INFINITE: f32 = 10.0;
+
+/// `subdiv_for_simple_to_catmull_clark` — builds an infinitely-sharp
+/// evaluator emulating old simple subdivision. PORT_PENDING: needs the
+/// OpenSubdiv converter + evaluator (foreign dep); the sharpness arrays and
+/// sequence are documented.
+///
+/// Steps: `converter_init_for_mesh` → fill `edge_sharpness`/`vert_sharpness`
+/// with `OPENSUBDIV_SHARPNESS_INFINITE` → `subdiv::new_from_converter` →
+/// `eval_begin_from_mesh(CPU)`; on failure `subdiv::free` + NIL.
+pub fn subdiv_for_simple_to_catmull_clark() -> usize {
+    blenders_dna::id::NIL
+}
+
+/// `multires_do_versions_simple_to_catmull_clark` — 2.90→3.0 data
+/// conversion: store object-space displacement of simple limit, then rebuild
+/// tangent displacement vs Catmull-Clark (both reshape-context calls are
+/// PORT_PENDING; the sequence is verbatim).
+pub fn multires_do_versions_simple_to_catmull_clark(_object: usize, _mmd: usize) {
+    // WITH_OPENSUBDIV == false branch: UNUSED_VARS(object, mmd).
+    // PORT_PENDING the OpenSubdiv path.
+}
