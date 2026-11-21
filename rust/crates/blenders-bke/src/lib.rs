@@ -198,3 +198,4 @@ pub mod lib_remap;
 pub mod path_templates;
 pub mod mesh_validate;
 pub mod undo_system;
+pub mod studiolight;
