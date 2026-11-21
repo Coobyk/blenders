@@ -14,6 +14,8 @@ pub mod addon;
 pub mod anim_data_bmain_utils;
 pub mod appdir;
 pub mod armature_selection;
+pub mod asset;
+pub mod asset_weak_reference;
 pub mod bake_data_block_map;
 pub mod autoexec;
 pub mod bake_items_paths;
