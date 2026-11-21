@@ -15,4 +15,5 @@ pub mod bmesh_path_uv;
 pub mod bmesh_path_region_uv;
 pub mod bmesh_region_match;
 
+pub mod bmesh_intersect;
 pub mod bmesh_intersect_edges;
