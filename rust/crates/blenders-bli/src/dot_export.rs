@@ -273,6 +273,14 @@ impl DirectedGraph {
     pub fn new() -> Self {
         DirectedGraph { graph: Graph::new() }
     }
+    /// `digraph.node_mut(id)` — node attributes (label/shape/colors).
+    pub fn node_mut(&mut self, id: usize) -> &mut Node {
+        &mut self.graph.nodes[id]
+    }
+    /// `digraph.edge_mut(id)` — edge attributes.
+    pub fn edge_mut(&mut self, id: usize) -> &mut Edge {
+        &mut self.graph.edges[id]
+    }
     /// `digraph.new_edge(from, to)` → edge index.
     pub fn new_edge(&mut self, from: NodePort, to: NodePort) -> usize {
         self.graph.edges.push(Edge {
