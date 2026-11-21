@@ -292,3 +292,4 @@ pub mod grease_pencil_convert_legacy;
 pub mod curve;
 pub mod particle;
 pub mod particle_system;
+pub mod lib_override;
