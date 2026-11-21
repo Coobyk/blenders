@@ -4,3 +4,5 @@
 #![allow(dead_code)]
 
 pub mod anonymous_attribute_id;
+pub mod idtype;
+pub mod speaker;
