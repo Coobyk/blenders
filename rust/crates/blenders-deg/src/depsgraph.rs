@@ -77,6 +77,8 @@ pub struct Depsgraph {
     pub need_tag_id_on_graph_visibility_update: bool,
     /// `need_tag_id_on_graph_visibility_time_update`.
     pub need_tag_id_on_graph_visibility_time_update: bool,
+    /// `update_count` (`DEG_get_update_count`).
+    pub update_count: u64,
 }
 
 impl Depsgraph {

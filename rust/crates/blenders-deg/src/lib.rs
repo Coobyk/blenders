@@ -35,3 +35,4 @@ pub mod runtime_backup_object;
 pub mod depsgraph_build;
 pub mod depsgraph_query_iter;
 pub mod eval_copy_on_write;
+pub mod depsgraph_api;
