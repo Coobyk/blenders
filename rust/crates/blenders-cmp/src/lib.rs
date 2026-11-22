@@ -22,3 +22,5 @@ pub mod context;
 pub mod group_node_operation;
 pub mod shader_node;
 pub mod result;
+pub mod operation;
+pub mod scheduler;
