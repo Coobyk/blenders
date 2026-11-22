@@ -20,7 +20,7 @@ pub const IMB_FTYPE_WEBP: i32 = 15;
 pub const IMB_FTYPE_AVIF: i32 = 16;
 pub const IMB_FTYPE_RADHDR: i32 = 17;
 /// `imb_is_a_*` magic-byte checks (verbatim
-//! signatures).
+/// signatures).
 pub fn imb_is_a_png(mem: &[u8]) -> bool {
     mem.starts_with(&[0x89, 0x50, 0x4E, 0x47])
 }
