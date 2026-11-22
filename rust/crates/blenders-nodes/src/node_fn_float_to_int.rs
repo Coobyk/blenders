@@ -21,7 +21,23 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `NodeFloatToIntConversion` (verbatim —
+/// bnode.custom1 rounding mode).
+pub const NODE_FLOAT_TO_INT_ROUND: i32 = 0;
+pub const NODE_FLOAT_TO_INT_FLOOR: i32 = 1;
+pub const NODE_FLOAT_TO_INT_CEILING: i32 = 2;
+pub const NODE_FLOAT_TO_INT_TRUNCATE: i32 = 3;
+/// `exec` (verbatim — cast per rounding
+/// mode, C's `float_to_int` conversion).
+pub fn exec(mode: i32, v: f32) -> i64 {
+    match mode {
+        NODE_FLOAT_TO_INT_FLOOR => v.floor() as i64,
+        NODE_FLOAT_TO_INT_CEILING => v.ceil() as i64,
+        NODE_FLOAT_TO_INT_TRUNCATE => v.trunc() as i64,
+        // Default: round (half away from
+        // zero, matching C `lroundf`).
+        _ => v.round() as i64,
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
