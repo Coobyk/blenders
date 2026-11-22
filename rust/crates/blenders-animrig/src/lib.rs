@@ -10,3 +10,5 @@ pub mod visualkey;
 pub mod nla;
 pub mod action_iterators;
 pub mod animdata;
+pub mod keyframing_auto;
+pub mod evaluation;
