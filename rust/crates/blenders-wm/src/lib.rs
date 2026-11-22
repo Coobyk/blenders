@@ -21,3 +21,4 @@ pub mod wm_keymap_utils;
 pub mod wm_dragdrop;
 pub mod wm_gesture;
 pub mod wm;
+pub mod wm_operator_type;
