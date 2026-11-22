@@ -10,3 +10,4 @@ pub mod render_result;
 pub mod engine;
 pub mod bake;
 pub mod compositor;
+pub mod texture_procedural;
