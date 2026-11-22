@@ -22,7 +22,7 @@ pub struct Socket {
     pub default_value: Option<usize>,
 }
 /// `Node` verbatim fields.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Node {
     /// `is_function_` vs interface.
     pub is_function: bool,
@@ -99,10 +99,13 @@ impl Graph {
             let si = self.sockets.len();
             self.sockets.push(Socket {
                 index_in_node: i,
+                index_in_graph: 0,
                 is_input: true,
                 node: node_i,
                 type_: t,
-                ..Socket { index_in_graph: 0, index_in_node: i, is_input: true, node: node_i, type_: t, origin: None, targets: Vec::new(), default_value: None, index_in_graph: 0 }
+                origin: None,
+                targets: Vec::new(),
+                default_value: None,
             });
             node.inputs.push(si);
         }
@@ -110,10 +113,13 @@ impl Graph {
             let si = self.sockets.len();
             self.sockets.push(Socket {
                 index_in_node: i,
+                index_in_graph: 0,
                 is_input: false,
                 node: node_i,
                 type_: t,
-                ..Socket { index_in_graph: 0, index_in_node: i, is_input: false, node: node_i, type_: t, origin: None, targets: Vec::new(), default_value: None, index_in_graph: 0 }
+                origin: None,
+                targets: Vec::new(),
+                default_value: None,
             });
             node.outputs.push(si);
         }
