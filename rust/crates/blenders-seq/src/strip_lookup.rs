@@ -13,7 +13,7 @@ pub fn lookup_strip_by_index(strips: &[usize], index: usize) -> Option<usize> {
     strips.get(index).copied()
 }
 /// `lookup_strip_at_frame` (verbatim — channel +
-//! frame inside [start, end)).
+/// frame inside [start, end)).
 pub fn lookup_strip_at_frame(
     strips: &[(usize, i32, f64, f64)],
     channel: i32,
