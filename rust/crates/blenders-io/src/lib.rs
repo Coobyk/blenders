@@ -160,3 +160,4 @@ pub mod usd_writer_volume;
 pub mod volume;
 pub mod volume_modifier;
 pub mod world;
+pub mod usd_archive;
