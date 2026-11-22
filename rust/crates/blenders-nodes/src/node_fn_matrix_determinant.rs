@@ -21,7 +21,18 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — 4x4 determinant via
+/// cofactor expansion).
+pub fn exec(m: &[[f32; 4]; 4]) -> f32 {
+    fn det3(m: &[[f32; 4]; 4], r: &[usize; 3], c: &[usize; 3]) -> f32 {
+        m[r[0]][c[0]] * (m[r[1]][c[1]] * m[r[2]][c[2]] - m[r[1]][c[2]] * m[r[2]][c[1]])
+            - m[r[0]][c[1]] * (m[r[1]][c[0]] * m[r[2]][c[2]] - m[r[1]][c[2]] * m[r[2]][c[0]])
+            + m[r[0]][c[2]] * (m[r[1]][c[0]] * m[r[2]][c[1]] - m[r[1]][c[1]] * m[r[2]][c[0]])
+    }
+    det3(m, &[1, 2, 3], &[1, 2, 3]) * m[0][0]
+        - det3(m, &[1, 2, 3], &[0, 2, 3]) * m[0][1]
+        + det3(m, &[1, 2, 3], &[0, 1, 3]) * m[0][2]
+        - det3(m, &[1, 2, 3], &[0, 1, 2]) * m[0][3]
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
