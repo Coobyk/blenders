@@ -3,11 +3,11 @@
 /// `SOCKS` (verbatim — declared
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
-    ("Value", super::node_declaration::SOCK_VECTOR, 1),
     ("Value", super::node_declaration::SOCK_FLOAT, 1),
-    ("Value", super::node_declaration::SOCK_INT, 1),
-    ("Value", super::node_declaration::SOCK_MATRIX, 1),
-    ("Group ID", super::node_declaration::SOCK_INT, 1),
+    ("Group Index", super::node_declaration::SOCK_INT, 1),
+    ("Leading", super::node_declaration::SOCK_FLOAT, 2),
+    ("Trailing", super::node_declaration::SOCK_FLOAT, 2),
+    ("Total", super::node_declaration::SOCK_FLOAT, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -24,7 +24,29 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — per-group prefix
+/// sums: leading[i] = Σ v[j<i, same
+/// group], trailing = total - leading
+/// - v[i]).
+pub fn exec(
+    values: &[f32],
+    group_ids: &[i64],
+    group_id: i64,
+    index: i64,
+) -> (f32, f32, f32) {
+    let mut leading = 0.0;
+    let mut total = 0.0;
+    for (i, v) in values.iter().enumerate() {
+        if !group_ids.is_empty() && group_ids[i] != group_id {
+            continue;
+        }
+        total += v;
+        if (i as i64) < index {
+            leading += v;
+        }
+    }
+    let cur = values.get(index as usize).copied().unwrap_or(0.0);
+    (leading, total - leading - cur, total)
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

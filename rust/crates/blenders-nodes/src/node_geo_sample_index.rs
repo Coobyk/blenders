@@ -4,7 +4,10 @@
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("Geometry", super::node_declaration::SOCK_GEOMETRY, 1),
+    ("Value", super::node_declaration::SOCK_FLOAT, 1),
     ("Index", super::node_declaration::SOCK_INT, 1),
+    ("Clamp", super::node_declaration::SOCK_BOOLEAN, 1),
+    ("Value", super::node_declaration::SOCK_FLOAT, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -21,7 +24,20 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — sample `values` at
+/// `index`, wrap or clamp per `clamp` —
+/// C clamps when use_clamp else wraps).
+pub fn exec(values: &[f32], index: i64, clamp: bool) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let n = values.len() as i64;
+    let i = if clamp {
+        index.clamp(0, n - 1)
+    } else {
+        index.rem_euclid(n)
+    };
+    values[i as usize]
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
