@@ -1,25 +1,18 @@
 //! Port of `intern/asset_catalog_collection.cc` —
 //! owning catalog map + deep copy.
 
-/// `AssetCatalog` verbatim fields (handle id).
-#[derive(Clone, Default)]
-pub struct AssetCatalog {
-    /// `catalog_id`.
-    pub catalog_id: u64,
-    /// `path`.
-    pub path: crate::asset_catalog_path::AssetCatalogPath,
-    /// `has_unsaved_changes`.
-    pub has_unsaved_changes: bool,
-    /// `simple_name`.
-    pub simple_name: String,
-}
+/// `AssetCatalog` — canonical type lives in
+/// `asset_catalog`.
+pub use crate::asset_catalog::AssetCatalog;
+/// `CatalogID` alias matching `asset_catalog`.
+pub type CatalogId = crate::asset_catalog::CatalogId;
 /// `AssetCatalogCollection` verbatim.
 #[derive(Default)]
 pub struct AssetCatalogCollection {
     /// `catalogs_` by catalog_id.
-    pub catalogs: std::collections::HashMap<u64, AssetCatalog>,
+    pub catalogs: std::collections::HashMap<CatalogId, AssetCatalog>,
     /// `deleted_catalogs_` by catalog_id.
-    pub deleted_catalogs: std::collections::HashMap<u64, AssetCatalog>,
+    pub deleted_catalogs: std::collections::HashMap<CatalogId, AssetCatalog>,
     /// `has_unsaved_changes_`.
     pub has_unsaved_changes: bool,
 }
@@ -31,8 +24,8 @@ impl AssetCatalogCollection {
     /// `copy_catalog_map_into_existing` (verbatim —
     /// skip dups or call hook).
     pub fn copy_catalog_map_into_existing(
-        source: &std::collections::HashMap<u64, AssetCatalog>,
-        dest: &mut std::collections::HashMap<u64, AssetCatalog>,
+        source: &std::collections::HashMap<CatalogId, AssetCatalog>,
+        dest: &mut std::collections::HashMap<CatalogId, AssetCatalog>,
         on_duplicate: Option<&dyn Fn(&mut AssetCatalog, &AssetCatalog)>,
     ) {
         for orig in source.values() {
