@@ -45,3 +45,4 @@ pub mod deg_builder_cache;
 pub mod deg_builder_cycle;
 pub mod deg_builder_nodes_scene;
 pub mod deg_builder_relations_scene;
+pub mod deg_builder_nodes_view_layer;
