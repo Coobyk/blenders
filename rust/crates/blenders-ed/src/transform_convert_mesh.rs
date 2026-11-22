@@ -1,20 +1,53 @@
-/// Port of `transform/transform_convert_mesh.cc` — editor
-/// module `transform_convert_mesh`.
-///
-/// Public entry points (verbatim).
-pub fn mesh_customdatacorrect_free() {}
-pub fn mesh_customdata_free() {}
-pub fn mesh_customdatacorrect_face_substitute_set() {}
-pub fn mesh_customdatacorrect_face_substitute_get() {}
-pub fn mesh_customdatacorrect_create() {}
-pub fn transform_convert_mesh_customdatacorrect_init() {}
-pub fn mesh_vert_orig_co_get() {}
-pub fn transform_convert_mesh_islanddata_free() {}
-pub fn mesh_test_dist_add() {}
-pub fn transform_convert_mesh_mirrordata_free() {}
-pub fn transform_convert_mesh_crazyspace_transdata_set() {}
-pub fn transform_convert_mesh_crazyspace_free() {}
-pub fn mesh_transdata_center_copy() {}
-pub fn mesh_partial_update() {}
-pub fn transform_mesh_vert_slide_data_create() {}
-pub fn transform_mesh_edge_slide_data_create() {}
+/// Port of `editors/transform/transform_convert_mesh.cc` —
+/// mesh editmode `createTransMesh_verts`:
+/// per-selected-vert TransData with
+/// loc=co, center=co.
+use crate::transform::{TransData, TransInfo, TD_SELECTED};
+/// `createTransMesh_verts` — TransData per
+/// selected vert (index → co).
+pub fn create_trans_mesh_verts(
+    t: &mut TransInfo,
+    verts: &[[f32; 3]],
+    selected: &[bool],
+) {
+    for tc in t.data.iter_mut() {
+        for (i, co) in verts.iter().enumerate() {
+            if !selected.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            let mut td = TransData::default();
+            td.identity();
+            td.loc = *co;
+            td.iloc = *co;
+            td.center = *co;
+            td.flag = TD_SELECTED;
+            tc.data.push(td);
+        }
+    }
+}
+/// `createTransMeshEdges` — TransData per
+/// selected edge (midpoint center).
+pub fn create_trans_mesh_edges(
+    t: &mut TransInfo,
+    verts: &[[f32; 3]],
+    edges: &[[i32; 2]],
+    selected: &[bool],
+) {
+    for tc in t.data.iter_mut() {
+        for (i, e) in edges.iter().enumerate() {
+            if !selected.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            let a = verts[e[0] as usize];
+            let b = verts[e[1] as usize];
+            let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
+            let mut td = TransData::default();
+            td.identity();
+            td.loc = mid;
+            td.iloc = mid;
+            td.center = mid;
+            td.flag = TD_SELECTED;
+            tc.data.push(td);
+        }
+    }
+}
