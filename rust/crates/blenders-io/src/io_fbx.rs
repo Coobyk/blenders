@@ -1,4 +1,1 @@
-/// Port of `fbx/IO_fbx.cc` — FBX import entry.
-pub fn io_fbx(filepath: &str) -> bool {
-    !filepath.is_empty()
-}
+// Port pending — `io/io_fbx`.
