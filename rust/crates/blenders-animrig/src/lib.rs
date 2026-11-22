@@ -6,3 +6,5 @@ pub mod driver;
 pub mod armature;
 pub mod action_runtime;
 pub mod action_legacy;
+pub mod visualkey;
+pub mod nla;
