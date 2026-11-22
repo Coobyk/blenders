@@ -39,3 +39,5 @@ pub mod wm_operators;
 pub mod wm_files;
 pub mod wm_event_system;
 pub mod wm_gizmo;
+pub mod wm_gizmo_type;
+pub mod wm_gizmo_group_type;
