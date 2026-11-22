@@ -149,31 +149,31 @@ pub fn read_binary_property(
         ),
         PlyPropertyType::Short => (
             g(2).map(|b| {
-                if be { i16::from_be_bytes([b[0], b[1]]) } else { i16::from_le_bytes([b[0], b[1]]) } as f64
+                (if be { i16::from_be_bytes([b[0], b[1]]) } else { i16::from_le_bytes([b[0], b[1]]) }) as f64
             }).unwrap_or(0.0),
             2,
         ),
         PlyPropertyType::Ushort => (
             g(2).map(|b| {
-                if be { u16::from_be_bytes([b[0], b[1]]) } else { u16::from_le_bytes([b[0], b[1]]) } as f64
+                (if be { u16::from_be_bytes([b[0], b[1]]) } else { u16::from_le_bytes([b[0], b[1]]) }) as f64
             }).unwrap_or(0.0),
             2,
         ),
         PlyPropertyType::Int => (
             g(4).map(|b| {
-                if be { i32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { i32::from_le_bytes([b[0], b[1], b[2], b[3]]) } as f64
+                (if be { i32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { i32::from_le_bytes([b[0], b[1], b[2], b[3]]) }) as f64
             }).unwrap_or(0.0),
             4,
         ),
         PlyPropertyType::Uint => (
             g(4).map(|b| {
-                if be { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) } as f64
+                (if be { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) }) as f64
             }).unwrap_or(0.0),
             4,
         ),
         PlyPropertyType::Float => (
             g(4).map(|b| {
-                if be { f32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { f32::from_le_bytes([b[0], b[1], b[2], b[3]]) } as f64
+                (if be { f32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { f32::from_le_bytes([b[0], b[1], b[2], b[3]]) }) as f64
             }).unwrap_or(0.0),
             4,
         ),
