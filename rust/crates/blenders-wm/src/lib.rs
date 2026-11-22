@@ -38,3 +38,4 @@ pub mod wm_playanim;
 pub mod wm_operators;
 pub mod wm_files;
 pub mod wm_event_system;
+pub mod wm_gizmo;
