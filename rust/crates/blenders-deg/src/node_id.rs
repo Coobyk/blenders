@@ -21,14 +21,17 @@ pub fn linked_state_as_string(linked_state: i32) -> &'static str {
     }
 }
 
-/// `DEG_UPDATE_SOURCE_RELATIONS` etc. (`eUpdateSource`).
-pub const DEG_UPDATE_SOURCE_RELATIONS: i32 = 0;
-/// `DEG_UPDATE_SOURCE_TIME`.
-pub const DEG_UPDATE_SOURCE_TIME: i32 = 1;
+/// `DEG_UPDATE_SOURCE_RELATIONS` etc. (`eUpdateSource`,
+/// bit flags).
+pub const DEG_UPDATE_SOURCE_TIME: i32 = 1 << 0;
 /// `DEG_UPDATE_SOURCE_USER_EDIT`.
-pub const DEG_UPDATE_SOURCE_USER_EDIT: i32 = 2;
+pub const DEG_UPDATE_SOURCE_USER_EDIT: i32 = 1 << 1;
+/// `DEG_UPDATE_SOURCE_RELATIONS`.
+pub const DEG_UPDATE_SOURCE_RELATIONS: i32 = 1 << 2;
 /// `DEG_UPDATE_SOURCE_VISIBILITY`.
-pub const DEG_UPDATE_SOURCE_VISIBILITY: i32 = 3;
+pub const DEG_UPDATE_SOURCE_VISIBILITY: i32 = 1 << 3;
+/// `DEG_UPDATE_SOURCE_SIDE_EFFECT_REQUEST`.
+pub const DEG_UPDATE_SOURCE_SIDE_EFFECT_REQUEST: i32 = 1 << 4;
 
 /// `IDComponentsMask`.
 pub type IdComponentsMask = u64;

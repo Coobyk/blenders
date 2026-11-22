@@ -26,3 +26,4 @@ pub mod depsgraph;
 pub mod debug;
 pub mod eval_visibility;
 pub mod eval_flush;
+pub mod depsgraph_tag;
