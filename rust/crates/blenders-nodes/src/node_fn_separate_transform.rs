@@ -3,7 +3,7 @@
 /// `SOCKS` (verbatim — declared
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
-    ("Transform", super::node_declaration::SOCK_MATRIX, 1),
+    ("Matrix", super::node_declaration::SOCK_MATRIX, 1),
     ("Translation", super::node_declaration::SOCK_VECTOR, 2),
     ("Rotation", super::node_declaration::SOCK_ROTATION, 2),
     ("Scale", super::node_declaration::SOCK_VECTOR, 2),
@@ -23,7 +23,17 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — mat4 → TRS:
+/// column lengths = scale, orthonormalized
+/// basis → quat).
+pub fn exec(m: &[[f32; 4]; 4]) -> ([f32; 3], [f32; 4], [f32; 3]) {
+    let t = [m[3][0], m[3][1], m[3][2]];
+    fn clen(m: &[[f32; 4]; 4], c: usize) -> f32 {
+        (m[c][0] * m[c][0] + m[c][1] * m[c][1] + m[c][2] * m[c][2]).sqrt()
+    }
+    let s = [clen(m, 0), clen(m, 1), clen(m, 2)];
+    let q = crate::node_fn_matrix_to_rotation::exec(m);
+    (t, q, s)
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
