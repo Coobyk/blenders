@@ -55,3 +55,4 @@ pub mod deg_builder_nodes;
 pub mod deg_builder_relations;
 pub mod eval_deg;
 pub mod runtime_backup_variants;
+pub mod depsgraph_query_iter_test;

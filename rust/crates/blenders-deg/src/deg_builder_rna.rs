@@ -505,3 +505,24 @@ pub fn find_node(
         id.operation_name_tag,
     )
 }
+
+/* ---- `deg_builder_rna_test.cc` (verbatim test) ---- */
+#[cfg(test)]
+mod rna_query_tests {
+    #[test]
+    fn contains() {
+        assert!(super::rna_contains("location", "location"));
+        assert!(super::rna_contains("location.x", "location"));
+        assert!(super::rna_contains("pose.bone[\"blork\"].location", "location"));
+        assert!(super::rna_contains("pose.bone[\"blork\"].location.x", "location"));
+        assert!(super::rna_contains("pose.bone[\"blork\"].location[0]", "location"));
+        assert!(!super::rna_contains("", "location"));
+        assert!(!super::rna_contains("locatio", "location"));
+        assert!(!super::rna_contains("locationnn", "location"));
+        assert!(!super::rna_contains("test_location", "location"));
+        assert!(!super::rna_contains("location_test", "location"));
+        assert!(!super::rna_contains("test_location_test", "location"));
+        assert!(!super::rna_contains("pose.bone[\"location\"].scale", "location"));
+        assert!(!super::rna_contains("pose.bone[\"location\"].scale[0]", "location"));
+    }
+}
