@@ -20,7 +20,11 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — read the `id`
+/// attribute; index fallback handled by
+/// the field evaluator upstream).
+pub fn exec(ids: &[i64], index: i64) -> i64 {
+    ids.get(index as usize).copied().unwrap_or(index)
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

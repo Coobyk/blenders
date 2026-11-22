@@ -23,7 +23,34 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — brute-force nearest
+/// point (excluding self); BVH → linear
+/// scan PORT_NOTE).
+pub fn exec(
+    query: [f32; 3],
+    positions: &[[f32; 3]],
+    self_index: i64,
+    group_id: i64,
+    group_ids: &[i64],
+) -> (i64, bool) {
+    let mut best = -1i64;
+    let mut best_d = f32::MAX;
+    for (i, p) in positions.iter().enumerate() {
+        if i as i64 == self_index {
+            continue;
+        }
+        if !group_ids.is_empty() && group_ids[i] != group_id {
+            continue;
+        }
+        let d = (p[0] - query[0]).powi(2)
+            + (p[1] - query[1]).powi(2)
+            + (p[2] - query[2]).powi(2);
+        if d < best_d {
+            best_d = d;
+            best = i as i64;
+        }
+    }
+    (best, best >= 0)
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

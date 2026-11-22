@@ -4,7 +4,6 @@
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("Normal", super::node_declaration::SOCK_VECTOR, 2),
-    ("True Normal", super::node_declaration::SOCK_VECTOR, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -21,7 +20,10 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — read `normal`
+/// attribute at index).
+pub fn exec(normals: &[[f32; 3]], index: i64) -> [f32; 3] {
+    normals.get(index as usize).copied().unwrap_or([0.0, 0.0, 1.0])
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
