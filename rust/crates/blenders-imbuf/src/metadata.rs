@@ -4,7 +4,7 @@
 /// `ImBuf::metadata` verbatim — string map.
 pub type ImbMetadata = Vec<(String, String)>;
 /// `IMB_metadata_get_field` (verbatim — find key).
-pub fn imb_metadata_get_field<'a>(metadata: &'a ImbMetadata, key: &str) -> Option<pub fn imb_metadata_get_field(metadata: &ImbMetadata, key: &str) -> Option<&str> {'a str> {
+pub fn imb_metadata_get_field<'a>(metadata: &'a ImbMetadata, key: &str) -> Option<&'a str> {
     metadata
         .iter()
         .find(|(k, _)| k == key)
