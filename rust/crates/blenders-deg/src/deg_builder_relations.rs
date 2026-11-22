@@ -359,3 +359,273 @@ pub fn add_particle_forcefield_relations(
         }
     }
 }
+
+/* ---- build dispatch + collection/object relations ---- */
+
+/// `RELATION_NO_VISIBILITY_CHANGE` (verbatim).
+pub const RELATION_NO_VISIBILITY_CHANGE: i32 = 1 << 7;
+
+/// `build_id` (verbatim — same dispatch as the node
+/// builder).
+pub fn build_id(id: usize, id_type: u16, b: &mut crate::deg_builder_nodes::IdTypeBuilders) {
+    if id == 0 {
+        return;
+    }
+    crate::deg_builder_nodes::build_id(id, false, id_type, b);
+}
+
+/// `build_generic_id` (verbatim).
+pub fn build_generic_id(
+    id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(id) {
+        return;
+    }
+    (stack_trace)(id);
+    (build_idproperties)(id);
+    (build_idproperties)(id);
+    (build_animdata)(id);
+    (build_parameters)(id);
+}
+
+/// `build_collection` (verbatim — children-hierarchy
+/// relations when from layer; else full geometry wiring).
+#[allow(clippy::too_many_arguments)]
+pub fn build_collection(
+    from_layer_collection: bool,
+    collection_id: usize,
+    check_built_props: &mut dyn FnMut(usize) -> bool,
+    check_built_children: &mut dyn FnMut(usize) -> bool,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    collection_hierarchy_exit: &dyn Fn(usize) -> usize,
+    find_comp: &dyn Fn(usize, usize) -> Option<usize>,
+    comp_entry: &dyn Fn(usize) -> usize,
+    add_op_rel: &mut dyn FnMut(usize, usize, &str),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    gobjects: &[usize],
+    children: &[usize],
+    object_instance_collections: &dyn Fn(usize) -> usize,
+    object_types: &dyn Fn(usize) -> i32,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(usize),
+    build_collection_inner: &mut dyn FnMut(usize),
+) {
+    if !(check_built_props)(collection_id) {
+        (build_idproperties)(collection_id);
+        (build_idproperties)(collection_id);
+        (build_parameters)(collection_id);
+    }
+    if from_layer_collection {
+        if !(check_built_children)(collection_id) {
+            let collection_hierarchy_exit = collection_hierarchy_exit(collection_id);
+            for ob in gobjects {
+                if let Some(obj_hier) = find_comp(*ob, 5 /*HIERARCHY*/) {
+                    (build_object)(*ob);
+                    (add_op_rel)(
+                        collection_hierarchy_exit,
+                        comp_entry(obj_hier),
+                        "Collection -> Object hierarchy",
+                    );
+                }
+            }
+        }
+        return;
+    }
+    if (check_is_built)(collection_id) {
+        return;
+    }
+    (stack_trace)(collection_id);
+    let collection_hierarchy_exit = collection_hierarchy_exit(collection_id);
+    for ob in gobjects {
+        (build_object)(*ob);
+        let obj_hier_entry = comp_entry(find_comp(*ob, 5).unwrap_or(0));
+        (add_op_rel)(
+            collection_hierarchy_exit,
+            obj_hier_entry,
+            "Collection -> Object hierarchy",
+        );
+        /* INSTANCE_GEOMETRY -> collection GEOMETRY_EVAL_DONE. */
+        (add_rel)(*ob, collection_id, "Collection Geometry");
+        if (object_types)(*ob) == 0 /*OB_EMPTY*/ {
+            let ci = (object_instance_collections)(*ob);
+            if ci != 0 {
+                (add_rel)(ci, collection_id, "Collection Geometry");
+            }
+        }
+    }
+    for child in children {
+        (build_collection_inner)(*child);
+        (add_rel)(*child, collection_id, "Collection Geometry");
+    }
+}
+
+/// `build_object` (verbatim — full transform/constraint/
+/// anim/instancing/sync relation graph).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object(
+    object_id: usize,
+    has_parent: bool,
+    parent: usize,
+    has_constraints: bool,
+    has_greasepencil_modifiers: bool,
+    has_shader_fx: bool,
+    has_particlesystem: bool,
+    has_forcefield_texture: bool,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    add_rel_flags: &mut dyn FnMut(usize, usize, &str, i32),
+    steps: &mut RelObjectSteps,
+) {
+    if (check_is_built)(object_id) {
+        return;
+    }
+    (stack_trace)(object_id);
+    let base_op = if has_parent { 2 /*PARENT*/ } else { 1 /*LOCAL*/ };
+    (add_rel)(object_id, object_id, "Transform Init");
+    (steps.build_object_layer_component_relations)(object_id);
+    if has_parent {
+        (steps.build_object)(parent);
+        (steps.build_object_parent)(object_id);
+        (add_rel)(object_id, object_id, "ObLocal -> ObParent");
+    }
+    let _ = base_op;
+    (add_rel)(object_id, object_id, "Instance Geometry -> Geometry");
+    (add_rel)(object_id, object_id, "Transform -> Instance Geometry");
+    (steps.build_object_modifiers)(object_id);
+    if has_greasepencil_modifiers {
+        (steps.gp_modifiers_id_loop)(object_id);
+    }
+    if has_shader_fx {
+        (steps.shaderfx_id_loop)(object_id);
+    }
+    if has_constraints {
+        (steps.constraints_id_loop)(object_id);
+        (steps.build_constraints)(object_id);
+        (add_rel)(object_id, object_id, "ObBase-> Constraint Stack");
+        (add_rel)(object_id, object_id, "ObConstraints -> Done");
+        (add_rel)(object_id, object_id, "Constraint -> Transform Eval");
+        (add_rel)(object_id, object_id, "Transform Eval -> Simulation Init");
+        (add_rel)(object_id, object_id, "Simulation -> Final Transform");
+    } else {
+        (add_rel)(object_id, object_id, "Eval");
+        (add_rel)(object_id, object_id, "Transform Eval -> Simulation Init");
+        (add_rel)(object_id, object_id, "Simulation -> Final Transform");
+    }
+    (steps.build_idproperties)(object_id);
+    (steps.build_idproperties)(object_id);
+    (steps.build_animdata)(object_id);
+    (steps.build_object_data)(object_id);
+    if has_particlesystem {
+        (steps.build_particle_systems)(object_id);
+    }
+    if has_forcefield_texture {
+        (steps.build_texture)(object_id);
+    }
+    (steps.build_object_instance_collection)(object_id);
+    (steps.build_object_pointcache)(object_id);
+    (steps.build_object_shading)(object_id);
+    (steps.build_object_light_linking)(object_id);
+    (add_rel)(object_id, object_id, "Synchronize to Original");
+    (steps.build_parameters)(object_id);
+    (add_rel_flags)(object_id, object_id, "Object Visibility", 0);
+}
+
+/// Injected sub-builders for `build_object` relations.
+pub struct RelObjectSteps<'a> {
+    /// `build_object` recursion.
+    pub build_object: &'a mut dyn FnMut(usize),
+    /// `build_object_layer_component_relations`.
+    pub build_object_layer_component_relations: &'a mut dyn FnMut(usize),
+    /// `build_object_parent`.
+    pub build_object_parent: &'a mut dyn FnMut(usize),
+    /// `build_object_modifiers`.
+    pub build_object_modifiers: &'a mut dyn FnMut(usize),
+    /// gp/shaderfx/constraint id loops.
+    pub gp_modifiers_id_loop: &'a mut dyn FnMut(usize),
+    pub shaderfx_id_loop: &'a mut dyn FnMut(usize),
+    pub constraints_id_loop: &'a mut dyn FnMut(usize),
+    /// `build_constraints`.
+    pub build_constraints: &'a mut dyn FnMut(usize),
+    /// idproperties/animdata/data/particles/texture.
+    pub build_idproperties: &'a mut dyn FnMut(usize),
+    pub build_animdata: &'a mut dyn FnMut(usize),
+    pub build_object_data: &'a mut dyn FnMut(usize),
+    pub build_particle_systems: &'a mut dyn FnMut(usize),
+    pub build_texture: &'a mut dyn FnMut(usize),
+    /// instance/pointcache/shading/light-linking/params.
+    pub build_object_instance_collection: &'a mut dyn FnMut(usize),
+    pub build_object_pointcache: &'a mut dyn FnMut(usize),
+    pub build_object_shading: &'a mut dyn FnMut(usize),
+    pub build_object_light_linking: &'a mut dyn FnMut(usize),
+    pub build_parameters: &'a mut dyn FnMut(usize),
+}
+
+/// `build_object_from_view_layer_base` (verbatim —
+/// VIEW_LAYER_EVAL → OBJECT_FROM_LAYER_ENTRY).
+pub fn build_object_from_view_layer_base(
+    scene_id: usize,
+    object_id: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    build_object: &mut dyn FnMut(usize),
+) {
+    (add_rel)(scene_id, object_id, "View Layer flags to Object");
+    (build_object)(object_id);
+}
+
+/// `build_object_layer_component_relations` (verbatim —
+/// entry→(flags)→exit + exit→sync).
+pub fn build_object_layer_component_relations(
+    object_id: usize,
+    has_flags_node: bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if !has_flags_node {
+        (add_rel)(object_id, object_id, "Object from Layer");
+        return;
+    }
+    (add_rel)(object_id, object_id, "Base flags flush Entry");
+    (add_rel)(object_id, object_id, "Base flags flush Exit");
+    (add_rel)(object_id, object_id, "Synchronize to Original");
+}
+
+/// `build_object_modifiers` (verbatim — visibility →
+/// object visibility + modifier chain + per-modifier
+/// update_depsgraph + time deps).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_modifiers(
+    object_id: usize,
+    modifiers: &[(String, bool, bool)],
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+    modifier_update_depsgraph: &mut dyn FnMut(usize, &str),
+    modifiers_id_loop: &mut dyn FnMut(usize),
+) {
+    if modifiers.is_empty() {
+        return;
+    }
+    (add_rel)(
+        object_id,
+        object_id,
+        "modifier -> object visibility",
+        RELATION_NO_VISIBILITY_CHANGE,
+    );
+    (add_rel)(object_id, object_id, "modifier visibility -> geometry eval", 0);
+    for (name, has_update_depsgraph, depends_on_time) in modifiers {
+        (add_rel)(object_id, object_id, "Modifier", 0);
+        if *has_update_depsgraph {
+            (modifier_update_depsgraph)(object_id, name);
+        }
+        if *depends_on_time {
+            (add_rel)(usize::MAX, object_id, "Time Source -> Modifier", 0);
+        }
+    }
+    (add_rel)(object_id, object_id, "modifier stack order", 0);
+    (modifiers_id_loop)(object_id);
+}
