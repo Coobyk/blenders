@@ -35,3 +35,4 @@ pub mod wm_gesture_ops;
 pub mod wm_draw;
 pub mod wm_window;
 pub mod wm_playanim;
+pub mod wm_operators;
