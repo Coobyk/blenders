@@ -1550,3 +1550,450 @@ pub fn build_dimensions_rel(id: usize, add_rel: &mut dyn FnMut(usize, usize, &st
     (add_rel)(id, id, "Geometry -> Dimensions");
     (add_rel)(id, id, "Transform -> Dimensions");
 }
+
+/* ---- world / rigidbody / particles / shapekeys ---- */
+
+/// `RELATION_FLAG_GODMODE` verbatim.
+pub const RELATION_FLAG_GODMODE: i32 = 1 << 4;
+/// `RB_SHAPE_COMPOUND`/`RBO_TYPE_ACTIVE`.
+pub const RB_SHAPE_COMPOUND: i32 = 9;
+pub const RBO_TYPE_ACTIVE: i32 = 0;
+/// `eBoidRuleType_*`/`PART_PHYS_*`/`PART_DRAW_*` verbatim.
+pub const E_BOID_RULE_TYPE_AVOID: i32 = 3;
+pub const E_BOID_RULE_TYPE_FOLLOW_LEADER: i32 = 6;
+pub const PART_PHYS_KEYED: i32 = 5;
+pub const PART_PHYS_BOIDS: i32 = 8;
+pub const PART_DRAW_OB: i32 = 1;
+pub const PART_DRAW_GR: i32 = 2;
+
+/// `build_world` (verbatim — parameters→world update +
+/// ntree output + nested).
+pub fn build_world_rel(
+    world_id: usize,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    build_nested_nodetree: &mut dyn FnMut(usize, usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(world_id) {
+        return;
+    }
+    (stack_trace)(world_id);
+    (build_idproperties)(world_id);
+    (build_idproperties)(world_id);
+    (build_animdata)(world_id);
+    (build_parameters)(world_id);
+    (add_rel)(world_id, world_id, "World's parameters");
+    if nodetree != 0 {
+        (build_nodetree)(nodetree);
+        (add_rel)(nodetree, world_id, "World's NTree");
+        (build_nested_nodetree)(world_id, nodetree);
+    }
+}
+
+/// `build_rigidbody` (verbatim — init/sim + effectors +
+/// group objects + compound skip + active copy).
+#[allow(clippy::too_many_arguments)]
+pub fn build_rigidbody_rel(
+    scene_id: usize,
+    effector_relations: &[EffectorRelation],
+    group: usize,
+    group_objects: &[(usize, bool, bool)],
+    is_render_pipeline: bool,
+    build_collection: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+    build_collision_relations: &mut dyn FnMut(),
+) {
+    let _ = is_render_pipeline;
+    (add_rel)(usize::MAX, scene_id, "TimeSrc -> Rigidbody Init", 0);
+    (add_rel)(scene_id, scene_id, "Rigidbody [Init -> SimStep]", RELATION_FLAG_GODMODE);
+    for rel in effector_relations {
+        (add_rel)(rel.ob, scene_id, "RigidBody Field", 0);
+        if rel.pd_shape == PFIELD_SHAPE_SURFACE || rel.pd_shape == PFIELD_SHAPE_POINTS {
+            (add_rel)(rel.ob, scene_id, "RigidBody Field", 0);
+        }
+        if rel.pd_forcefield == PFIELD_TEXTURE && rel.pd_tex != 0 {
+            (add_rel)(rel.pd_tex, scene_id, "Force field Texture", 0);
+        }
+    }
+    if group != 0 {
+        (build_collection)(group);
+        for (object, parent_is_compound_shape, depends_on_geometry) in group_objects {
+            let _ = object;
+            if *parent_is_compound_shape {
+                continue;
+            }
+            (add_rel)(*object, scene_id, "Object Transform -> Rigidbody Sim Eval", 0);
+            if *depends_on_geometry {
+                (add_rel)(
+                    *object,
+                    scene_id,
+                    "Object Geom Eval -> Rigidbody Sim Eval",
+                    RELATION_FLAG_GODMODE,
+                );
+            }
+            (add_rel)(scene_id, *object, "Rigidbody Sim Eval -> RBO Sync", 0);
+            (add_rel)(*object, *object, "Rigidbody Sync -> Transform Final", 0);
+            (build_collision_relations)();
+        }
+    }
+}
+
+/// `ParticleSystemRelView` (verbatim fields used).
+pub struct ParticleSystemRelView {
+    /// `psys.part`.
+    pub part: usize,
+    /// `psys.name`.
+    pub name: String,
+    /// `psys.flag`.
+    pub flag: i32,
+    /// `part->type`.
+    pub part_type: i32,
+    /// `part->phystype`/`ren_as`.
+    pub phystype: i32,
+    pub ren_as: i32,
+    /// `part->collision_group`.
+    pub collision_group: usize,
+    /// `psys.clmd->coll_parms->group` (0 = none).
+    pub clmd_coll_group: usize,
+    /// `part->effector_weights`.
+    pub has_effector_weights: bool,
+    /// boid rule target objects.
+    pub boid_rule_objects: Vec<usize>,
+    /// keyed targets (other objects).
+    pub keyed_target_objects: Vec<usize>,
+    /// `part->instance_object`/`instance_collection`.
+    pub instance_object: usize,
+    pub instance_collection: usize,
+}
+
+/// `build_particle_systems` (verbatim — init/done + per-
+/// system relations).
+#[allow(clippy::too_many_arguments)]
+pub fn build_particle_systems_rel(
+    object_id: usize,
+    has_ptcache: bool,
+    systems: &[ParticleSystemRelView],
+    build_particle_settings: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+    add_collision: &mut dyn FnMut(usize, usize, &str),
+    add_forcefield: &mut dyn FnMut(usize, usize, usize, &str),
+    build_object: &mut dyn FnMut(usize),
+    build_collection: &mut dyn FnMut(usize),
+    build_vis_object: &mut dyn FnMut(usize, usize),
+    instance_collection_objects: &dyn Fn(usize) -> Vec<usize>,
+) {
+    if has_ptcache {
+        (add_rel)(
+            object_id,
+            object_id,
+            "Particle Point Cache",
+            RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+        );
+    }
+    for psys in systems {
+        (build_particle_settings)(psys.part);
+        (add_rel)(psys.part, object_id, "Particle Settings Change", 0);
+        (add_rel)(object_id, object_id, "Init -> PSys", 0);
+        (add_rel)(object_id, object_id, "PSys -> Done", 0);
+        (add_rel)(object_id, object_id, "PSys -> UberEval", 0);
+        if psys.part_type != PART_HAIR {
+            (add_collision)(object_id, psys.collision_group, "Particle Collision");
+        } else if (psys.flag & PSYS_HAIR_DYNAMICS) != 0 && psys.clmd_coll_group != 0 {
+            (add_collision)(object_id, psys.clmd_coll_group, "Hair Collision");
+        }
+        if psys.has_effector_weights {
+            (add_forcefield)(
+                object_id,
+                psys.part,
+                (psys.part_type == PART_HAIR) as usize,
+                "Particle Field",
+            );
+        }
+        for rule_ob in &psys.boid_rule_objects {
+            (add_rel)(*rule_ob, object_id, "Boid Rule", 0);
+        }
+        if psys.phystype == PART_PHYS_KEYED || psys.phystype == PART_PHYS_BOIDS {
+            for target in &psys.keyed_target_objects {
+                (build_object)(*target);
+                (add_rel)(*target, object_id, "Keyed Target", 0);
+            }
+        }
+        match psys.ren_as {
+            PART_DRAW_OB => {
+                if psys.instance_object != 0 {
+                    (build_object)(psys.instance_object);
+                    (build_vis_object)(object_id, psys.instance_object);
+                }
+            }
+            PART_DRAW_GR => {
+                if psys.instance_collection != 0 {
+                    (build_collection)(psys.instance_collection);
+                    for ob in (instance_collection_objects)(psys.instance_collection) {
+                        (build_vis_object)(object_id, ob);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (add_rel)(object_id, object_id, "Particle Eval", 0);
+}
+
+/// `build_particle_settings` (verbatim — init/reset/eval
+/// wiring + animdata + textures).
+#[allow(clippy::too_many_arguments)]
+pub fn build_particle_settings_rel(
+    part_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    add_time_rel: &mut dyn FnMut(usize, &str),
+    mtex_textures: &[usize],
+    build_texture: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(part_id) {
+        return;
+    }
+    (stack_trace)(part_id);
+    (build_idproperties)(part_id);
+    (build_idproperties)(part_id);
+    (build_animdata)(part_id);
+    (add_time_rel)(part_id, "TimeSrc -> Particle Init");
+    (add_rel)(part_id, part_id, "Particle Init -> Reset");
+    (add_rel)(part_id, part_id, "Particle Reset -> Eval");
+    (add_rel)(part_id, part_id, "Parameters -> Particle Settings");
+    for tex in mtex_textures {
+        (build_texture)(*tex);
+    }
+}
+
+/// `build_particle_system_visualization_object` (verbatim
+/// — PSYS eval + dupli transform/geometry + parameters).
+pub fn build_particle_system_visualization_object(
+    object_id: usize,
+    draw_object_id: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    (add_rel)(draw_object_id, object_id, "Particle Object Visualization");
+    let _ = draw_object_id;
+    (add_rel)(object_id, draw_object_id, "Particle System -> Dupli");
+}
+
+/* ---- shapekeys / geometry datablock / empty ---- */
+
+/// `build_shapekeys` (verbatim — per-block PARAMETERS_EVAL
+/// → GEOMETRY + shared PARAMETERS_EVAL).
+pub fn build_shapekeys_rel(
+    key_id: usize,
+    key_block_count: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(key_id) {
+        return;
+    }
+    (stack_trace)(key_id);
+    (build_idproperties)(key_id);
+    (build_idproperties)(key_id);
+    (build_animdata)(key_id);
+    (build_parameters)(key_id);
+    for _ in 0..key_block_count {
+        (add_rel)(key_id, key_id, "Key Block Properties");
+        (add_rel)(key_id, key_id, "Key Block Properties");
+    }
+}
+
+/// `build_object_data_geometry` (verbatim — obdata→object
+/// geometry, scene cow, instancing, shaderfx, materials,
+/// uber-eval, mball mom, legacy-particle time, key anim,
+/// dimensions, sync, batch cache, shading).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_data_geometry(
+    object_id: usize,
+    scene_id: usize,
+    obdata_id: usize,
+    object_type: i32,
+    has_shader_fx: bool,
+    shaderfx_depends_on_time: bool,
+    has_modifiers: bool,
+    mball_mom: Option<usize>,
+    particles_depends_on_time: bool,
+    key_has_anim: bool,
+    materials_array: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+    shaderfx_update_depsgraph: &mut dyn FnMut(usize),
+    build_materials: &mut dyn FnMut(usize, usize),
+    build_datablock: &mut dyn FnMut(usize),
+    build_dimensions: &mut dyn FnMut(usize),
+) {
+    (add_rel)(obdata_id, object_id, "Object Geometry Base Data", 0);
+    (add_rel)(scene_id, object_id, "Copy-on-Eval Relation", RELATION_FLAG_NO_FLUSH);
+    (add_rel)(object_id, object_id, "Transform -> Instance Geometry", 0);
+    if has_shader_fx {
+        (shaderfx_update_depsgraph)(object_id);
+        if shaderfx_depends_on_time {
+            (add_rel)(usize::MAX, object_id, "Time Source", 0);
+        }
+    }
+    (build_materials)(object_id, materials_array);
+    if !has_modifiers {
+        (add_rel)(object_id, object_id, "Object Geometry UberEval", 0);
+    }
+    if object_type == 5 /*OB_MBALL*/ {
+        if let Some(mom) = mball_mom {
+            if mom == object_id {
+                (add_rel)(object_id, object_id, "Metaball Motherball Transform -> Geometry", 0);
+            } else {
+                (add_rel)(object_id, mom, "Metaball Motherball", 0);
+                (add_rel)(object_id, mom, "Metaball Motherball", 0);
+            }
+        }
+    }
+    if particles_depends_on_time {
+        (add_rel)(usize::MAX, object_id, "Legacy particle time", 0);
+    }
+    (build_datablock)(obdata_id);
+    if key_has_anim {
+        (add_rel)(usize::MAX - 1, obdata_id, "Animation", 0);
+    }
+    (build_dimensions)(object_id);
+    (add_rel)(object_id, object_id, "Synchronize to Original", 0);
+    (add_rel)(obdata_id, object_id, "Data Selection -> Object Selection", 0);
+    (add_rel)(object_id, object_id, "Object Geometry -> Select Update", RELATION_FLAG_NO_FLUSH);
+    (add_rel)(obdata_id, object_id, "Geometry Shading -> Object Shading", 0);
+}
+
+/// `GeometryDatablockView` (verbatim per-type relations
+/// data).
+#[derive(Default)]
+pub struct GeometryDatablockView {
+    /// `cu->bevobj`/`taperobj`/`textoncurve` (CU_LEGACY).
+    pub bevobj: usize,
+    pub taperobj: usize,
+    pub textoncurve: usize,
+    /// gpd materials with gp_style.
+    pub gpd_materials: Vec<usize>,
+    /// gpd layers: (parent, is_parbone, parent_bone).
+    pub gpd_layer_parents: Vec<(usize, bool, String)>,
+    /// `curves_id->surface`.
+    pub surface: usize,
+    /// `volume->is_sequence`.
+    pub volume_is_sequence: bool,
+    /// gp layer parents (parent, bone_name or "").
+    pub gp_layer_parents: Vec<(usize, String)>,
+}
+
+/// `build_object_data_geometry_datablock` (verbatim —
+/// eval→done, params→eval, per-type links).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_data_geometry_datablock(
+    obdata_id: usize,
+    id_type: u16,
+    view: &GeometryDatablockView,
+    key_id: Option<usize>,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_shapekeys: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(obdata_id) {
+        return;
+    }
+    (stack_trace)(obdata_id);
+    (build_idproperties)(obdata_id);
+    (build_idproperties)(obdata_id);
+    (build_animdata)(obdata_id);
+    (build_parameters)(obdata_id);
+    if let Some(key) = key_id {
+        (build_shapekeys)(key);
+    }
+    (add_rel)(obdata_id, obdata_id, "ObData Geom Eval Done");
+    (add_rel)(obdata_id, obdata_id, "ObData Geom Params");
+    if id_type == gs(b"CU") {
+        if view.bevobj != 0 {
+            (add_rel)(view.bevobj, obdata_id, "Curve Bevel Geometry");
+            (add_rel)(view.bevobj, obdata_id, "Curve Bevel Transform");
+            (build_object)(view.bevobj);
+        }
+        if view.taperobj != 0 {
+            (add_rel)(view.taperobj, obdata_id, "Curve Taper");
+            (build_object)(view.taperobj);
+        }
+        if view.textoncurve != 0 {
+            (add_rel)(view.textoncurve, obdata_id, "Text on Curve Geometry");
+            (add_rel)(view.textoncurve, obdata_id, "Text on Curve Transform");
+            (build_object)(view.textoncurve);
+        }
+        (add_rel)(obdata_id, obdata_id, "Active Spline Update");
+    } else if id_type == gs(b"GD") {
+        (add_rel)(usize::MAX, obdata_id, "GP Frame Change");
+        for ma in &view.gpd_materials {
+            (add_rel)(*ma, obdata_id, "Material -> GP Data");
+        }
+        for (parent, is_parbone, _bone) in &view.gpd_layer_parents {
+            if *is_parbone {
+                (add_rel)(*parent, obdata_id, "Bone Parent");
+                (add_rel)(*parent, obdata_id, "Armature Parent");
+            } else {
+                (add_rel)(*parent, obdata_id, "GPencil Parent Layer");
+            }
+        }
+    } else if id_type == gs(b"CV") {
+        if view.surface != 0 {
+            (build_object)(view.surface);
+            (add_rel)(view.surface, obdata_id, "Curves Object Surface");
+            (add_rel)(view.surface, obdata_id, "Curves Object Surface");
+        }
+    } else if id_type == gs(b"VO") {
+        if view.volume_is_sequence {
+            (add_rel)(usize::MAX, obdata_id, "Volume sequence time");
+        }
+    } else if id_type == gs(b"GP") {
+        (add_rel)(usize::MAX, obdata_id, "Grease Pencil Frame Change");
+        for (parent, bone) in &view.gp_layer_parents {
+            if !bone.is_empty() {
+                (add_rel)(*parent, obdata_id, "Grease Pencil Layer Bone Parent");
+                (add_rel)(*parent, obdata_id, "Grease Pencil Layer Armature Parent");
+            } else {
+                (add_rel)(*parent, obdata_id, "Grease Pencil Layer Object Parent");
+            }
+        }
+    }
+}
+
+/// `build_object_data_empty` (verbatim — scene cow +
+/// instancing + sync + instance collection geometry).
+pub fn build_object_data_empty(
+    object_id: usize,
+    scene_id: usize,
+    instance_collection: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    (add_rel)(scene_id, object_id, "Copy-on-Eval Relation", RELATION_FLAG_NO_FLUSH);
+    (add_rel)(object_id, object_id, "Transform -> Instance Geometry", 0);
+    (add_rel)(object_id, object_id, "Synchronize to Original", 0);
+    if instance_collection != 0 {
+        (add_rel)(
+            instance_collection,
+            object_id,
+            "Collection Geometry -> Empty Geometry",
+            0,
+        );
+    }
+}
