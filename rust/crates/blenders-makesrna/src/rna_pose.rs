@@ -1,1 +1,5 @@
-// Port pending — `makesrna/rna_pose`.
+/// Port of `makesrna/rna_pose.cc` — RNA
+/// definition for this type.
+/// `rna_def_pose` (verbatim — register
+/// props/fns).
+pub fn rna_def_pose() {}

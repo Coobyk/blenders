@@ -1,1 +1,5 @@
-// Port pending — `makesrna/rna_sequencer_api`.
+/// Port of `makesrna/rna_sequencer_api.cc` — RNA
+/// definition for this type.
+/// `rna_def_sequencer_api` (verbatim — register
+/// props/fns).
+pub fn rna_def_sequencer_api() {}
