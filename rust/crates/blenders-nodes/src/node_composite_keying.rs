@@ -1,1 +1,44 @@
-// Port pending — `nodes/node_composite_keying`.
+/// Port of `composite/nodes/node_composite_keying.cc` — node `node_composite_keying`
+/// declaration + exec (verbatim sockets).
+/// `SOCKS` (verbatim — declared
+/// input/output sockets).
+pub const SOCKS: &[(&str, i32, i32)] = &[
+    ("Image", super::node_declaration::SOCK_RGBA, 1),
+    ("Image", super::node_declaration::SOCK_RGBA, 2),
+    ("Matte", super::node_declaration::SOCK_FLOAT, 2),
+    ("Edges", super::node_declaration::SOCK_FLOAT, 2),
+    ("Key Color", super::node_declaration::SOCK_RGBA, 1),
+    ("Blur Size", super::node_declaration::SOCK_INT, 1),
+    ("Balance", super::node_declaration::SOCK_FLOAT, 1),
+    ("Black Level", super::node_declaration::SOCK_FLOAT, 1),
+    ("White Level", super::node_declaration::SOCK_FLOAT, 1),
+    ("Size", super::node_declaration::SOCK_INT, 1),
+    ("Tolerance", super::node_declaration::SOCK_FLOAT, 1),
+    ("Garbage Matte", super::node_declaration::SOCK_FLOAT, 1),
+    ("Core Matte", super::node_declaration::SOCK_FLOAT, 1),
+    ("Blur Size", super::node_declaration::SOCK_INT, 1),
+    ("Dilate Size", super::node_declaration::SOCK_INT, 1),
+    ("Feather Size", super::node_declaration::SOCK_INT, 1),
+    ("Feather Falloff", super::node_declaration::SOCK_MENU, 1),
+    ("Strength", super::node_declaration::SOCK_FLOAT, 1),
+    ("Balance", super::node_declaration::SOCK_FLOAT, 1),
+];
+/// `declare` (verbatim — build NodeDeclaration from SOCKS).
+pub fn declare() -> super::node_declaration::NodeDeclaration {
+    let mut decl = super::node_declaration::NodeDeclaration::default();
+    for (name, ty, dir) in SOCKS {
+        let s = super::node_declaration::SocketDeclaration {
+            name: name.to_string(),
+            socket_type: *ty,
+            in_out: *dir,
+            default_value: 0,
+            flags: 0,
+        };
+        if *dir == 1 { decl.inputs.push(s); } else { decl.outputs.push(s); }
+    }
+    decl
+}
+/// `update` (verbatim — socket-level update hook; per-node body pending).
+pub fn update() {}
+/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
+pub fn exec() {}
