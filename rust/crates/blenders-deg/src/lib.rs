@@ -14,3 +14,5 @@ pub mod builder_map;
 pub mod builder_pchanmap;
 pub mod registry;
 pub mod eval;
+pub mod builder_stack;
+pub mod pipelines;
