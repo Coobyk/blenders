@@ -41,7 +41,7 @@ impl GlobalFonts {
     /// `BLF_init` (verbatim — MAX slots).
     pub fn new() -> Self {
         Self {
-            fonts: vec![None; BLF_MAX_FONT],
+            fonts: (0..BLF_MAX_FONT).map(|_| None).collect(),
             mono_font: BLF_NO_FONT,
             mono_font_render: BLF_NO_FONT,
         }
