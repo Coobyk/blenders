@@ -64,6 +64,19 @@ pub struct Depsgraph {
     pub entry_tags: HashSet<usize>,
     /// `id_type_exist` bitset per ID-type index.
     pub id_type_exist: Vec<u8>,
+    /// `id_type_updated` bitset per ID-type index.
+    pub id_type_updated: Vec<u8>,
+    /// `id_type_updated_backup` (for `DEG_ids_clear_recalc`
+    /// backup).
+    pub id_type_updated_backup: Vec<u8>,
+    /// `scene_cow` (evaluated scene).
+    pub scene_cow: usize,
+    /// `use_editors_update` (`DEG_enable_editors_update`).
+    pub use_editors_update: bool,
+    /// `need_tag_id_on_graph_visibility_update`.
+    pub need_tag_id_on_graph_visibility_update: bool,
+    /// `need_tag_id_on_graph_visibility_time_update`.
+    pub need_tag_id_on_graph_visibility_time_update: bool,
 }
 
 impl Depsgraph {
