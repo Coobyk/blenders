@@ -607,6 +607,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-animrig"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-asset"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-dna",
+]
+
+[[package]]
 name = "blenders-bke"
 version = "0.0.1"
 dependencies = [
@@ -615,7 +633,17 @@ dependencies = [
  "blenders-core",
  "blenders-dna",
  "blenders-math",
+ "toml 0.9.12+spec-1.1.0",
  "xxhash-rust",
+]
+
+[[package]]
+name = "blenders-blf"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
 ]
 
 [[package]]
@@ -633,6 +661,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-blo"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+]
+
+[[package]]
+name = "blenders-blt"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-dna",
+]
+
+[[package]]
 name = "blenders-bmesh"
 version = "0.1.0"
 dependencies = [
@@ -641,9 +684,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-cmp"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-fn",
+ "blenders-math",
+]
+
+[[package]]
 name = "blenders-core"
 version = "0.1.0"
 dependencies = [
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-deg"
+version = "0.1.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-dna",
  "blenders-math",
 ]
 
@@ -656,6 +719,84 @@ dependencies = [
 ]
 
 [[package]]
+name = "blenders-draw"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-bmesh",
+ "blenders-dna",
+ "blenders-geo",
+ "blenders-gpu",
+ "blenders-imbuf",
+ "blenders-math",
+ "blenders-render",
+]
+
+[[package]]
+name = "blenders-fn"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-geo"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-bmesh",
+ "blenders-dna",
+ "blenders-fn",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-gpu"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-imbuf",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-ik"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-imbuf"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-io"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-bmesh",
+ "blenders-dna",
+ "blenders-geo",
+ "blenders-math",
+]
+
+[[package]]
 name = "blenders-math"
 version = "0.1.0"
 dependencies = [
@@ -663,6 +804,63 @@ dependencies = [
  "num-rational",
  "num-traits",
  "robust",
+]
+
+[[package]]
+name = "blenders-render"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-seq"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+ "blenders-render",
+]
+
+[[package]]
+name = "blenders-shaderfx"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-sim"
+version = "0.0.0"
+dependencies = [
+ "blenders-bke",
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
+]
+
+[[package]]
+name = "blenders-thumb"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+]
+
+[[package]]
+name = "blenders-wm"
+version = "0.0.0"
+dependencies = [
+ "blenders-bli",
+ "blenders-dna",
+ "blenders-math",
 ]
 
 [[package]]
@@ -5566,6 +5764,21 @@ dependencies = [
 
 [[package]]
 name = "toml"
+version = "0.9.12+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+dependencies = [
+ "indexmap",
+ "serde_core",
+ "serde_spanned 1.1.3",
+ "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_parser",
+ "toml_writer",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml"
 version = "1.2.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
@@ -5586,6 +5799,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.7.5+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
+dependencies = [
+ "serde_core",
 ]
 
 [[package]]
