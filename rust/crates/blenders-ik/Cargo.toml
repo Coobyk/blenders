@@ -1,0 +1,10 @@
+[package]
+name = "blenders-ik"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+blenders-dna = { path = "../blenders-dna" }
+blenders-bke = { path = "../blenders-bke" }
+blenders-bli = { path = "../blenders-bli" }
+blenders-math = { path = "../blenders-math" }
