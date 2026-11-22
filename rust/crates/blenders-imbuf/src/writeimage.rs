@@ -5,7 +5,7 @@
 pub const IM_FILE_TYPE_CAPABILITY_FILE: i32 = 1 << 0;
 pub const IM_FILE_TYPE_CAPABILITY_MEMORY: i32 = 1 << 1;
 /// `IMB_save_image` (verbatim — type lookup +
-//! byte-buffer ensure + save dispatch).
+/// byte-buffer ensure + save dispatch).
 pub fn imb_save_image(has_ftype_save: bool) -> bool {
     has_ftype_save
 }

@@ -2,7 +2,7 @@
 //! GPU secondary-context lifecycle.
 
 /// `g_gpu_context` verbatim — secondary context
-//! handle (usize) + active flag.
+/// handle (usize) + active flag.
 pub struct ImbGpuContext {
     /// `gpu_context`/`ghost_context`.
     pub gpu_context: usize,
