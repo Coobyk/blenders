@@ -31,3 +31,4 @@ pub mod wm_init_exit;
 pub mod wm_keymap;
 pub mod wm_files_link;
 pub mod wm_toolsystem;
+pub mod wm_gesture_ops;
