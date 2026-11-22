@@ -80,7 +80,7 @@ pub fn combine_field_inputs(fields: &[GField]) -> Vec<usize> {
     combined
 }
 /// `invert_boolean_field` (verbatim — wraps in a
-//! "Not" operation field).
+/// "Not" operation field).
 pub fn invert_boolean_field(not_fn: usize, field: GField) -> GField {
     GField {
         variant: GFieldVariant::Operation { handle: not_fn },
