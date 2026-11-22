@@ -28,9 +28,9 @@ pub struct ZSpan {
     pub minp2: Option<usize>,
     pub maxp2: Option<usize>,
     /// vertex ys by id (for span-completion compare).
-    vert_y: [f32; 3],
+    pub vert_y: [f32; 3],
     /// vertex xs by id.
-    vert_x: [f32; 3],
+    pub vert_x: [f32; 3],
 }
 impl ZSpan {
     /// `zbuf_alloc_span`.
