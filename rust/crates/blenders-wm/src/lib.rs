@@ -36,3 +36,4 @@ pub mod wm_draw;
 pub mod wm_window;
 pub mod wm_playanim;
 pub mod wm_operators;
+pub mod wm_files;
