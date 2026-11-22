@@ -2,7 +2,7 @@
 //! evaluation + blending.
 
 /// `evaluate_action` layer walk (verbatim — skip
-//! influence≤0, first-nonempty wins, then blend).
+/// influence≤0, first-nonempty wins, then blend).
 pub fn evaluate_action_walk(
     layers: &[(f32, usize)],
     evaluate_layer: &mut dyn FnMut(usize) -> Option<usize>,
