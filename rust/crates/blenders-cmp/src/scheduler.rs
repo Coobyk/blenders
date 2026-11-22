@@ -15,7 +15,7 @@ pub fn has_viewer_node(
     group_children.iter().any(|c| !c.is_empty())
 }
 /// `has_file_output_recursive` (verbatim — any
-//! unmuted File Output node in tree/descendants).
+/// unmuted File Output node in tree/descendants).
 pub fn has_file_output_recursive(
     file_output_node_present: bool,
     group_children_have_output: &[bool],
