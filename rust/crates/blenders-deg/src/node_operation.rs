@@ -2,7 +2,7 @@
 /// `OperationCode` string table + `OperationNode`.
 
 /// `OperationCode` verbatim (`deg_node_operation.hh`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum OperationCode {
     /// `OPERATION`.
     Operation,
