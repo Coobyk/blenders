@@ -8,3 +8,5 @@ pub mod texture_margin;
 pub mod texture_image;
 pub mod render_result;
 pub mod engine;
+pub mod bake;
+pub mod compositor;
