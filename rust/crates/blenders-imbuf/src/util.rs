@@ -2,7 +2,7 @@
 //! (buffer dimensions, rect conversions).
 
 /// `imb_check_py_socket_writing`/`imb_addrectImBuf`
-//! shells (verbatim names).
+/// shells (verbatim names).
 pub fn imb_check_dimensions(x: i32, y: i32) -> bool {
     x > 0 && y > 0
 }
