@@ -28,3 +28,4 @@ pub mod wm_splash_screen;
 pub mod wm_jobs;
 pub mod wm_cursors;
 pub mod wm_init_exit;
+pub mod wm_keymap;
