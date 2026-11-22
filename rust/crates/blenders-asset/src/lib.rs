@@ -1,5 +1,6 @@
 //! Port of `source/blender/asset_system/intern/*.cc`.
 
+pub mod asset_catalog;
 pub mod asset_catalog_path;
 pub mod asset_catalog_collection;
 pub mod utils;
