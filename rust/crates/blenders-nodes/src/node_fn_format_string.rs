@@ -5,7 +5,6 @@
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("Format", super::node_declaration::SOCK_STRING, 1),
     ("String", super::node_declaration::SOCK_STRING, 2),
-    ("", super::node_declaration::SOCK_FLOAT, 1),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -22,7 +21,30 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — C's `fmt::format`-style
+/// `{}` placeholder substitution).
+pub fn exec(fmt: &str, args: &[String]) -> String {
+    let mut out = String::new();
+    let mut chars = fmt.chars().peekable();
+    let mut i = 0;
+    while let Some(c) = chars.next() {
+        if c == '{' && chars.peek() == Some(&'}') {
+            chars.next();
+            if let Some(a) = args.get(i) {
+                out.push_str(a);
+            }
+            i += 1;
+        } else if c == '{' && chars.peek() == Some(&'{') {
+            chars.next();
+            out.push('{');
+        } else if c == '}' && chars.peek() == Some(&'}') {
+            chars.next();
+            out.push('}');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
