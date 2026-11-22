@@ -3,9 +3,8 @@
 /// `SOCKS` (verbatim — declared
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
-    ("A", super::node_declaration::SOCK_INT, 1),
-    ("B", super::node_declaration::SOCK_INT, 1),
-    ("Shift", super::node_declaration::SOCK_INT, 1),
+    ("Value", super::node_declaration::SOCK_INT, 1),
+    ("Value", super::node_declaration::SOCK_INT, 1),
     ("Value", super::node_declaration::SOCK_INT, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
@@ -23,7 +22,22 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `NodeBitMathOperation` (verbatim).
+pub const NODE_BIT_MATH_AND: i32 = 0;
+pub const NODE_BIT_MATH_OR: i32 = 1;
+pub const NODE_BIT_MATH_XOR: i32 = 2;
+pub const NODE_BIT_MATH_NOT: i32 = 3;
+pub const NODE_BIT_MATH_SHIFT: i32 = 4;
+/// `exec` (verbatim — bitwise ops).
+pub fn exec(op: i32, a: i64, b: i64) -> i64 {
+    match op {
+        NODE_BIT_MATH_AND => a & b,
+        NODE_BIT_MATH_OR => a | b,
+        NODE_BIT_MATH_XOR => a ^ b,
+        NODE_BIT_MATH_NOT => !a,
+        NODE_BIT_MATH_SHIFT => a.wrapping_shl((b & 63) as u32),
+        _ => 0,
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
