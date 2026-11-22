@@ -21,3 +21,4 @@ pub mod single_value_node_input_operation;
 pub mod context;
 pub mod group_node_operation;
 pub mod shader_node;
+pub mod result;
