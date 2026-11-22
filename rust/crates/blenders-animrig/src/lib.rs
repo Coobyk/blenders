@@ -8,3 +8,5 @@ pub mod action_runtime;
 pub mod action_legacy;
 pub mod visualkey;
 pub mod nla;
+pub mod action_iterators;
+pub mod animdata;
