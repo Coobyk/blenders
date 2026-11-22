@@ -6,3 +6,4 @@ pub mod multi_function_registry;
 pub mod lazy_function;
 pub mod multi_function;
 pub mod multi_function_builder;
+pub mod lazy_function_graph;
