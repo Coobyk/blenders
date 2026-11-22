@@ -20,3 +20,4 @@ pub mod strip_add;
 pub mod proxy;
 pub mod prefetch;
 pub mod strip_transform;
+pub mod strip_retiming;
