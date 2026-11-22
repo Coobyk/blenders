@@ -15,7 +15,7 @@ pub const MAX_NAME: usize = 64;
 fn ensure_unique_name(name: &mut String, default_base: &str, exists: &dyn Fn(&str) -> bool) {
     let mut baselen = name.len().min(MAX_NAME - 1);
     let mut idx = 0usize;
-    while (exists)(&name[..baselen.min(name.len())].to_string() + &name[baselen..]) {
+    while (exists)(name) {
         idx += 1;
         if (baselen + 1) + ((idx as f64).log10() as usize + 1) > MAX_NAME {
             baselen = default_base.len().min(MAX_NAME - 1);
