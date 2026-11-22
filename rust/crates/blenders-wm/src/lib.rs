@@ -49,3 +49,5 @@ pub mod wm_xr_actionmap;
 pub mod wm_xr_action;
 pub mod wm_xr_draw;
 pub mod wm_xr_session;
+pub mod wm_xr_location_scouting;
+pub mod wm_xr_operators;
