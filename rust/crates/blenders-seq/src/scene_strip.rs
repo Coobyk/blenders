@@ -4,7 +4,7 @@
 /// `seq_scene_strip_render` parameter flags.
 pub const SEQ_SCENE_STRIP_FLAG_NONE: i32 = 0;
 /// `scene_strip_render` hook args (verbatim —
-//! camera choice + scene override).
+/// camera choice + scene override).
 #[derive(Default)]
 pub struct SceneStripRenderArgs {
     /// `scene` strip source scene handle.
