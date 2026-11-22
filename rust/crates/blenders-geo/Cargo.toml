@@ -1,0 +1,12 @@
+[package]
+name = "blenders-geo"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+blenders-dna = { path = "../blenders-dna" }
+blenders-bli = { path = "../blenders-bli" }
+blenders-math = { path = "../blenders-math" }
+blenders-bke = { path = "../blenders-bke" }
+blenders-bmesh = { path = "../blenders-bmesh" }
+blenders-fn = { path = "../blenders-fn" }
