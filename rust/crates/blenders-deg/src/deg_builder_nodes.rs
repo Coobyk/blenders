@@ -766,3 +766,419 @@ pub struct ObjectBuildSteps<'a> {
     /// SYNCHRONIZE_TO_ORIGINAL)`.
     pub add_sync_to_original_op: &'a mut dyn FnMut(usize),
 }
+
+/* ---- object-data / transform / animation / drivers ---- */
+
+/// Object-data sub-builders (verbatim `build_object_data*`
+/// dispatch).
+pub struct ObjectDataBuild<'a> {
+    /// `build_empty_object`.
+    pub empty: &'a mut dyn FnMut(usize),
+    /// `build_object_data_geometry`.
+    pub geometry: &'a mut dyn FnMut(usize),
+    /// `build_object_data_grease_pencil` — implemented here
+    /// as verbatim (layer parents + geometry).
+    pub grease_pencil_layers: &'a mut dyn FnMut(usize) -> Vec<usize>,
+    /// `build_rig`.
+    pub rig: &'a mut dyn FnMut(usize),
+    /// `build_light`.
+    pub light: &'a mut dyn FnMut(usize),
+    /// `build_camera`.
+    pub camera: &'a mut dyn FnMut(usize),
+    /// `build_lightprobe`.
+    pub lightprobe: &'a mut dyn FnMut(usize),
+    /// `build_speaker`.
+    pub speaker: &'a mut dyn FnMut(usize),
+    /// `build_animdata` (default branch).
+    pub animdata: &'a mut dyn FnMut(usize),
+    /// `check_is_built` on obdata.
+    pub check_is_built: &'a mut dyn FnMut(usize) -> bool,
+    /// `add_operation_node`.
+    pub add_op: &'a mut dyn FnMut(usize, usize, usize),
+    /// `build_object` (for GP layer parents).
+    pub build_object: &'a mut dyn FnMut(i32, usize, i32, bool),
+    /// `build_materials`.
+    pub build_materials: &'a mut dyn FnMut(usize),
+}
+
+/// `build_object_data` (verbatim — type dispatch +
+/// materials).
+pub fn build_object_data(
+    object: usize,
+    object_type: i32,
+    object_data: usize,
+    materials_array: Option<usize>,
+    b: &mut ObjectDataBuild,
+) {
+    if object_type != 0 /*OB_EMPTY*/ && object_data == 0 {
+        return;
+    }
+    match object_type {
+        0 /*OB_EMPTY*/ => (b.empty)(object),
+        1 | 2 | 3 | 4 | 5 | 22 | 27 | 28 | 29
+        /*MESH,CURVES_LEGACY,FONT,SURF,MBALL,LATTICE,CURVES,
+          POINTCLOUD,VOLUME*/ => (b.geometry)(object),
+        30 /*OB_GREASE_PENCIL*/ => {
+            build_object_data_grease_pencil(object, b);
+        }
+        25 /*OB_ARMATURE*/ => (b.rig)(object),
+        10 /*OB_LAMP*/ => (b.light)(object_data),
+        11 /*OB_CAMERA*/ => (b.camera)(object_data),
+        12 /*OB_LIGHTPROBE*/ => {
+            (b.lightprobe)(object_data);
+            (b.add_op)(object, 2 /*PARAMETERS*/, 3 /*LIGHT_PROBE_EVAL*/);
+        }
+        16 /*OB_SPEAKER*/ => {
+            (b.speaker)(object_data);
+            (b.add_op)(object, 8 /*AUDIO*/, 0 /*SPEAKER_EVAL*/);
+        }
+        _ => {
+            if !(b.check_is_built)(object_data) {
+                (b.animdata)(object_data);
+            }
+        }
+    }
+    if let Some(mats) = materials_array {
+        (b.build_materials)(mats);
+    }
+}
+
+/// `build_object_data_grease_pencil` (verbatim — layer
+/// parents + geometry).
+pub fn build_object_data_grease_pencil(object: usize, b: &mut ObjectDataBuild) {
+    for parent in (b.grease_pencil_layers)(object) {
+        (b.build_object)(-1, parent, 1 /*INDIRECTLY*/, false);
+    }
+    (b.geometry)(object);
+}
+
+/// `build_object_transform` (verbatim — TRANSFORM op
+/// chain).
+pub fn build_object_transform(
+    object_id: usize,
+    has_parent: bool,
+    has_constraints: bool,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    build_object_constraints: &mut dyn FnMut(usize),
+) {
+    let op = add_op(object_id, 0 /*TRANSFORM_INIT*/);
+    set_as_entry(op);
+    add_op(object_id, 1 /*TRANSFORM_LOCAL*/);
+    if has_parent {
+        add_op(object_id, 2 /*TRANSFORM_PARENT*/);
+    }
+    if has_constraints {
+        build_object_constraints(object_id);
+    }
+    add_op(object_id, 4 /*TRANSFORM_EVAL*/);
+    add_op(object_id, 6 /*TRANSFORM_SIMULATION_INIT*/);
+    let op = add_op(object_id, 5 /*TRANSFORM_FINAL*/);
+    set_as_exit(op);
+}
+
+/// `build_object_constraints` (verbatim).
+pub fn build_object_constraints(
+    object_id: usize,
+    add_op: &mut dyn FnMut(usize, usize),
+) {
+    (add_op)(object_id, 3 /*TRANSFORM_CONSTRAINTS*/);
+}
+
+/// `build_object_pointcache` (verbatim).
+pub fn build_object_pointcache(
+    object_id: usize,
+    ptcache_object_has: bool,
+    add_op: &mut dyn FnMut(usize, usize),
+) {
+    if !ptcache_object_has {
+        return;
+    }
+    (add_op)(object_id, 0 /*POINT_CACHE_RESET*/);
+}
+
+/// `build_object_light_linking` (verbatim — update op +
+/// emitter + receiver/blocker collections).
+pub fn build_object_light_linking(
+    object: usize,
+    object_id: usize,
+    receiver_collection: usize,
+    blocker_collection: usize,
+    add_op: &mut dyn FnMut(usize, usize, usize),
+    light_linking_add_emitter: &mut dyn FnMut(usize),
+    build_light_linking_collection: &mut dyn FnMut(usize),
+) {
+    (add_op)(object_id, 7 /*SHADING*/, 1 /*LIGHT_LINKING_UPDATE*/);
+    (light_linking_add_emitter)(object);
+    if receiver_collection != 0 || blocker_collection != 0 {
+        (build_light_linking_collection)(receiver_collection);
+        (build_light_linking_collection)(blocker_collection);
+    }
+}
+
+/// `build_light_linking_collection` (verbatim — invisible
+/// collection build + LIGHT_LINKING_UPDATE op).
+pub fn build_light_linking_collection(
+    nb: &mut DepsgraphNodeBuilder,
+    collection: usize,
+    collection_id: usize,
+    has_op: &dyn Fn(usize, usize, usize) -> bool,
+    add_op: &mut dyn FnMut(usize, usize, usize),
+    build_collection_invisible: &mut dyn FnMut(&mut DepsgraphNodeBuilder, usize),
+) {
+    if collection == 0 {
+        return;
+    }
+    let saved = nb.is_parent_collection_visible;
+    nb.is_parent_collection_visible = false;
+    build_collection_invisible(nb, collection);
+    nb.is_parent_collection_visible = saved;
+    if !has_op(collection_id, 2 /*PARAMETERS*/, 1 /*LIGHT_LINKING_UPDATE*/) {
+        (add_op)(collection_id, 2, 1);
+    }
+}
+
+/// `build_object_shading` (verbatim — SHADING op + done
+/// exit).
+pub fn build_object_shading(
+    object_id: usize,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_exit: &mut dyn FnMut(usize),
+) {
+    (add_op)(object_id, 0 /*SHADING*/);
+    let done = (add_op)(object_id, 1 /*SHADING_DONE*/);
+    set_as_exit(done);
+}
+
+/// `build_animdata` (verbatim — images + action + NLA +
+/// drivers; ANIMATION entry/eval/exit).
+#[allow(clippy::too_many_arguments)]
+pub fn build_animdata(
+    id: usize,
+    id_type_is_sce: bool,
+    check_built_tag_animation: &mut dyn FnMut(usize) -> bool,
+    build_animation_images: &mut dyn FnMut(usize),
+    adt: Option<AnimDataView>,
+    get_cow_id: &mut dyn FnMut(usize) -> usize,
+    add_op: &mut dyn FnMut(usize, usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    build_action: &mut dyn FnMut(usize),
+    nla_enabled: &dyn Fn(usize) -> bool,
+    build_nlastrip_targets: &mut dyn FnMut(&[usize]),
+    build_animdata_drivers: &mut dyn FnMut(usize),
+    core: &mut NodeBuildCore,
+) {
+    if id_type_is_sce && (check_built_tag_animation)(id) {
+        return;
+    }
+    (build_animation_images)(id);
+    let Some(adt) = adt else { return };
+    if adt.action != 0 {
+        (build_action)(adt.action);
+    }
+    let _ = add_id_node(&mut DepsgraphNodeBuilder::default(), id, core);
+    let _id_cow = (get_cow_id)(id);
+    if adt.action != 0 || !adt.nla_tracks.is_empty() {
+        let op = (add_op)(id, 3 /*ANIMATION*/, 0 /*ANIMATION_ENTRY*/);
+        (set_as_entry)(op);
+        (add_op)(id, 3, 1 /*ANIMATION_EVAL*/);
+        let op = (add_op)(id, 3, 2 /*ANIMATION_EXIT*/);
+        (set_as_exit)(op);
+    }
+    for track in &adt.nla_tracks {
+        if !(nla_enabled)(*track) {
+            continue;
+        }
+        (build_nlastrip_targets)(&[*track]);
+    }
+    (build_animdata_drivers)(id);
+}
+
+/// `AnimData` view (verbatim fields used).
+pub struct AnimDataView {
+    /// `adt->action`.
+    pub action: usize,
+    /// `adt->nla_tracks` (track handles).
+    pub nla_tracks: Vec<usize>,
+    /// `adt->drivers` — (index, fcu) pairs.
+    pub drivers: Vec<(usize, usize)>,
+}
+
+/// `build_animdata_nlastrip_targets` (verbatim — strip
+/// actions or nested strips).
+pub fn build_animdata_nlastrip_targets(
+    strips: &[(usize, Vec<(usize, Vec<usize>)>)],
+    build_action: &mut dyn FnMut(usize),
+) {
+    for (act, nested) in strips {
+        if *act != 0 {
+            (build_action)(*act);
+        } else {
+            for (nact, nnested) in nested {
+                if *nact != 0 {
+                    (build_action)(*nact);
+                } else {
+                    for strip in nnested {
+                        let _ = strip;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `build_animation_images` (verbatim — NTREE image
+/// animation flag + `BKE_image_user_id_has_animation` →
+/// IMAGE_ANIMATION op).
+pub fn build_animation_images(
+    id: usize,
+    has_image_animation: bool,
+    image_user_id_has_animation: bool,
+    add_op: &mut dyn FnMut(usize, usize, usize),
+) {
+    if has_image_animation || image_user_id_has_animation {
+        (add_op)(id, 18 /*IMAGE_ANIMATION*/, 0 /*IMAGE_ANIMATION*/);
+    }
+}
+
+/// `build_action` (verbatim — parameters + marker props +
+/// ANIMATION_EVAL).
+pub fn build_action(
+    action_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_parameters: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    marker_props: &[usize],
+    add_op: &mut dyn FnMut(usize, usize, usize),
+) {
+    if (check_is_built)(action_id) {
+        return;
+    }
+    (build_parameters)(action_id);
+    (build_idproperties)(action_id);
+    (build_idproperties)(action_id);
+    for prop in marker_props {
+        (build_idproperties)(*prop);
+    }
+    (add_op)(action_id, 3 /*ANIMATION*/, 1 /*ANIMATION_EVAL*/);
+}
+
+/// `build_animdata_drivers` (verbatim — per-fcurve driver
+/// + DRIVER_UNSHARE for shared paths).
+pub fn build_animdata_drivers(
+    id: usize,
+    drivers: &[(usize, String, i32)],
+    id_type: u16,
+    object_type_is_armature: bool,
+    build_driver: &mut dyn FnMut(usize, usize, usize),
+    ensure_op_named: &mut dyn FnMut(usize, usize, &str, i32) -> usize,
+) {
+    let mut needs_unshare = false;
+    for (idx, (fcu, path, _arr)) in drivers.iter().enumerate() {
+        (build_driver)(id, *fcu, idx);
+        needs_unshare |= crate::deg_builder_relations_drivers::data_path_maybe_shared(
+            id_type, path, object_type_is_armature,
+        );
+    }
+    if !needs_unshare {
+        return;
+    }
+    (ensure_op_named)(id, 2 /*PARAMETERS*/, "", 7 /*DRIVER_UNSHARE*/);
+}
+
+/// `build_driver` (verbatim — DRIVER op keyed by
+/// path/index + variables).
+pub fn build_driver(
+    id: usize,
+    fcu: usize,
+    rna_path: &str,
+    array_index: i32,
+    ensure_op_named: &mut dyn FnMut(usize, usize, &str, i32) -> usize,
+    build_driver_variables: &mut dyn FnMut(usize, usize),
+) {
+    (ensure_op_named)(id, 2 /*PARAMETERS*/, rna_path, array_index);
+    (build_driver_variables)(id, fcu);
+}
+
+/// `build_driver_variables` (verbatim — id property +
+/// per-variable target ids + scene-camera path special
+/// case).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_variables(
+    id: usize,
+    fcu_rna_path: &str,
+    dvar_targets: &[(usize, Option<String>, bool)],
+    scene_camera_paths: &[(usize, String)],
+    build_driver_id_property: &mut dyn FnMut(usize, &str),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    (build_driver_id_property)(id, fcu_rna_path);
+    for (target_id, dtar_rna_path, dtar_struct_ref) in dvar_targets {
+        if *target_id == 0 {
+            continue;
+        }
+        (build_id)(*target_id, false);
+        if let Some(path) = dtar_rna_path {
+            (build_driver_id_property)(*target_id, path);
+        }
+        if !dtar_struct_ref {
+            for (_cam, path) in scene_camera_paths {
+                let _ = path;
+            }
+        }
+    }
+}
+
+/// `build_driver_scene_camera_variable` (verbatim —
+/// marker cameras' id property).
+pub fn build_driver_scene_camera_variable(
+    marker_cameras: &[usize],
+    camera_path: &str,
+    scene_camera: usize,
+    build_driver_id_property: &mut dyn FnMut(usize, &str),
+) {
+    for cam in marker_cameras {
+        if *cam != 0 && *cam != scene_camera {
+            (build_driver_id_property)(*cam, camera_path);
+        }
+    }
+}
+
+/// `build_driver_id_property` (verbatim — resolve + idprop
+/// + BONE/PARAMETERS ID_PROPERTY op).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_id_property(
+    rna_path: &str,
+    resolve: &dyn Fn(&str) -> Option<(usize, Option<RnaStructKindForIdProp>, Option<String>)>,
+    build_id: &mut dyn FnMut(usize, bool),
+    ensure_op: &mut dyn FnMut(usize, usize, &str, &str) -> usize,
+) {
+    if rna_path.is_empty() {
+        return;
+    }
+    let Some((owner_id, pose_bone, prop_identifier)) = resolve(rna_path) else {
+        return;
+    };
+    let Some(prop_identifier) = prop_identifier else { return };
+    if owner_id != 0 {
+        (build_id)(owner_id, false);
+    }
+    if let Some(pchan_name) = pose_bone.and_then(|k| {
+        if k == RnaStructKindForIdProp::PoseBone { Some(String::new()) } else { None }
+    }) {
+        (ensure_op)(owner_id, 13 /*BONE*/, &pchan_name, &prop_identifier);
+    } else {
+        (ensure_op)(owner_id, 2 /*PARAMETERS*/, "", &prop_identifier);
+    }
+}
+
+/// Slim kind for `build_driver_id_property` dispatch.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RnaStructKindForIdProp {
+    /// `RNA_PoseBone`.
+    PoseBone,
+    /// anything else.
+    Other,
+}

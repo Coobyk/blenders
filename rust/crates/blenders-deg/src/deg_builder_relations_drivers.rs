@@ -165,13 +165,19 @@ pub fn build_driver_relations(
 /// `data_path_maybe_shared` (verbatim — conservative
 /// non-shared check; OB pose.bones + KE key_blocks are
 /// thread-safe).
-pub fn data_path_maybe_shared(id_gs: u16, data_path: &str) -> bool {
+pub fn data_path_maybe_shared(
+    id_gs: u16,
+    data_path: &str,
+    object_type_is_armature: bool,
+) -> bool {
     if data_path.starts_with("[\"") && data_path.ends_with("\"]") {
         return false;
     }
     if id_gs == blenders_dna::id::gs(b"OB") {
-        /* OB_ARMATURE pose.bones[*] writes are per-bone. */
-        return true; /* object-type check injected — see verbatim note. */
+        /* `ob.type == OB_ARMATURE && path.startswith("pose.bones[")`. */
+        let is_thread_safe =
+            object_type_is_armature && data_path.starts_with("pose.bones[");
+        return !is_thread_safe;
     }
     if id_gs == blenders_dna::id::gs(b"KE") {
         let is_thread_safe =
