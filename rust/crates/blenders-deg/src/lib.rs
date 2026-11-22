@@ -16,3 +16,5 @@ pub mod registry;
 pub mod eval;
 pub mod builder_stack;
 pub mod pipelines;
+pub mod builder_remove_noop;
+pub mod builder_transitive;
