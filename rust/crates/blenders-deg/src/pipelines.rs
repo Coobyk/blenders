@@ -49,3 +49,97 @@ impl RenderBuilderPipeline {
 pub fn all_objects_need_pull_base_into_graph() -> bool {
     true
 }
+
+/* ---- `pipeline.cc` — AbstractBuilderPipeline ---- */
+
+/// `AbstractBuilderPipeline::build` (verbatim — sanity
+/// check → nodes → relations → finalize).
+pub fn pipeline_build(
+    debug_build_or_time: bool,
+    now_seconds: &dyn Fn() -> f64,
+    build_step_sanity_check: &mut dyn FnMut(),
+    build_step_nodes: &mut dyn FnMut(),
+    build_step_relations: &mut dyn FnMut(),
+    build_step_finalize: &mut dyn FnMut(),
+    need_sanity_checks: bool,
+    do_sanity_checks: &mut dyn FnMut(),
+    printf: &mut dyn FnMut(&str),
+) {
+    let mut start_time = 0.0;
+    if debug_build_or_time {
+        start_time = (now_seconds)();
+    }
+    (build_step_sanity_check)();
+    (build_step_nodes)();
+    (build_step_relations)();
+    (build_step_finalize)();
+    if need_sanity_checks {
+        (do_sanity_checks)();
+    }
+    if debug_build_or_time {
+        (printf)(&format!(
+            "Depsgraph built in {} seconds.",
+            (now_seconds)() - start_time
+        ));
+    }
+}
+
+/// `AbstractBuilderPipeline::build_step_nodes` (verbatim).
+pub fn pipeline_build_step_nodes(
+    node_builder_begin: &mut dyn FnMut(),
+    build_nodes: &mut dyn FnMut(),
+    node_builder_end: &mut dyn FnMut(),
+    need_sanity_checks: bool,
+    get_built_ids: &mut dyn FnMut(),
+) {
+    (node_builder_begin)();
+    (build_nodes)();
+    (node_builder_end)();
+    if need_sanity_checks {
+        (get_built_ids)();
+    }
+}
+
+/// `AbstractBuilderPipeline::build_step_relations`
+/// (verbatim — begin → build → cow + driver + audio-cache
+/// → built ids).
+pub fn pipeline_build_step_relations(
+    relation_builder_begin: &mut dyn FnMut(),
+    build_relations: &mut dyn FnMut(),
+    build_copy_on_write_relations: &mut dyn FnMut(),
+    build_driver_relations: &mut dyn FnMut(),
+    build_scene_audio_cache_invalidation_relations: &mut dyn FnMut(),
+    need_sanity_checks: bool,
+    get_built_ids: &mut dyn FnMut(),
+) {
+    (relation_builder_begin)();
+    (build_relations)();
+    (build_copy_on_write_relations)();
+    (build_driver_relations)();
+    (build_scene_audio_cache_invalidation_relations)();
+    if need_sanity_checks {
+        (get_built_ids)();
+    }
+}
+
+/// `AbstractBuilderPipeline::build_step_finalize`
+/// (verbatim — cycles → transitive reduction → scene_cow →
+/// finalize → tag → need_update_relations=false).
+pub fn pipeline_build_step_finalize(
+    deg_graph_detect_cycles: &mut dyn FnMut(),
+    debug_value_799: bool,
+    deg_graph_transitive_reduction: &mut dyn FnMut(),
+    store_scene_cow: &mut dyn FnMut(),
+    deg_graph_build_finalize: &mut dyn FnMut(),
+    deg_graph_tag_on_visible_update: &mut dyn FnMut(bool),
+    need_update_relations: &mut bool,
+) {
+    (deg_graph_detect_cycles)();
+    if debug_value_799 {
+        (deg_graph_transitive_reduction)();
+    }
+    (store_scene_cow)();
+    (deg_graph_build_finalize)();
+    (deg_graph_tag_on_visible_update)(false);
+    *need_update_relations = false;
+}
