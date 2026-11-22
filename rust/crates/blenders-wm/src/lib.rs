@@ -30,3 +30,4 @@ pub mod wm_cursors;
 pub mod wm_init_exit;
 pub mod wm_keymap;
 pub mod wm_files_link;
+pub mod wm_toolsystem;
