@@ -1,32 +1,58 @@
-/// Port of `stl/importer/stl_import_binary_reader.cc`
-/// — binary STL triangle parse.
-
-/// `stl_binary_reader` (verbatim — 50-byte
-/// tri record: normal f32[3], 3 verts f32[9],
-/// attr u16).
-pub fn stl_read_binary_triangles(data: &[u8]) -> Vec<([f32; 3], [[f32; 3]; 3])> {
-    let mut out = Vec::new();
-    if data.len() < 84 {
-        return out;
+/// Port of `io_stl/importer/stl_import_binary_reader.cc` —
+/// `STLBinaryReader` — parse binary STL
+/// (80B header + u32 count + 50B/tris).
+/// `STLBinaryReader::read` (verbatim —
+/// header 80B, tri count u32 LE, then per
+/// tri: normal 3×f32 + 3×vertex 3×f32 +
+/// u16 attr = 50 bytes).
+pub struct STLBinaryReader<'a> {
+    /// `m_file` — input bytes.
+    src: &'a [u8],
+}
+impl<'a> STLBinaryReader<'a> {
+    pub fn new(src: &'a [u8]) -> Self {
+        Self { src }
     }
-    let count = u32::from_le_bytes([data[80], data[81], data[82], data[83]]) as usize;
-    for i in 0..count.min((data.len() - 84) / 50) {
-        let off = 84 + i * 50;
-        let f = |k: usize| -> f32 {
+    /// `read` → tris `[(normal, v0, v1, v2)]`.
+    pub fn read(&self) -> Vec<([f32; 3], [[f32; 3]; 3])> {
+        let mut tris = Vec::new();
+        if self.src.len() < 84 {
+            return tris;
+        }
+        let count = u32::from_le_bytes([
+            self.src[80], self.src[81], self.src[82], self.src[83],
+        ]) as usize;
+        let read_f32 = |off: usize| -> f32 {
             f32::from_le_bytes([
-                data[off + k * 4],
-                data[off + k * 4 + 1],
-                data[off + k * 4 + 2],
-                data[off + k * 4 + 3],
+                self.src[off], self.src[off + 1], self.src[off + 2], self.src[off + 3],
             ])
         };
-        let normal = [f(0), f(1), f(2)];
-        let verts = [
-            [f(3), f(4), f(5)],
-            [f(6), f(7), f(8)],
-            [f(9), f(10), f(11)],
-        ];
-        out.push((normal, verts));
+        for i in 0..count {
+            let base = 84 + i * 50;
+            if base + 50 > self.src.len() {
+                break;
+            }
+            let normal = [
+                read_f32(base),
+                read_f32(base + 4),
+                read_f32(base + 8),
+            ];
+            let mut verts = [[0.0f32; 3]; 3];
+            for v in 0..3 {
+                let vb = base + 12 + v * 12;
+                verts[v] = [read_f32(vb), read_f32(vb + 4), read_f32(vb + 8)];
+            }
+            tris.push((normal, verts));
+        }
+        tris
     }
-    out
+}
+/// `is_stl_binary` — file len == 84 +
+/// 50×count.
+pub fn is_stl_binary(src: &[u8]) -> bool {
+    if src.len() < 84 {
+        return false;
+    }
+    let count = u32::from_le_bytes([src[80], src[81], src[82], src[83]]) as usize;
+    src.len() >= 84 + count * 50
 }
