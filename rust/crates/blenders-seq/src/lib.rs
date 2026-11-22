@@ -22,3 +22,4 @@ pub mod prefetch;
 pub mod strip_transform;
 pub mod strip_retiming;
 pub mod sequencer;
+pub mod render;
