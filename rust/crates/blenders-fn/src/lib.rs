@@ -7,3 +7,5 @@ pub mod lazy_function;
 pub mod multi_function;
 pub mod multi_function_builder;
 pub mod lazy_function_graph;
+pub mod lazy_function_execute;
+pub mod multi_function_procedure;
