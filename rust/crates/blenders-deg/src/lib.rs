@@ -37,3 +37,5 @@ pub mod depsgraph_query_iter;
 pub mod eval_copy_on_write;
 pub mod depsgraph_api;
 pub mod depsgraph_debug;
+pub mod debug_gnuplot;
+pub mod deg_debug;
