@@ -5,3 +5,5 @@ pub mod wm_utils;
 pub mod wm_window_icon;
 pub mod wm_panel_type;
 pub mod wm_platform;
+pub mod wm_menu_type;
+pub mod wm_window_ime_draw;
