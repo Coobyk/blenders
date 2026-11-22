@@ -2,5 +2,5 @@
 /// module `tree_display_libraries`.
 ///
 /// Public entry points (verbatim).
-pub fn splay_libraries::id_filter_get() {}
-pub fn splay_libraries::library_id_filter_poll() {}
+pub fn id_filter_get() {}
+pub fn library_id_filter_poll() {}

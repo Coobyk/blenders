@@ -2,4 +2,4 @@
 /// module `tree_display_override_library_properties`.
 ///
 /// Public entry points (verbatim).
-pub fn splay_override_library_properties::id_filter_get() {}
+pub fn id_filter_get() {}
