@@ -30,3 +30,4 @@ pub mod depsgraph_tag;
 pub mod depsgraph_query;
 pub mod depsgraph_physics;
 pub mod depsgraph_query_foreach;
+pub mod depsgraph_light_linking;
