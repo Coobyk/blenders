@@ -128,7 +128,7 @@ pub fn calculate_pending_parents_if_needed(
 /// `is_metaball_object_operation` (verbatim — OB_MBALL
 /// goes single-threaded).
 pub fn is_metaball_object_operation(id_cow_gs: u16, object_type: u32) -> bool {
-    if id_cow_gs != crate::deg_builder_relations::gs(b"OB") {
+    if id_cow_gs != blenders_dna::id::gs(b"OB") {
         return false;
     }
     object_type == OB_MBALL
@@ -140,7 +140,7 @@ pub fn is_modifier_subframe_operation(
     id_cow_gs: u16,
     modifiers: &[(u32, u32)],
 ) -> bool {
-    if id_cow_gs != crate::deg_builder_relations::gs(b"OB") {
+    if id_cow_gs != blenders_dna::id::gs(b"OB") {
         return false;
     }
     for (mtype, msub) in modifiers {
