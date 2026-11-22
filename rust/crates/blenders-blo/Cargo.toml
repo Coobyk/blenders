@@ -5,3 +5,6 @@ edition.workspace = true
 
 [dependencies]
 blenders-bli = { path = "../blenders-bli" }
+blenders-dna = { path = "../blenders-dna" }
+blenders-math = { path = "../blenders-math" }
+blenders-bke = { path = "../blenders-bke" }
