@@ -22,3 +22,4 @@ pub mod wm_dragdrop;
 pub mod wm_gesture;
 pub mod wm;
 pub mod wm_operator_type;
+pub mod wm_event_query;
