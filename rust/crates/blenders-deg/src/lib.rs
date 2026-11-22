@@ -50,3 +50,4 @@ pub mod deg_builder_relations_view_layer;
 pub mod deg_builder_nodes_rig;
 pub mod deg_builder_relations_drivers;
 pub mod deg_builder_relations_rig;
+pub mod deg_builder_rna;
