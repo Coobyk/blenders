@@ -32,3 +32,4 @@ pub mod realize_on_domain_operation;
 pub mod shader_operation;
 pub mod multi_function_procedure_operation;
 pub mod scene_compositor_effects_operation;
+pub mod node_tree_evaluator;
