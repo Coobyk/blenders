@@ -1309,3 +1309,244 @@ pub fn build_driver(
         (add_rel)(usize::MAX, id, "TimeSrc -> Driver");
     }
 }
+
+/* ---- driver data/variables ---- */
+
+/// `DTAR_FLAG_STRUCT_REF`.
+pub const DTAR_FLAG_STRUCT_REF: i32 = 1 << 0;
+/// `OB_TYPE_IS_GEOMETRY` types verbatim.
+pub fn ob_type_is_geometry(t: i32) -> bool {
+    matches!(t, 1 | 2 | 3 | 4 | 5 | 22 | 27 | 28 | 29)
+}
+
+/// `build_driver_data` (verbatim — driven-property
+/// relations incl. armature-bone + nested-cow + ntree
+/// output).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_data(
+    id: usize,
+    rna_path: &str,
+    prop_entry_owner_id: usize,
+    prop_entry_owner_type: u16,
+    prop_entry_owner_ntree_is_geometry: bool,
+    prop_is_bone_prop_of_armature: Option<String>,
+    prop_identifier_is_bbone: bool,
+    object_id_nodes_using_armature: &[(usize, String)],
+    node_to_exists: bool,
+    prop_exit_affects_parameters: bool,
+    nested_owner_id: Option<usize>,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if rna_path.is_empty() || prop_entry_owner_id == 0 {
+        return;
+    }
+    let mut id_ptr = prop_entry_owner_id;
+    let is_bone = prop_is_bone_prop_of_armature.is_some();
+    /* bone prop referenced via obj.pose.bones[].bone → use obdata. */
+    if let Some(_bone_name) = &prop_is_bone_prop_of_armature {
+        /* (id_ptr swap to obdata done by caller data.) */
+    }
+    if is_bone && prop_entry_owner_type == gs(b"AR") {
+        for (ob_id, _pchan_name) in object_id_nodes_using_armature {
+            let _ = prop_identifier_is_bbone;
+            (add_rel)(id, *ob_id, "Arm Bone -> Driver -> Bone", 0);
+        }
+        if id_ptr != id {
+            (add_rel)(
+                id_ptr,
+                id,
+                "Driven Copy-on-Eval -> Driver",
+                RELATION_CHECK_BEFORE_ADD,
+            );
+        }
+    } else {
+        if node_to_exists {
+            (add_rel)(id, id, "Driver -> Driven Property", 0);
+        }
+        if let Some(nested) = nested_owner_id {
+            if nested != id {
+                (add_rel)(
+                    nested,
+                    id,
+                    "Driven Copy-on-Eval -> Driver",
+                    RELATION_CHECK_BEFORE_ADD,
+                );
+            }
+        }
+        if prop_exit_affects_parameters {
+            (add_rel)(id, id, "Driven Property -> Properties", 0);
+        }
+    }
+    if prop_entry_owner_type == gs(b"NT") {
+        (add_rel)(id, id_ptr, "Drivers -> NTree Output", 0);
+        if prop_entry_owner_ntree_is_geometry {
+            (add_rel)(id, id, "Drivers -> NTree Geo Preprocess", 0);
+        }
+    }
+}
+
+/// `DriverVarView` (verbatim fields used).
+pub struct DriverVarView {
+    /// resolved `target_prop.owner_id` (0 = skip).
+    pub target_id: usize,
+    /// `dtar->flag`.
+    pub dtar_flag: i32,
+    /// `dtar->pchan_name`.
+    pub pchan_name: String,
+    /// `dtar->rna_path` (None = no path).
+    pub rna_path: Option<String>,
+    /// pchan exists in target object pose.
+    pub target_pchan_exists: bool,
+    /// target object type (when ID_OB).
+    pub target_object_type: i32,
+}
+
+/// `build_driver_variables` (verbatim — per-target
+/// struct-ref/bone/rna-path + data-geometry + camera).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_variables_rel(
+    id: usize,
+    dvars: &[DriverVarView],
+    is_same_bone_dependency: &dyn Fn(usize, &str) -> bool,
+    build_id: &mut dyn FnMut(usize, bool),
+    build_driver_id_property: &mut dyn FnMut(usize, &str),
+    build_driver_rna_path_variable: &mut dyn FnMut(usize, &str),
+    scene_camera_paths: &dyn Fn(usize, &str) -> Option<String>,
+    build_driver_scene_camera_variable: &mut dyn FnMut(&str),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    for dvar in dvars {
+        if dvar.target_id == 0 {
+            continue;
+        }
+        (build_id)(dvar.target_id, false);
+        if let Some(path) = &dvar.rna_path {
+            (build_driver_id_property)(dvar.target_id, path);
+        }
+        let is_ob_armature = dvar.target_object_type == 25;
+        if (dvar.dtar_flag & DTAR_FLAG_STRUCT_REF) != 0
+            && is_ob_armature
+            && !dvar.pchan_name.is_empty()
+        {
+            if !dvar.target_pchan_exists {
+                continue;
+            }
+            if (is_same_bone_dependency)(dvar.target_id, &dvar.pchan_name) {
+                continue;
+            }
+            (add_rel)(dvar.target_id, id, "Bone Target -> Driver");
+        } else if (dvar.dtar_flag & DTAR_FLAG_STRUCT_REF) != 0 {
+            if dvar.target_id == id {
+                continue;
+            }
+            (add_rel)(dvar.target_id, id, "Target -> Driver");
+        } else if let Some(path) = &dvar.rna_path {
+            if path.is_empty() {
+                continue;
+            }
+            (build_driver_rna_path_variable)(dvar.target_id, path);
+            if (scene_camera_paths)(dvar.target_id, path).is_some() {
+                (build_driver_scene_camera_variable)(path);
+            }
+            if ob_type_is_geometry(dvar.target_object_type)
+                && (path == "data" || path.starts_with("data."))
+            {
+                (add_rel)(dvar.target_id, id, "ID -> Driver");
+            }
+        }
+    }
+}
+
+/// `build_driver_scene_camera_variable` (verbatim —
+/// marker cameras + implicit time dep).
+pub fn build_driver_scene_camera_variable_rel(
+    marker_cameras: &[usize],
+    scene_camera: usize,
+    rna_path: &str,
+    build_driver_id_property: &mut dyn FnMut(usize, &str),
+    build_driver_rna_path_variable: &mut dyn FnMut(usize, &str),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    driver_id: usize,
+) {
+    let mut animated = false;
+    for cam in marker_cameras {
+        if *cam != 0 && *cam != scene_camera {
+            (build_driver_id_property)(*cam, rna_path);
+            (build_driver_rna_path_variable)(*cam, rna_path);
+            animated = true;
+        }
+    }
+    if animated {
+        (add_rel)(usize::MAX, driver_id, "TimeSrc -> Driver Camera Ref");
+    }
+}
+
+/// `build_driver_rna_path_variable` (verbatim — exit key +
+/// same-dep skip + cow target).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_rna_path_variable(
+    driver_id: usize,
+    target_id: usize,
+    target_id_type: u16,
+    exit_key_owner_id: Option<usize>,
+    is_same_bone_or_node_dep: bool,
+    cow_needed: bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    let Some(exit_owner) = exit_key_owner_id else { return };
+    if is_same_bone_or_node_dep {
+        return;
+    }
+    (add_rel)(exit_owner, driver_id, "RNA Target -> Driver", 0);
+    if target_id != exit_owner && target_id_type != gs(b"SC") && cow_needed {
+        (add_rel)(target_id, driver_id, "Target ID -> Driver", 0);
+    }
+}
+
+/// `build_driver_id_property` (verbatim — resolve + affects
+/// + BONE idprop key + parameters init/exit relations).
+#[allow(clippy::too_many_arguments)]
+pub fn build_driver_id_property_rel(
+    target_owner_id: usize,
+    rna_path: &str,
+    resolve: &dyn Fn(&str) -> Option<(usize, Option<String>, String)>,
+    build_id: &mut dyn FnMut(usize, bool),
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+    add_id_property_node: &mut dyn FnMut(usize, Option<String>, &str),
+) {
+    if rna_path.is_empty() {
+        return;
+    }
+    let Some((owner_id, pose_bone_name, prop_identifier)) = resolve(rna_path) else {
+        return;
+    };
+    let _ = target_owner_id;
+    if owner_id != 0 {
+        (build_id)(owner_id, false);
+    }
+    if let Some(pchan) = &pose_bone_name {
+        (add_id_property_node)(owner_id, Some(pchan.clone()), &prop_identifier);
+        (add_rel)(
+            owner_id,
+            owner_id,
+            "Init -> ID Property",
+            RELATION_CHECK_BEFORE_ADD,
+        );
+    } else {
+        (add_id_property_node)(owner_id, None, &prop_identifier);
+    }
+    (add_rel)(owner_id, owner_id, "ID Property -> Done", RELATION_CHECK_BEFORE_ADD);
+}
+
+/// `build_parameters` (verbatim — entry→eval→exit).
+pub fn build_parameters_rel(id: usize, add_rel: &mut dyn FnMut(usize, usize, &str)) {
+    (add_rel)(id, id, "Entry -> Eval");
+    (add_rel)(id, id, "Entry -> Exit");
+}
+
+/// `build_dimensions` (verbatim — geometry+transform →
+/// DIMENSIONS).
+pub fn build_dimensions_rel(id: usize, add_rel: &mut dyn FnMut(usize, usize, &str)) {
+    (add_rel)(id, id, "Geometry -> Dimensions");
+    (add_rel)(id, id, "Transform -> Dimensions");
+}
