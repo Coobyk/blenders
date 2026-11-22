@@ -180,8 +180,8 @@ pub fn strip_retiming_line_segments_tangent_circle(
     let p1_2 = s1_2_orig;
     let mut v1 = [s1_1_orig[0] - s1_2_orig[0], s1_1_orig[1] - s1_2_orig[1]];
     let mut v2 = [s2_1_orig[0] - s2_2_orig[0], s2_1_orig[1] - s2_2_orig[1]];
-    std::mem::swap(&mut v1[0], &mut v1[1]);
-    std::mem::swap(&mut v2[0], &mut v2[1]);
+    v1.swap(0, 1);
+    v2.swap(0, 1);
     v1[0] = -v1[0];
     v2[0] = -v2[0];
     let s1_1 = s1_2_orig;
