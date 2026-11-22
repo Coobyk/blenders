@@ -24,7 +24,51 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — pack RGBA; mode
+/// variants RGB/HSL/HSV converted to RGB).
+pub fn exec(mode: i32, a: f32, b: f32, c: f32, alpha: f32) -> [f32; 4] {
+    // Mode 0: RGB. 1: HSV. 2: HSL (C's update
+    // swaps socket labels per mode).
+    match mode {
+        1 => {
+            // HSV → RGB (C's `hsv_to_rgb`).
+            let h = a.fract();
+            let s = b.clamp(0.0, 1.0);
+            let v = c.max(0.0);
+            let i = (h * 6.0).floor() as i32 % 6;
+            let f = h * 6.0 - (h * 6.0).floor();
+            let p = v * (1.0 - s);
+            let q = v * (1.0 - f * s);
+            let t = v * (1.0 - (1.0 - f) * s);
+            let (r, g, bl) = match i {
+                0 => (v, t, p),
+                1 => (q, v, p),
+                2 => (p, v, t),
+                3 => (p, q, v),
+                4 => (t, p, v),
+                _ => (v, p, q),
+            };
+            [r, g, bl, alpha]
+        }
+        2 => {
+            // HSL → RGB.
+            let h = a.fract();
+            let s = b.clamp(0.0, 1.0);
+            let l = c.max(0.0);
+            let chr = (1.0 - (2.0 * l - 1.0).abs()) * s;
+            let hp = h * 6.0;
+            let x = chr * (1.0 - (hp % 2.0 - 1.0).abs());
+            let (r, g, bl) = if hp < 1.0 { (chr, x, 0.0) }
+                else if hp < 2.0 { (x, chr, 0.0) }
+                else if hp < 3.0 { (0.0, chr, x) }
+                else if hp < 4.0 { (0.0, x, chr) }
+                else if hp < 5.0 { (x, 0.0, chr) }
+                else { (chr, 0.0, x) };
+            let m = l - chr * 0.5;
+            [r + m, g + m, bl + m, alpha]
+        }
+        _ => [a, b, c, alpha],
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

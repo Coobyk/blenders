@@ -3,23 +3,8 @@
 /// `SOCKS` (verbatim — declared
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
+    ("Input Values", super::node_declaration::SOCK_FLOAT, 1),
     ("Matrix", super::node_declaration::SOCK_MATRIX, 2),
-    ("Column 1 Row 1", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 1 Row 2", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 1 Row 3", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 1 Row 4", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 2 Row 1", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 2 Row 2", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 2 Row 3", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 2 Row 4", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 3 Row 1", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 3 Row 2", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 3 Row 3", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 3 Row 4", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 4 Row 1", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 4 Row 2", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 4 Row 3", super::node_declaration::SOCK_FLOAT, 1),
-    ("Column 4 Row 4", super::node_declaration::SOCK_FLOAT, 1),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -36,7 +21,15 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — 16 floats → mat4).
+pub fn exec(v: &[f32; 16]) -> [[f32; 4]; 4] {
+    let mut m = [[0.0f32; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            m[i][j] = v[i * 4 + j];
+        }
+    }
+    m
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
