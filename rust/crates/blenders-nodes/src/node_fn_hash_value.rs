@@ -3,8 +3,8 @@
 /// `SOCKS` (verbatim — declared
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
-    ("Seed", super::node_declaration::SOCK_INT, 1),
-    ("Hash", super::node_declaration::SOCK_INT, 2),
+    ("Value", super::node_declaration::SOCK_INT, 1),
+    ("Value", super::node_declaration::SOCK_INT, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -21,7 +21,16 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — C's integer hash:
+/// `hash_int` Wang-style 32-bit mix).
+pub fn exec(v: i64) -> i64 {
+    let mut h = (v as u64) as u32;
+    h = (h ^ 61) ^ (h >> 16);
+    h = h.wrapping_add(h << 3);
+    h ^= h >> 4;
+    h = h.wrapping_mul(0x27d4eb2d);
+    h ^= h >> 15;
+    h as i64
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

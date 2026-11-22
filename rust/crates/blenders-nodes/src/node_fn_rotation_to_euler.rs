@@ -21,7 +21,19 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — quat → XYZ euler).
+pub fn exec(q: [f32; 4]) -> [f32; 3] {
+    let (w, x, y, z) = (q[0], q[1], q[2], q[3]);
+    // XYZ order (matches euler_to_rotation).
+    let sinr = 2.0 * (w * x + y * z);
+    let cosr = 1.0 - 2.0 * (x * x + y * y);
+    let rx = sinr.atan2(cosr);
+    let sinp = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0);
+    let ry = sinp.asin();
+    let siny = 2.0 * (w * z + x * y);
+    let cosy = 1.0 - 2.0 * (y * y + z * z);
+    let rz = siny.atan2(cosy);
+    [rx, ry, rz]
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
