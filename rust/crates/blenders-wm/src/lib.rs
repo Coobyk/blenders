@@ -3,3 +3,5 @@
 //! toolsystem, drag & drop.
 pub mod wm_utils;
 pub mod wm_window_icon;
+pub mod wm_panel_type;
+pub mod wm_platform;
