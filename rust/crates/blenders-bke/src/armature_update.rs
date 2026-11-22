@@ -22,6 +22,9 @@ pub const CONSTRAINT_SPLINEIK_XZS_ORIGINAL: i32 = 1;
 /// `CONSTRAINT_SPLINEIK_XZS_VOLUMEPRESERVE`.
 pub const CONSTRAINT_SPLINEIK_XZS_VOLUMEPRESERVE: i32 = 2;
 /// `CONSTRAINT_SPLINEIK_NO_ROOT`.
+use blenders_dna::action_types::{POSE_IKTREE, POSE_IKSPLINE};
+use blenders_dna::constraint_types::{CONSTRAINT_SPLINEIK_BOUND, CONSTRAINT_SPLINEIK_EVENSPLITS};
+
 pub const CONSTRAINT_SPLINEIK_NO_ROOT: i32 = 1 << 0;
 /// `CONSTRAINT_SPLINEIK_USE_ORIGINAL_SCALE`.
 pub const CONSTRAINT_SPLINEIK_USE_ORIGINAL_SCALE: i32 = 1 << 1;
@@ -417,4 +420,278 @@ fn axis_sort(v: Vec3) -> [usize; 3] {
     let mut order = [0usize, 1, 2];
     order.sort_by(|&a, &b| v[b].abs().partial_cmp(&v[a].abs()).unwrap());
     order
+}
+
+/// `splineik_init_tree_from_pchan` — chain walk + binding-point
+/// computation verbatim; constraint lookup, bone parents and
+/// `siktree` storage injected.
+pub struct SplineIkInitCtx {
+    /// Constraint data (`bSplineIKConstraint`) selected by the
+    /// caller's `BKE_constraint_has_influence`/tar checks.
+    /// `chainlen` bones are walked from `tip` toward the root;
+    /// `bone_parent(i)` supplies each successive parent's bone
+    /// length (returns `None` at the chain end).
+    pub chainlen: usize,
+    /// `ik_data->flag`.
+    pub flag: i32,
+    /// Current `ik_data->points` (empty = unbound).
+    pub points: Vec<f32>,
+}
+
+/// Result of `splineik_init_tree_from_pchan` — the caller stores a
+/// `SplineIkTree` (root..tip `chain` reversed), writes `points`
+/// back to `ik_data->points` and sets `POSE_IKSPLINE` on the root.
+pub struct SplineIkInitResult {
+    /// `pchan_chain` root..tip (tip-to-root order preserved as in C:
+    /// `chain[0]` is the tip).
+    pub chain_tip_to_root: Vec<usize>,
+    /// `totlength`.
+    pub totlength: f32,
+    /// `ik_data->points` (bound when it was empty).
+    pub points: Vec<f32>,
+    /// `segcount`.
+    pub segcount: usize,
+    /// `flag |= CONSTRAINT_SPLINEIK_BOUND` when bound here.
+    pub bound_now: bool,
+}
+
+/// `splineik_init_tree_from_pchan` (verbatim — `bone_parent` walks
+/// `pchan`/`pchan_bone` parents, both must exist).
+pub fn splineik_init_tree_from_pchan(
+    pchan_tip: usize,
+    ctx: &mut SplineIkInitCtx,
+    bone_parent: &dyn Fn(usize) -> Option<usize>,
+    bone_length: &dyn Fn(usize) -> f32,
+) -> Option<SplineIkInitResult> {
+    /* Find the root bone and the chain from root to tip. */
+    let mut pchan_chain: Vec<usize> = Vec::with_capacity(ctx.chainlen);
+    let mut bone_lengths: Vec<f32> = Vec::with_capacity(ctx.chainlen);
+    let mut totlength = 0.0f32;
+    let mut cur = Some(pchan_tip);
+    while let Some(pchan) = cur {
+        if pchan_chain.len() >= ctx.chainlen {
+            break;
+        }
+        pchan_chain.push(pchan);
+        let len = bone_length(pchan);
+        bone_lengths.push(len);
+        totlength += len;
+        cur = bone_parent(pchan);
+    }
+    let segcount = pchan_chain.len();
+    if segcount == 0 {
+        return None;
+    }
+    let pchan_root = pchan_chain[segcount - 1];
+    let _ = pchan_root;
+
+    let mut bound_now = false;
+    if (ctx.flag & CONSTRAINT_SPLINEIK_BOUND as i32) == 0 {
+        let segment_len = 1.0 / segcount as f32;
+        ctx.points = vec![0.0; ctx.chainlen + 1];
+        ctx.points[0] = 1.0;
+        for i in 0..segcount {
+            if (ctx.flag & CONSTRAINT_SPLINEIK_EVENSPLITS as i32) != 0 || totlength == 0.0 {
+                ctx.points[i + 1] = ctx.points[i] - segment_len;
+            } else {
+                ctx.points[i + 1] = ctx.points[i] - (bone_lengths[i] / totlength);
+            }
+        }
+        ctx.flag |= CONSTRAINT_SPLINEIK_BOUND as i32;
+        bound_now = true;
+    }
+    if ctx.points[segcount] < 0.0 {
+        ctx.points[segcount] = 0.0;
+    }
+    Some(SplineIkInitResult {
+        chain_tip_to_root: pchan_chain,
+        totlength,
+        points: ctx.points.clone(),
+        segcount,
+        bound_now,
+    })
+}
+
+/// `splineik_init_tree` — iterate the channels the caller tagged
+/// `PCHAN_HAS_SPLINEIK` and run `splineik_init_tree_from_pchan`
+/// on each (verbatim driver shape).
+pub fn splineik_init_tree(
+    tip_pchans: &[usize],
+    init: &mut dyn FnMut(usize),
+) {
+    for &pchan in tip_pchans {
+        init(pchan);
+    }
+}
+
+/// `splineik_execute_tree` (verbatim — `where_is_bone` supplies
+/// `BKE_pose_where_is_bone`, `evaluate_bone` is
+/// `splineik_evaluate_bone`; trees freed by the caller).
+pub fn splineik_execute_tree(
+    trees: Vec<SplineIkTree>,
+    ctime: f32,
+    ctx: &mut dyn SplineIkCtx,
+    where_is_bone: &mut dyn FnMut(usize, f32),
+    evaluate_bone: &mut dyn FnMut(&SplineIkTree, usize, i32, &mut SplineIkEvalState),
+) {
+    for mut tree in trees {
+        /* Firstly, calculate the bone matrix the standard way,
+         * since this is needed for roll control. */
+        for i in (0..tree.pchain.len()).rev() {
+            where_is_bone(tree.pchain[i], ctime);
+        }
+        /* After that, evaluate the actual Spline IK. */
+        if let Some(mut state) = splineik_evaluate_init(ctx, &tree) {
+            /* Walk over each bone in the chain, calculating the
+             * effects of spline IK — traversed parent to children. */
+            for i in (0..tree.pchain.len()).rev() {
+                let pchan = tree.pchain[i];
+                evaluate_bone(&tree, pchan, i as i32, &mut state);
+            }
+        }
+        /* free this tree (caller drops `trees`). */
+    }
+    let _ = ctime;
+}
+
+/// `BKE_pose_pchan_index_rebuild` — rebuild the indexed channel
+/// array from the list order.
+pub fn pose_pchan_index_rebuild(chanbase_order: &[usize]) -> Vec<usize> {
+    chanbase_order.to_vec()
+}
+
+/// `pose_pchan_get_indexed`.
+pub fn pose_pchan_get_indexed(chan_array: &[usize], pchan_index: i32) -> usize {
+    chan_array[pchan_index as usize]
+}
+
+/// `BKE_pose_eval_bone` (verbatim — `arm_edbo`/`restpos` injected,
+/// `where_is_bone` supplies `BKE_pose_where_is_bone`).
+pub fn pose_eval_bone(
+    arm_is_edit: bool,
+    arm_restpos: bool,
+    pchan_has_constraints: bool,
+    pchan_flag: i32,
+    ctime: f32,
+    copy_rest_pose: &mut dyn FnMut(),
+    where_is_bone: &mut dyn FnMut(f32),
+) {
+    if arm_is_edit {
+        return;
+    }
+    if arm_restpos {
+        copy_rest_pose();
+    } else if !pchan_has_constraints {
+        if pchan_flag & (POSE_IKTREE as i32 | POSE_IKSPLINE as i32) != 0 {
+            /* pass */
+        } else if pchan_flag & POSE_DONE == 0 {
+            where_is_bone(ctime);
+        }
+    }
+}
+
+/// `BKE_pose_constraints_evaluate` (verbatim).
+pub fn pose_constraints_evaluate(
+    arm_is_edit: bool,
+    arm_restpos: bool,
+    pchan_flag: i32,
+    ctime: f32,
+    where_is_bone: &mut dyn FnMut(f32),
+) {
+    if arm_is_edit {
+        return;
+    }
+    if arm_restpos {
+        return;
+    }
+    if pchan_flag & (POSE_IKTREE as i32 | POSE_IKSPLINE as i32) != 0 {
+        /* IK are being solved separately. */
+    } else if pchan_flag & POSE_DONE == 0 {
+        where_is_bone(ctime);
+    }
+}
+
+/// `pose_channel_flush_to_orig_if_needed` — copies pose result
+/// fields to the orig channel (verbatim field list).
+pub fn pose_channel_flush_to_orig_if_needed(
+    deg_is_active: bool,
+    arm_is_edit: bool,
+    copy_fields: &mut dyn FnMut(),
+) {
+    if !deg_is_active {
+        return;
+    }
+    if arm_is_edit {
+        return;
+    }
+    copy_fields();
+}
+
+/// `BKE_pose_bone_done` (verbatim — flush injected).
+pub fn pose_bone_done(
+    arm_is_edit: bool,
+    deg_is_active: bool,
+    flush_to_orig: &mut dyn FnMut(),
+) {
+    if arm_is_edit {
+        return;
+    }
+    if deg_is_active {
+        flush_to_orig();
+    }
+}
+
+/// `BKE_pose_eval_bbone_segments` — re-apply B-Bone segments via
+/// injected `bbone_segments_apply` (verbatim shape).
+pub fn pose_eval_bbone_segments(arm_is_edit: bool, apply: &mut dyn FnMut()) {
+    if arm_is_edit {
+        return;
+    }
+    apply();
+}
+
+/// `BKE_pose_iktree_evaluate` (verbatim — `BIK_execute_tree`
+/// injected).
+pub fn pose_iktree_evaluate(
+    arm_is_edit: bool,
+    arm_restpos: bool,
+    ctime: f32,
+    bik_execute_tree: &mut dyn FnMut(f32),
+) {
+    if arm_is_edit {
+        return;
+    }
+    if arm_restpos {
+        return;
+    }
+    bik_execute_tree(ctime);
+}
+
+/// `BKE_pose_splineik_evaluate` (verbatim).
+pub fn pose_splineik_evaluate(
+    arm_is_edit: bool,
+    arm_restpos: bool,
+    ctime: f32,
+    splineik_execute: &mut dyn FnMut(f32),
+) {
+    if arm_is_edit {
+        return;
+    }
+    if arm_restpos {
+        return;
+    }
+    splineik_execute(ctime);
+}
+
+/// `pose_eval_cleanup_common` — asserts only (verbatim).
+pub fn pose_eval_cleanup_common() {}
+
+/// `BKE_pose_eval_done` — debug print + assert (verbatim).
+pub fn pose_eval_done() {}
+
+/// `BKE_pose_eval_cleanup` (verbatim — `BIK_release_tree` injected).
+pub fn pose_eval_cleanup(arm_is_edit: bool, ctime: f32, bik_release_tree: &mut dyn FnMut(f32)) {
+    let _ = arm_is_edit;
+    bik_release_tree(ctime);
+    pose_eval_cleanup_common();
 }
