@@ -1,0 +1,15 @@
+[package]
+name = "blenders-draw"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+blenders-dna = { path = "../blenders-dna" }
+blenders-bli = { path = "../blenders-bli" }
+blenders-math = { path = "../blenders-math" }
+blenders-bke = { path = "../blenders-bke" }
+blenders-imbuf = { path = "../blenders-imbuf" }
+blenders-gpu = { path = "../blenders-gpu" }
+blenders-render = { path = "../blenders-render" }
+blenders-geo = { path = "../blenders-geo" }
+blenders-bmesh = { path = "../blenders-bmesh" }
