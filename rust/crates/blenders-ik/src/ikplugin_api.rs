@@ -8,7 +8,7 @@ pub const BIK_IKSOLVER_ITASC: i32 = 1;
 pub const BIK_IKSOLVER_COUNT: i32 = 2;
 
 /// `IKPlugin` vtable (verbatim — all fns optional).
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct IkPlugin {
     /// `initialize_tree_func`.
     pub initialize_tree: bool,
