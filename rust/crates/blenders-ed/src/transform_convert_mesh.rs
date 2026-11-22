@@ -10,19 +10,17 @@ pub fn create_trans_mesh_verts(
     verts: &[[f32; 3]],
     selected: &[bool],
 ) {
-    for tc in t.data.iter_mut() {
-        for (i, co) in verts.iter().enumerate() {
-            if !selected.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let mut td = TransData::default();
-            td.identity();
-            td.loc = *co;
-            td.iloc = *co;
-            td.center = *co;
-            td.flag = TD_SELECTED;
-            tc.data.push(td);
+    for (i, co) in verts.iter().enumerate() {
+        if !selected.get(i).copied().unwrap_or(false) {
+            continue;
         }
+        let mut td = TransData::default();
+        td.identity();
+        td.loc = *co;
+        td.iloc = *co;
+        td.center = *co;
+        td.flag = TD_SELECTED;
+        t.data.push(td);
     }
 }
 /// `createTransMeshEdges` — TransData per
@@ -33,21 +31,19 @@ pub fn create_trans_mesh_edges(
     edges: &[[i32; 2]],
     selected: &[bool],
 ) {
-    for tc in t.data.iter_mut() {
-        for (i, e) in edges.iter().enumerate() {
-            if !selected.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let a = verts[e[0] as usize];
-            let b = verts[e[1] as usize];
-            let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
-            let mut td = TransData::default();
-            td.identity();
-            td.loc = mid;
-            td.iloc = mid;
-            td.center = mid;
-            td.flag = TD_SELECTED;
-            tc.data.push(td);
+    for (i, e) in edges.iter().enumerate() {
+        if !selected.get(i).copied().unwrap_or(false) {
+            continue;
         }
+        let a = verts[e[0] as usize];
+        let b = verts[e[1] as usize];
+        let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
+        let mut td = TransData::default();
+        td.identity();
+        td.loc = mid;
+        td.iloc = mid;
+        td.center = mid;
+        td.flag = TD_SELECTED;
+        t.data.push(td);
     }
 }

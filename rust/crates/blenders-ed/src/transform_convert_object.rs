@@ -37,12 +37,10 @@ pub fn create_trans_objects(
     t: &mut TransInfo,
     objects: &[([f32; 3], [[f32; 4]; 4])],
 ) {
-    for tc in t.data.iter_mut() {
-        for (loc, mat) in objects {
-            let mut td = TransData::default();
-            td.identity();
-            transdata_object(&mut td, *loc, *mat);
-            tc.data.push(td);
-        }
+    for (loc, mat) in objects {
+        let mut td = TransData::default();
+        td.identity();
+        transdata_object(&mut td, *loc, *mat);
+        t.data.push(td);
     }
 }
