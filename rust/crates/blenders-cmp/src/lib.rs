@@ -24,3 +24,6 @@ pub mod shader_node;
 pub mod result;
 pub mod operation;
 pub mod scheduler;
+pub mod pixel_operation;
+pub mod node_operation;
+pub mod utilities;
