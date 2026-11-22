@@ -41,7 +41,7 @@ pub fn tex_saw(a: f32) -> f32 {
 pub fn tex_tri(a: f32) -> f32 {
     let b = M_2_PI;
     let rmax = 1.0f32;
-    rmax - 2.0 * ((a * (1.0 / b)) + 0.5).floor().sub(a * (1.0 / b)).abs()
+    rmax - 2.0 * (((a * (1.0 / b)) + 0.5).floor() - a * (1.0 / b)).abs()
 }
 /// `waveform` dispatch (verbatim — index clamp 0..2).
 pub fn waveform(wf: i16, a: f32) -> f32 {

@@ -11,3 +11,4 @@ pub mod engine;
 pub mod bake;
 pub mod compositor;
 pub mod texture_procedural;
+pub mod multires_bake;
