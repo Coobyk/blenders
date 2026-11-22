@@ -20,3 +20,4 @@ pub mod builder_remove_noop;
 pub mod builder_transitive;
 pub mod node_id;
 pub mod node;
+pub mod node_operation;
