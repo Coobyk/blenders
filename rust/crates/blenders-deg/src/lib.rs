@@ -13,3 +13,4 @@ pub mod builder_key;
 pub mod builder_map;
 pub mod builder_pchanmap;
 pub mod registry;
+pub mod eval;
