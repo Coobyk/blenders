@@ -579,6 +579,160 @@ fn timeline(cfra: i32) -> impl IntoElement {
         )
 }
 
+/// `ScrArea` — a labeled region box for a space type.
+/// `area` (verbatim — area header + space name).
+fn area(space_name: &'static str, w: Option<f32>, h: Option<f32>) -> gpui::Div {
+    let mut d = div()
+        .flex()
+        .flex_col()
+        .bg(rgb(COLOR_SIDEBAR))
+        .border_1()
+        .border_color(rgb(0x1a1a1a))
+        .overflow_hidden();
+    if let Some(w) = w { d = d.w(px(w)); } else { d = d.flex_1(); }
+    if let Some(h) = h { d = d.h(px(h)); } else { d = d.h_full(); }
+    d.child(
+        div()
+            .w_full()
+            .h(px(22.0))
+            .px_2()
+            .flex()
+            .items_center()
+            .bg(rgb(COLOR_HEADER))
+            .child(div().text_xs().text_color(rgb(COLOR_TEXT_DIM)).child(space_name)),
+    )
+    .child(div().flex_1())
+}
+
+/// `ScrAreaMap` per workspace — faithful area splits from `startup.blend`.
+/// `workspace_body` returns the area row for the active workspace.
+fn workspace_body(
+    ws: usize,
+    bmain: &Main,
+    view: &ViewPersp,
+    prop_tab: usize,
+    tool: usize,
+    cx: &mut Context<BlendersView>,
+) -> impl IntoElement {
+    let viewport_col = || {
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .h_full()
+            .child(viewport(view))
+    };
+    match ws {
+        // Layout: toolbar + viewport + outliner/properties.
+        0 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(toolbar(cx, tool))
+            .child(viewport_col())
+            .child(sidebar(bmain, prop_tab, cx)),
+        // Modeling / Sculpting / Texture Paint: viewport + sidebar.
+        1 | 2 | 4 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(toolbar(cx, tool))
+            .child(viewport_col())
+            .child(sidebar(bmain, prop_tab, cx)),
+        // UV Editing: UV editor left, viewport right, outliner.
+        3 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(toolbar(cx, tool))
+            .child(area("UV Editor", None, None))
+            .child(viewport_col())
+            .child(sidebar(bmain, prop_tab, cx)),
+        // Shading: viewport top, node editor bottom, properties right.
+        5 | 9 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(toolbar(cx, tool))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .h_full()
+                    .child(viewport(view))
+                    .child(area(if ws == 5 { "Shader Editor" } else { "Geometry Node Editor" }, None, Some(280.0))),
+            )
+            .child(sidebar(bmain, prop_tab, cx)),
+        // Animation: dope sheet + viewport + outliner.
+        6 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .h_full()
+                    .child(area("Dope Sheet", None, Some(220.0)))
+                    .child(viewport(view)),
+            )
+            .child(sidebar(bmain, prop_tab, cx)),
+        // Rendering: image editor + viewport.
+        7 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(viewport_col())
+            .child(area("Image Editor", Some(420.0), None)),
+        // Compositing: node editor + image viewer.
+        8 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .h_full()
+                    .child(area("Compositor", None, None))
+                    .child(area("Image Editor", None, Some(200.0))),
+            ),
+        // Scripting: text editor + console + outliner.
+        10 => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .h_full()
+                    .child(area("Text Editor", None, None))
+                    .child(area("Python Console", None, Some(200.0))),
+            )
+            .child(sidebar(bmain, prop_tab, cx)),
+        _ => div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .overflow_hidden()
+            .child(viewport_col())
+            .child(sidebar(bmain, prop_tab, cx)),
+    }
+}
+
 fn status_bar(status: &SharedString) -> impl IntoElement {
     div()
         .w_full()
@@ -611,17 +765,18 @@ impl Render for BlendersView {
             .bg(rgb(COLOR_VIEWPORT))
             .text_color(rgb(COLOR_TEXT))
             .child(header(self.app.screen.active_workspace, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(toolbar(cx, self.app.tool))
-                    .child(viewport(&self.app.view_persp))
-                    .child(sidebar(&self.app.bmain, self.app.prop_tab, cx)),
+            .child(workspace_body(
+                self.app.screen.active_workspace,
+                &self.app.bmain,
+                &self.app.view_persp,
+                self.app.prop_tab,
+                self.app.tool,
+                cx,
+            ))
+            .when(
+                matches!(self.app.screen.active_workspace, 0 | 1 | 2 | 6),
+                |d| d.child(timeline(self.app.cfra)),
             )
-            .child(timeline(self.app.cfra))
             .child(status_bar(&self.app.status))
     }
 }
