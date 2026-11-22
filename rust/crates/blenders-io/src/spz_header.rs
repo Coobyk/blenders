@@ -1,1 +1,1 @@
-/// Port pending — `io/spz_header`.
+// Port pending — `io/spz_header`.

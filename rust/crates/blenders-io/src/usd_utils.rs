@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_utils`.
+// Port pending — `io/usd_utils`.

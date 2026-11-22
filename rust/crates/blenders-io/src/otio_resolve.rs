@@ -1,1 +1,1 @@
-/// Port pending — `io/otio_resolve`.
+// Port pending — `io/otio_resolve`.

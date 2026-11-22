@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_scene_index`.
+// Port pending — `io/usd_scene_index`.

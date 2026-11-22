@@ -1,1 +1,1 @@
-/// Port pending — `io/image`.
+// Port pending — `io/image`.

@@ -1,1 +1,1 @@
-/// Port pending — `io/gsplat`.
+// Port pending — `io/gsplat`.

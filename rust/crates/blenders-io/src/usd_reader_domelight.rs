@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_reader_domelight`.
+// Port pending — `io/usd_reader_domelight`.

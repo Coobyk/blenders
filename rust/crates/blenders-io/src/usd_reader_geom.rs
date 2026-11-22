@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_reader_geom`.
+// Port pending — `io/usd_reader_geom`.

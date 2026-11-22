@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_reader_instance`.
+// Port pending — `io/usd_reader_instance`.

@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_writer_camera`.
+// Port pending — `io/usd_writer_camera`.

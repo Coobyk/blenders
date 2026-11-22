@@ -1,1 +1,1 @@
-/// Port pending — `io/usd_reader_skeleton`.
+// Port pending — `io/usd_reader_skeleton`.
