@@ -12,3 +12,5 @@ pub mod action_iterators;
 pub mod animdata;
 pub mod keyframing_auto;
 pub mod evaluation;
+pub mod versioning;
+pub mod pose;
