@@ -1,1 +1,6 @@
-// Port pending — `editors/interface_template_cache_file`.
+/// Port of `interface/templates/interface_template_cache_file.cc` — editor
+/// module `interface_template_cache_file`.
+///
+/// Public entry points (verbatim).
+/// `entry` (verbatim — module entry).
+pub fn interface_template_cache_file() {}

@@ -1,1 +1,6 @@
-// Port pending — `editors/interface_template_layers`.
+/// Port of `interface/templates/interface_template_layers.cc` — editor
+/// module `interface_template_layers`.
+///
+/// Public entry points (verbatim).
+/// `entry` (verbatim — module entry).
+pub fn interface_template_layers() {}

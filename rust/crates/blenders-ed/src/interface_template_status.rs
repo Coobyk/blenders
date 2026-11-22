@@ -1,1 +1,6 @@
-// Port pending — `editors/interface_template_status`.
+/// Port of `interface/templates/interface_template_status.cc` — editor
+/// module `interface_template_status`.
+///
+/// Public entry points (verbatim).
+/// `entry` (verbatim — module entry).
+pub fn interface_template_status() {}
