@@ -406,5 +406,5 @@ pub struct ModifierDataBackup {
     pub runtime: usize,
 }
 
-/// `deg_eval_runtime_backup_pose.cc` — empty file (pose
-/// backup is a `BKE_pose_backup` call elsewhere).
+// `deg_eval_runtime_backup_pose.cc` — empty file (pose
+// backup is a `BKE_pose_backup` call elsewhere).
