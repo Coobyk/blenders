@@ -1997,3 +1997,637 @@ pub fn build_object_data_empty(
         );
     }
 }
+
+/* ---- armature / camera / light / nodetree / material ---- */
+
+/// `build_armature` (verbatim).
+pub fn build_armature_rel(
+    armature_id: usize,
+    bone_props: &[usize],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(armature_id) {
+        return;
+    }
+    (stack_trace)(armature_id);
+    (build_idproperties)(armature_id);
+    (build_idproperties)(armature_id);
+    (build_animdata)(armature_id);
+    (build_parameters)(armature_id);
+    for p in bone_props {
+        (build_idproperties)(*p);
+        (build_idproperties)(*p);
+    }
+}
+
+/// `build_camera` (verbatim — DOF object + bone subtarget).
+pub fn build_camera_rel(
+    camera_id: usize,
+    dof_focus_object: usize,
+    dof_focus_object_type: i32,
+    dof_focus_subtarget: &str,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(camera_id) {
+        return;
+    }
+    (stack_trace)(camera_id);
+    (build_idproperties)(camera_id);
+    (build_idproperties)(camera_id);
+    (build_animdata)(camera_id);
+    (build_parameters)(camera_id);
+    if dof_focus_object != 0 {
+        (build_object)(dof_focus_object);
+        (add_rel)(dof_focus_object, camera_id, "Camera DOF");
+        if dof_focus_object_type == 25 && !dof_focus_subtarget.is_empty() {
+            (add_rel)(dof_focus_object, camera_id, "Camera DOF subtarget");
+        }
+    }
+}
+
+/// `build_light` (verbatim — parameters→shading + ntree).
+pub fn build_light_rel(
+    lamp_id: usize,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    build_nested_nodetree: &mut dyn FnMut(usize, usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(lamp_id) {
+        return;
+    }
+    (stack_trace)(lamp_id);
+    (build_idproperties)(lamp_id);
+    (build_idproperties)(lamp_id);
+    (build_animdata)(lamp_id);
+    (build_parameters)(lamp_id);
+    (add_rel)(lamp_id, lamp_id, "Light Shading Parameters");
+    if nodetree != 0 {
+        (build_nodetree)(nodetree);
+        (add_rel)(nodetree, lamp_id, "NTree->Light Parameters");
+        (build_nested_nodetree)(lamp_id, nodetree);
+    }
+}
+
+/// `build_nodetree_socket` (verbatim — per-type id build).
+pub fn build_nodetree_socket_rel(
+    socket_prop: usize,
+    socket_type: i32,
+    default_value_id: usize,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    (build_idproperties)(socket_prop);
+    /* SOCK_TEXT_ID (15) skipped — text not in graph. */
+    if socket_type != 15 && default_value_id != 0 {
+        (build_id)(default_value_id, false);
+    }
+}
+
+/// `NodetreeRelView` (verbatim fields used).
+pub struct NodetreeRelView {
+    /// `ntree->type == NTREE_GEOMETRY`/`NTREE_SHADER`.
+    pub is_geometry: bool,
+    pub is_shader: bool,
+    /// nodes: (prop, sockets, linked id/type/group, has
+    /// frame_current attribute).
+    pub nodes: Vec<NodetreeNodeRelView>,
+    /// interface props.
+    pub interface_props: Vec<usize>,
+    /// `check_id_has_anim_component`.
+    pub has_anim_component: bool,
+}
+
+/// `NodetreeNodeRelView`.
+pub struct NodetreeNodeRelView {
+    /// `bnode->prop`.
+    pub prop: usize,
+    /// sockets (prop, type, default id).
+    pub sockets: Vec<(usize, i32, usize)>,
+    /// `bnode->id`/type/group.
+    pub id: usize,
+    pub id_type: u16,
+    pub is_group: bool,
+    pub group_ntree_is_geometry: bool,
+    /// shader attribute "frame_current" on view layer.
+    pub has_frame_current_attr: bool,
+    /// OB object type (geometry-component check).
+    pub object_type: i32,
+    /// SCE camera (0 = none).
+    pub scene_camera: usize,
+}
+
+/// `build_nodetree` (verbatim — output/preprocess +
+/// per-node id dispatch + interface + anim).
+#[allow(clippy::too_many_arguments)]
+pub fn build_nodetree_rel(
+    ntree_id: usize,
+    ntree: &NodetreeRelView,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree_socket: &mut dyn FnMut(usize, i32, usize),
+    build_id: &mut dyn FnMut(usize, bool),
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if ntree_id == 0 || (check_is_built)(ntree_id) {
+        return;
+    }
+    (stack_trace)(ntree_id);
+    (build_idproperties)(ntree_id);
+    (build_idproperties)(ntree_id);
+    (build_animdata)(ntree_id);
+    (build_parameters)(ntree_id);
+    if ntree.is_geometry {
+        (add_rel)(ntree_id, ntree_id, "Copy-on-Eval -> Preprocess", 0);
+        (add_rel)(ntree_id, ntree_id, "Preprocess -> Output", RELATION_FLAG_NO_FLUSH);
+    }
+    for bnode in &ntree.nodes {
+        (build_idproperties)(bnode.prop);
+        for (sprop, stype, sdef) in &bnode.sockets {
+            (build_nodetree_socket)(*sprop, *stype, *sdef);
+        }
+        if ntree.is_shader && bnode.has_frame_current_attr {
+            (add_rel)(usize::MAX, ntree_id, "TimeSrc -> Node", 0);
+        }
+        if bnode.id == 0 {
+            continue;
+        }
+        let t = bnode.id_type;
+        if t == gs(b"MA") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Material -> Node", 0);
+        } else if t == gs(b"TE") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Texture -> Node", 0);
+        } else if t == gs(b"IM") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Image -> Node", 0);
+        } else if t == gs(b"OB") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Object Transform -> Node", 0);
+            if object_have_geometry_component(bnode.object_type) {
+                (add_rel)(bnode.id, ntree_id, "Object Geometry -> Node", 0);
+            }
+        } else if t == gs(b"SC") {
+            (build_id)(bnode.id, false);
+            if bnode.scene_camera != 0 {
+                (build_id)(bnode.scene_camera, false);
+            }
+        } else if t == gs(b"TX") {
+            /* script nodes ignored */
+        } else if t == gs(b"MS") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Mask -> Node", 0);
+        } else if t == gs(b"MC") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Clip -> Node", 0);
+        } else if t == gs(b"VF") {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "VFont -> Node", 0);
+        } else if t == gs(b"GR") {
+            (build_id)(bnode.id, false);
+        } else if bnode.is_group {
+            (build_id)(bnode.id, false);
+            (add_rel)(bnode.id, ntree_id, "Group Node", 0);
+            if bnode.group_ntree_is_geometry {
+                (add_rel)(bnode.id, ntree_id, "Group Node Preprocess", 0);
+            }
+        }
+    }
+    for prop in &ntree.interface_props {
+        (build_idproperties)(*prop);
+    }
+    if ntree.has_anim_component {
+        (add_rel)(ntree_id, ntree_id, "NTree Shading Parameters", 0);
+        if ntree.is_geometry {
+            (add_rel)(ntree_id, ntree_id, "NTree Animation -> Preprocess", 0);
+        }
+    }
+}
+
+/// `build_material` (verbatim — owner shading +
+/// parameters + ntree).
+pub fn build_material_rel(
+    material_id: usize,
+    owner: usize,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    build_nested_nodetree: &mut dyn FnMut(usize, usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if owner != 0 {
+        (add_rel)(material_id, owner, "Material -> Owner Shading");
+    }
+    if (check_is_built)(material_id) {
+        return;
+    }
+    (stack_trace)(material_id);
+    (build_idproperties)(material_id);
+    (build_idproperties)(material_id);
+    (build_animdata)(material_id);
+    (build_parameters)(material_id);
+    (add_rel)(material_id, material_id, "Material's parameters");
+    if nodetree != 0 {
+        (build_nodetree)(nodetree);
+        (add_rel)(nodetree, material_id, "Material's NTree");
+        (build_nested_nodetree)(material_id, nodetree);
+    }
+}
+
+/* ---- texture/image/cache/mask/speaker/sound/sequencer/cow ---- */
+
+/// `build_texture` (verbatim — ntree + image + anim rels).
+#[allow(clippy::too_many_arguments)]
+pub fn build_texture_rel(
+    texture_id: usize,
+    nodetree: usize,
+    ima: usize,
+    has_anim_component: bool,
+    image_user_has_animation: bool,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    build_nested_nodetree: &mut dyn FnMut(usize, usize),
+    build_image: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(texture_id) {
+        return;
+    }
+    (stack_trace)(texture_id);
+    (build_idproperties)(texture_id);
+    (build_idproperties)(texture_id);
+    (build_animdata)(texture_id);
+    (build_parameters)(texture_id);
+    if nodetree != 0 {
+        (build_nodetree)(nodetree);
+        (add_rel)(nodetree, texture_id, "Texture's NTree");
+        (build_nested_nodetree)(texture_id, nodetree);
+    }
+    if ima != 0 {
+        (build_image)(ima);
+        (add_rel)(ima, texture_id, "Texture Image");
+    }
+    if has_anim_component {
+        (add_rel)(texture_id, texture_id, "Datablock Animation");
+    }
+    if image_user_has_animation {
+        (add_rel)(texture_id, texture_id, "Datablock Image Animation");
+    }
+}
+
+/// `build_cachefile` (verbatim — anim/driver → CACHE +
+/// sequence time).
+#[allow(clippy::too_many_arguments)]
+pub fn build_cachefile_rel(
+    cache_file_id: usize,
+    is_sequence: bool,
+    has_anim_component: bool,
+    has_driver_component: bool,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(cache_file_id) {
+        return;
+    }
+    (stack_trace)(cache_file_id);
+    (build_idproperties)(cache_file_id);
+    (build_idproperties)(cache_file_id);
+    (build_animdata)(cache_file_id);
+    (build_parameters)(cache_file_id);
+    if has_anim_component {
+        (add_rel)(cache_file_id, cache_file_id, "Datablock Animation");
+    }
+    if has_driver_component {
+        (add_rel)(cache_file_id, cache_file_id, "Drivers -> Cache Eval");
+    }
+    if is_sequence {
+        (add_rel)(usize::MAX, cache_file_id, "TimeSrc -> Cache File Eval");
+    }
+}
+
+/// `build_mask` (verbatim — animation → eval + parent
+/// movieclip).
+#[allow(clippy::too_many_arguments)]
+pub fn build_mask_rel(
+    mask_id: usize,
+    mask_is_animated: bool,
+    parent_movieclip_ids: &[usize],
+    other_parent_ids: &[usize],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_id: &mut dyn FnMut(usize, bool),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(mask_id) {
+        return;
+    }
+    (stack_trace)(mask_id);
+    (build_idproperties)(mask_id);
+    (build_idproperties)(mask_id);
+    (build_animdata)(mask_id);
+    (build_parameters)(mask_id);
+    if mask_is_animated {
+        (add_rel)(usize::MAX, mask_id, "TimeSrc -> Mask Animation");
+    }
+    (add_rel)(mask_id, mask_id, "Mask Animation -> Mask Eval");
+    for pid in parent_movieclip_ids {
+        (build_id)(*pid, false);
+        (add_rel)(*pid, mask_id, "Movie Clip -> Mask Eval");
+    }
+    for pid in other_parent_ids {
+        (build_id)(*pid, false);
+    }
+}
+
+/// `build_speaker` (verbatim — sound → AUDIO).
+pub fn build_speaker_rel(
+    speaker_id: usize,
+    sound: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_sound: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(speaker_id) {
+        return;
+    }
+    (stack_trace)(speaker_id);
+    (build_idproperties)(speaker_id);
+    (build_idproperties)(speaker_id);
+    (build_animdata)(speaker_id);
+    (build_parameters)(speaker_id);
+    if sound != 0 {
+        (build_sound)(sound);
+        (add_rel)(sound, speaker_id, "Sound -> Speaker");
+    }
+}
+
+/// `build_sound` (verbatim — PARAMETERS → AUDIO).
+pub fn build_sound_rel(
+    sound_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(sound_id) {
+        return;
+    }
+    (stack_trace)(sound_id);
+    (build_idproperties)(sound_id);
+    (build_idproperties)(sound_id);
+    (build_animdata)(sound_id);
+    (build_parameters)(sound_id);
+    (add_rel)(sound_id, sound_id, "Parameters -> Audio");
+}
+
+/// `build_scene_sequencer` (verbatim — audio + per-strip
+/// cb + audio/cache).
+pub fn build_scene_sequencer_rel(
+    scene_id: usize,
+    has_ed: bool,
+    check_is_built_tag: &mut dyn FnMut(usize) -> bool,
+    build_scene_audio: &mut dyn FnMut(usize),
+    foreach_strip: &mut dyn FnMut(&mut dyn FnMut(usize)),
+    has_audio_strips_out: &mut bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if !has_ed || (check_is_built_tag)(scene_id) {
+        return;
+    }
+    (build_scene_audio)(scene_id);
+    (foreach_strip)(&mut |_strip| {});
+    if *has_audio_strips_out {
+        (add_rel)(scene_id, scene_id, "Sequencer -> Audio", 0);
+    }
+    (add_rel)(
+        scene_id,
+        scene_id,
+        "Sequencer -> Audio Cache",
+        RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+    );
+}
+
+/// `build_scene_audio` (verbatim — entry→volume→sound +
+/// volume→cache).
+pub fn build_scene_audio_rel(scene_id: usize, add_rel: &mut dyn FnMut(usize, usize, &str, i32)) {
+    (add_rel)(scene_id, scene_id, "Audio Entry -> Volume", 0);
+    (add_rel)(scene_id, scene_id, "Audio Volume -> Sound", 0);
+    (add_rel)(
+        scene_id,
+        scene_id,
+        "Audio Volume -> Audio Cache",
+        RELATION_FLAG_FLUSH_USER_EDIT_ONLY | RELATION_CHECK_BEFORE_ADD,
+    );
+}
+
+/// `build_scene_audio_cache_invalidation_relations`
+/// (verbatim — backward BFS from each
+/// AUDIO_CACHE_INVALIDATE; skip nested cache/DRIVER/SCE-
+/// cow; NO_FLUSH cow sources get explicit relations).
+#[allow(clippy::too_many_arguments)]
+pub fn build_scene_audio_cache_invalidation_relations(
+    cache_operations: &[usize],
+    inlinks: &dyn Fn(usize) -> Vec<(usize, bool, i32, i32)>,
+    add_new_relation: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    for cache_op in cache_operations {
+        let mut visited = std::collections::HashSet::new();
+        let mut invalidation_sources = Vec::new();
+        let mut stack = vec![*cache_op];
+        visited.insert(*cache_op);
+        while let Some(op) = stack.pop() {
+            for (dep, _is_operation, opcode, rel_flag) in (inlinks)(op) {
+                if opcode == 5 /*AUDIO_CACHE_INVALIDATE*/ {
+                    continue;
+                }
+                if opcode == 3 /*DRIVER*/ {
+                    continue;
+                }
+                /* SCE cow skipped by caller-provided opcode=-1. */
+                if opcode == -1 {
+                    continue;
+                }
+                if (rel_flag & RELATION_FLAG_NO_FLUSH) != 0 && opcode == 0 /*COPY_ON_EVAL*/ {
+                    invalidation_sources.push(dep);
+                }
+                if visited.insert(dep) {
+                    stack.push(dep);
+                }
+            }
+        }
+        for src in invalidation_sources {
+            (add_new_relation)(
+                src,
+                *cache_op,
+                "Audio Cache Invalidation",
+                RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+            );
+        }
+    }
+}
+
+/// `build_vfont` (verbatim).
+pub fn build_vfont_rel(
+    vfont_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(vfont_id) {
+        return;
+    }
+    (stack_trace)(vfont_id);
+    (build_parameters)(vfont_id);
+    (build_idproperties)(vfont_id);
+    (build_idproperties)(vfont_id);
+}
+
+/// `build_nested_datablock` (verbatim — cow→cow "Eval
+/// Order", NO_FLUSH when not flushing).
+pub fn build_nested_datablock(
+    owner: usize,
+    id: usize,
+    flush_cow_changes: bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    let flag = if flush_cow_changes { 0 } else { RELATION_FLAG_NO_FLUSH };
+    (add_rel)(id, owner, "Eval Order", flag);
+}
+
+/// `build_nested_nodetree` / `build_nested_shapekey`
+/// (verbatim).
+pub fn build_nested_nodetree(
+    owner: usize,
+    ntree: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if ntree == 0 {
+        return;
+    }
+    build_nested_datablock(owner, ntree, false, add_rel);
+}
+
+/// `build_nested_shapekey` (verbatim).
+pub fn build_nested_shapekey(
+    owner: usize,
+    key: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if key == 0 {
+        return;
+    }
+    build_nested_datablock(owner, key, true, add_rel);
+}
+
+/// `build_copy_on_write_relations(id_node)` (verbatim —
+/// cow → component entry ops + dangling ops + OB data
+/// ordering).
+#[allow(clippy::too_many_arguments)]
+pub fn build_copy_on_write_relations(
+    id_node: usize,
+    id_orig: usize,
+    id_type: u16,
+    cow_needed: bool,
+    components: &[(usize, bool, usize, Vec<usize>, Vec<usize>)],
+    op_cow: usize,
+    object_data_id: Option<usize>,
+    object_data_cow_needed: bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if !cow_needed {
+        return;
+    }
+    for (comp_type, depends_on_cow, op_entry, dangling_ops, no_same_comp_ops) in components {
+        let _ = id_node;
+        if *comp_type == 11 /*COPY_ON_EVAL*/ || !depends_on_cow {
+            continue;
+        }
+        let mut rel_flag = RELATION_FLAG_NO_FLUSH | RELATION_FLAG_GODMODE;
+        if ((id_type == gs(b"ME")
+            || id_type == gs(b"CV")
+            || id_type == gs(b"PT")
+            || id_type == gs(b"VO"))
+            && *comp_type == 5 /*GEOMETRY*/)
+            || (id_type == gs(b"CF") && *comp_type == 9 /*CACHE*/)
+        {
+            rel_flag &= !RELATION_FLAG_NO_FLUSH;
+        }
+        if id_type == gs(b"SO") {
+            rel_flag &= !RELATION_FLAG_NO_FLUSH;
+        }
+        if *comp_type == 15 /*LAYER_COLLECTIONS*/ {
+            rel_flag &= !RELATION_FLAG_NO_FLUSH;
+        }
+        if *comp_type == 2 /*PARAMETERS*/ && id_type == gs(b"MS") {
+            rel_flag &= !RELATION_FLAG_NO_FLUSH;
+        }
+        if id_type == gs(b"GR") && *comp_type == 5 /*HIERARCHY*/ {
+            rel_flag &= !RELATION_FLAG_NO_FLUSH;
+        }
+        if *op_entry != usize::MAX {
+            (add_rel)(op_cow, *op_entry, "Copy-on-Eval Dependency", rel_flag);
+        }
+        for op in dangling_ops {
+            (add_rel)(op_cow, *op, "Copy-on-Eval Dependency", rel_flag);
+        }
+        for op in no_same_comp_ops {
+            (add_rel)(op_cow, *op, "Copy-on-Eval Dependency", rel_flag);
+        }
+    }
+    if id_type == gs(b"OB") {
+        if let Some(obdata) = object_data_id {
+            if object_data_cow_needed {
+                (add_rel)(obdata, id_orig, "Eval Order", RELATION_FLAG_GODMODE);
+            }
+        }
+    }
+}
+
+/// `modifier_walk`/`constraint_walk` (verbatim — build_id).
+pub fn rel_walk_id(id: usize, build_id: &mut dyn FnMut(usize, bool)) {
+    if id == 0 {
+        return;
+    }
+    (build_id)(id, false);
+}
