@@ -24,7 +24,14 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — pack + normalize quat).
+pub fn exec(w: f32, x: f32, y: f32, z: f32) -> [f32; 4] {
+    let l = (w * w + x * x + y * y + z * z).sqrt();
+    if l < 1e-6 {
+        [1.0, 0.0, 0.0, 0.0]
+    } else {
+        [w / l, x / l, y / l, z / l]
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
