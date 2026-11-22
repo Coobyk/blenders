@@ -44,3 +44,4 @@ pub mod wm_gizmo_group_type;
 pub mod wm_gizmo_target_props;
 pub mod wm_gizmo_group;
 pub mod wm_gizmo_map;
+pub mod wm_xr;
