@@ -17,3 +17,5 @@ pub mod compositor_bridge;
 pub mod strip_time;
 pub mod sound;
 pub mod strip_add;
+pub mod proxy;
+pub mod prefetch;
