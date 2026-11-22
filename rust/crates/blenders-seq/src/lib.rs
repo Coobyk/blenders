@@ -5,3 +5,8 @@ pub mod channels;
 pub mod strip_select;
 pub mod proxy_job;
 pub mod scene_strip;
+pub mod strip_connect;
+pub mod media_presence;
+pub mod animation;
+pub mod strip_lookup;
+pub mod iterator;
