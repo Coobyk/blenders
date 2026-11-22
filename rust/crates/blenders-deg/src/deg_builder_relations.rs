@@ -629,3 +629,310 @@ pub fn build_object_modifiers(
     (add_rel)(object_id, object_id, "modifier stack order", 0);
     (modifiers_id_loop)(object_id);
 }
+
+/* ---- object data / parent / pointcache / light linking ---- */
+
+/// `DAG_EVAL_NEED_CURVE_PATH`/`CD_MASK_ORIGINDEX`/
+/// `RELATION_FLAG_FLUSH_USER_EDIT_ONLY`/`NO_FLUSH`
+/// verbatim.
+pub const DAG_EVAL_NEED_CURVE_PATH: u32 = 1 << 0;
+pub const CD_MASK_ORIGINDEX: usize = 1 << 32;
+pub const RELATION_FLAG_FLUSH_USER_EDIT_ONLY: i32 = 1 << 5;
+pub const RELATION_FLAG_NO_FLUSH: i32 = 1 << 0;
+/// `PAR*` partype verbatim.
+pub const PARSKEL: i32 = 4;
+pub const PARVERT1: i32 = 1;
+pub const PARVERT3: i32 = 3;
+pub const PARBONE: i32 = 2;
+/// `OB_DUPLI`/`OB_DUPLIVERTS`/`CU_PATH` verbatim.
+pub const OB_DUPLI: i32 = 1 << 0;
+pub const OB_DUPLIVERTS: i32 = 1 << 12;
+pub const CU_PATH: i32 = 1 << 3;
+
+/// `build_object_data` (verbatim — EMPTY/modifiers early,
+/// obdata anim, type dispatch, font textoncurve, key→
+/// geometry, materials).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_data(
+    object_id: usize,
+    object_type: i32,
+    has_modifiers: bool,
+    obdata_id: usize,
+    obdata_is_built: &mut dyn FnMut(usize) -> bool,
+    font_textoncurve: Option<usize>,
+    key_id: Option<usize>,
+    materials_array: Option<usize>,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    add_special_eval_flag: &mut dyn FnMut(usize, u32),
+    steps: &mut RelObjectDataSteps,
+) {
+    if object_type == 0 /*OB_EMPTY*/ && has_modifiers {
+        (steps.build_object_data_empty)(object_id);
+        return;
+    }
+    if obdata_id == 0 {
+        return;
+    }
+    if !(obdata_is_built)(obdata_id) {
+        (steps.build_animdata)(obdata_id);
+    }
+    match object_type {
+        1 | 2 | 3 | 4 | 5 | 22 | 27 | 28 | 29 | 30 => {
+            (steps.build_object_data_geometry)(object_id);
+            if object_type == 3 /*OB_FONT*/ {
+                if let Some(toc) = font_textoncurve {
+                    (add_rel)(object_id, obdata_id, "Text on Curve own Transform");
+                    (add_special_eval_flag)(toc, DAG_EVAL_NEED_CURVE_PATH);
+                }
+            }
+        }
+        25 => (steps.build_rig)(object_id),
+        10 => (steps.build_light_rel)(object_id, obdata_id),
+        11 => (steps.build_camera_rel)(object_id, obdata_id),
+        12 => (steps.build_lightprobe_rel)(object_id, obdata_id),
+        16 => (steps.build_speaker_rel)(object_id, obdata_id),
+        _ => {}
+    }
+    if let Some(key) = key_id {
+        (add_rel)(key, obdata_id, "Shapekeys");
+        (steps.build_nested_shapekey)(object_id, key);
+    }
+    if let Some(mats) = materials_array {
+        (steps.build_materials)(obdata_id, mats);
+    }
+}
+
+/// Sub-builders for `build_object_data` relations.
+pub struct RelObjectDataSteps<'a> {
+    /// `build_object_data_empty`.
+    pub build_object_data_empty: &'a mut dyn FnMut(usize),
+    /// `build_animdata`.
+    pub build_animdata: &'a mut dyn FnMut(usize),
+    /// `build_object_data_geometry`.
+    pub build_object_data_geometry: &'a mut dyn FnMut(usize),
+    /// `build_rig`.
+    pub build_rig: &'a mut dyn FnMut(usize),
+    /// camera/light/lightprobe/speaker relations.
+    pub build_light_rel: &'a mut dyn FnMut(usize, usize),
+    pub build_camera_rel: &'a mut dyn FnMut(usize, usize),
+    pub build_lightprobe_rel: &'a mut dyn FnMut(usize, usize),
+    pub build_speaker_rel: &'a mut dyn FnMut(usize, usize),
+    /// `build_nested_shapekey`.
+    pub build_nested_shapekey: &'a mut dyn FnMut(usize, usize),
+    /// `build_materials`.
+    pub build_materials: &'a mut dyn FnMut(usize, usize),
+}
+
+/// `build_object_parent` (verbatim — partype switch +
+/// mball/dupliverts tails).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_parent(
+    object_id: usize,
+    object_type: i32,
+    partype: i32,
+    parent_id: usize,
+    parent_type: i32,
+    parent_transflag: i32,
+    parsubstr: &str,
+    parent_cu_flag: i32,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    add_customdata_mask: &mut dyn FnMut(usize, usize),
+) {
+    match partype {
+        PARSKEL => {
+            (add_rel)(parent_id, object_id, "Parent Armature Transform");
+            if parent_type == 25 /*OB_ARMATURE*/ {
+                (add_rel)(parent_id, object_id, "Parent Armature Transform -> Geometry");
+                (add_rel)(parent_id, object_id, "Parent Armature Pose -> Geometry");
+                (add_rel)(object_id, object_id, "Virtual Armature Modifier");
+            }
+        }
+        PARVERT1 | PARVERT3 => {
+            (add_rel)(parent_id, object_id, "Vertex Parent");
+            (add_customdata_mask)(
+                parent_id,
+                CD_MASK_ORIGINDEX * 4, /*vert|edge|face|poly ORIGINDEX*/
+            );
+            (add_rel)(parent_id, object_id, "Vertex Parent TFM");
+        }
+        PARBONE => {
+            if !parsubstr.is_empty() {
+                (add_rel)(parent_id, object_id, "Bone Parent");
+                (add_rel)(parent_id, object_id, "Armature Parent");
+            }
+        }
+        _ => {
+            if parent_type == 22 /*OB_LATTICE*/ {
+                (add_rel)(parent_id, object_id, "Lattice Deform Parent");
+                (add_rel)(parent_id, object_id, "Lattice Deform Parent Geom");
+            } else if parent_type == 2 /*OB_CURVES_LEGACY*/ {
+                if parent_cu_flag & CU_PATH != 0 {
+                    (add_rel)(parent_id, object_id, "Curve Follow Parent");
+                    (add_rel)(parent_id, object_id, "Curve Follow TFM");
+                } else {
+                    (add_rel)(parent_id, object_id, "Curve Parent");
+                }
+            } else {
+                (add_rel)(parent_id, object_id, "Parent");
+            }
+        }
+    }
+    if object_type == 5 /*OB_MBALL*/ && (parent_transflag & OB_DUPLI) != 0 {
+        (add_rel)(parent_id, object_id, "Parent");
+    }
+    if (parent_transflag & OB_DUPLIVERTS) != 0 {
+        (add_customdata_mask)(parent_id, CD_MASK_ORIGINDEX);
+    }
+}
+
+/// `build_object_pointcache` (verbatim — GEOMETRY eval +
+/// rigidbody + transform/modifier flush relations).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_pointcache(
+    object_id: usize,
+    scene_id: usize,
+    cache_types: &[i32],
+    rigidbody_type_is_passive: bool,
+    is_render_pipeline: bool,
+    last_input_modifier_name: Option<&str>,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if cache_types.is_empty() {
+        return;
+    }
+    let mut has_geometry_eval_relation = false;
+    let mut has_rigid_body_relation = false;
+    for ptcache_type in cache_types {
+        if !has_geometry_eval_relation {
+            has_geometry_eval_relation = true;
+            (add_rel)(object_id, object_id, "Point Cache -> Geometry", 0);
+        }
+        if !has_rigid_body_relation && *ptcache_type == 4 /*PTCACHE_TYPE_RIGIDBODY*/ {
+            if rigidbody_type_is_passive {
+                continue;
+            }
+            has_rigid_body_relation = true;
+            (add_rel)(object_id, object_id, "Point Cache -> Rigid Body", 0);
+            if !is_render_pipeline {
+                (add_rel)(
+                    scene_id,
+                    object_id,
+                    "Rigid Body Rebuild -> Point Cache Reset",
+                    RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+                );
+            }
+        }
+        let _ = last_input_modifier_name;
+    }
+    (add_rel)(
+        object_id,
+        object_id,
+        "Transform Simulation -> Point Cache",
+        RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+    );
+    if last_input_modifier_name.is_some() {
+        (add_rel)(
+            object_id,
+            object_id,
+            "Previous Modifier -> Point Cache",
+            RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+        );
+    } else {
+        (add_rel)(
+            object_id,
+            object_id,
+            "Geometry Init -> Point Cache",
+            RELATION_FLAG_FLUSH_USER_EDIT_ONLY,
+        );
+    }
+}
+
+/// `build_object_instance_collection` (verbatim — per
+/// visible object: TRANSFORM→FINAL "Dupligroup" +
+/// INSTANCE→INSTANCER).
+pub fn build_object_instance_collection(
+    object_id: usize,
+    instance_collection: usize,
+    visible_objects: &[usize],
+    build_collection: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if instance_collection == 0 {
+        return;
+    }
+    (build_collection)(instance_collection);
+    for ob in visible_objects {
+        (add_rel)(*ob, object_id, "Dupligroup");
+        (add_rel)(*ob, object_id, "Instance -> Instancer");
+    }
+}
+
+/// `build_object_shading` (verbatim — SHADING→DONE +
+/// DONE→INSTANCE NO_FLUSH).
+pub fn build_object_shading(
+    object_id: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    (add_rel)(object_id, object_id, "Shading -> Done", 0);
+    (add_rel)(
+        object_id,
+        object_id,
+        "Light Linking -> Instance",
+        RELATION_FLAG_NO_FLUSH,
+    );
+}
+
+/// `build_object_light_linking` (verbatim — hierarchy→
+/// update→shading done + receiver/blocker).
+pub fn build_object_light_linking(
+    emitter_id: usize,
+    receiver_collection: usize,
+    blocker_collection: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    build_light_linking_collection: &mut dyn FnMut(usize, usize),
+) {
+    (add_rel)(emitter_id, emitter_id, "Light Linking From Layer");
+    (add_rel)(emitter_id, emitter_id, "Light Linking -> Shading Done");
+    if receiver_collection != 0 || blocker_collection != 0 {
+        (build_light_linking_collection)(emitter_id, receiver_collection);
+        (build_light_linking_collection)(emitter_id, blocker_collection);
+    }
+}
+
+/// `build_light_linking_collection` (verbatim — parameters
+/// entry/exit + hierarchy ordering + collection→emitter).
+pub fn build_light_linking_collection(
+    emitter_id: usize,
+    collection_id: usize,
+    build_collection: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    if collection_id == 0 {
+        return;
+    }
+    (build_collection)(collection_id);
+    (add_rel)(
+        collection_id,
+        collection_id,
+        "Entry -> Collection Light Linking",
+        RELATION_CHECK_BEFORE_ADD,
+    );
+    (add_rel)(
+        collection_id,
+        collection_id,
+        "Collection Light Linking -> Exit",
+        RELATION_CHECK_BEFORE_ADD,
+    );
+    (add_rel)(
+        collection_id,
+        collection_id,
+        "Collection Hierarchy -> Light Linking",
+        RELATION_CHECK_BEFORE_ADD,
+    );
+    (add_rel)(
+        collection_id,
+        emitter_id,
+        "Collection -> Object Light Linking",
+        0,
+    );
+}
