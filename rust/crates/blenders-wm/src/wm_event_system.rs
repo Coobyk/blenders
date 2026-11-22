@@ -107,10 +107,8 @@ pub fn wm_event_inside_rect(always_pass: bool, event_xy: [i32; 2], rect: &crate:
     if always_pass {
         return true;
     }
-    crate::wm_subwindow::rcti_isect(rect, &crate::wm_subwindow::Rcti {
-        xmin: event_xy[0], ymin: event_xy[1], xmax: event_xy[0], ymax: event_xy[1],
-    }) || (event_xy[0] >= rect.xmin && event_xy[0] <= rect.xmax
-        && event_xy[1] >= rect.ymin && event_xy[1] <= rect.ymax)
+    event_xy[0] >= rect.xmin && event_xy[0] <= rect.xmax
+        && event_xy[1] >= rect.ymin && event_xy[1] <= rect.ymax
 }
 
 /// `wm_event_pie_filter` (verbatim — lock release /
