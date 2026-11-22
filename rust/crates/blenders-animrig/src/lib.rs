@@ -19,3 +19,4 @@ pub mod fcurve;
 pub mod anim_rna;
 pub mod keyframing;
 pub mod bone_collections;
+pub mod action;
