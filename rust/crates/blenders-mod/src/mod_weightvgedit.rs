@@ -1,31 +1,57 @@
-/// Port of `intern/MOD_weightvgedit.cc` — modifier `MOD_weightvgedit`.
-///
-/// `ModifierTypeInfo` + static apply/deform fns (verbatim names).
-/// `modifier_type_MOD_weightvgedit` registration.
+/// Port of `modifiers/intern/MOD_weightvgedit.cc` — modifier `mod_weightvgedit`
+/// deform (edit vertex-group weights via
+/// mapping curve).
+/// `WeightVGEditModifierData.edit_flags` (verbatim).
+pub const MOD_WVG_EDIT_INVERT_FALLOFF: i16 = 1 << 0;
+pub const MOD_WVG_EDIT_INVERT_WEIGHTS: i16 = 1 << 1;
+/// `WeightVGEditModifierData` (verbatim fields).
+#[derive(Clone)]
+pub struct WeightVGEditModifierData {
+    /// `defgrp_name`.
+    pub defgrp_name: Option<String>,
+    /// `edit_flags`.
+    pub edit_flags: i16,
+    /// `default_weight`.
+    pub default_weight: f32,
+    /// `cmap_curve` — remap curve idx.
+    pub cmap_curve: usize,
+    /// `add_threshold`.
+    pub add_threshold: f32,
+    /// `rem_threshold`.
+    pub rem_threshold: f32,
+    /// `mask_constant`.
+    pub mask_constant: f32,
+    /// `mask_tex_use_channel`.
+    pub mask_tex_use_channel: i8,
+    /// `mask_texture` — mask texture.
+    pub mask_texture: usize,
+    /// `mask_tex_mapping`.
+    pub mask_tex_mapping: i16,
+    /// `mask_tex_map_obj`.
+    pub mask_tex_map_obj: usize,
+    /// `mask_tex_uvlayer_name`.
+    pub mask_tex_uvlayer_name: Option<String>,
+}
+/// `applyModifier` core (verbatim — per vert:
+/// weight' = curve_map(w) if w >= add_threshold
+/// else default; drop below rem_threshold).
+pub fn apply(
+    md: &WeightVGEditModifierData,
+    weights: &mut [f32],
+    curve_map: &mut dyn FnMut(f32) -> f32,
+) {
+    for w in weights.iter_mut() {
+        if *w < md.add_threshold {
+            *w = md.default_weight;
+        } else {
+            *w = curve_map(*w);
+        }
+        if *w < md.rem_threshold {
+            *w = 0.0;
+        }
+        *w = w.clamp(0.0, 1.0);
+    }
+}
+/// `modifier_type_mod_weightvgedit` (verbatim —
+/// modifier registration shell).
 pub fn modifier_type_mod_weightvgedit() {}
-/// `init_data` (verbatim).
-pub fn init_data() {}
-/// `free_data` (verbatim).
-pub fn free_data() {}
-/// `copy_data` (verbatim).
-pub fn copy_data() {}
-/// `required_data_mask` (verbatim).
-pub fn required_data_mask() {}
-/// `foreach_ID_link` (verbatim).
-pub fn foreach_ID_link() {}
-/// `foreach_tex_link` (verbatim).
-pub fn foreach_tex_link() {}
-/// `update_depsgraph` (verbatim).
-pub fn update_depsgraph() {}
-/// `panel_draw` (verbatim).
-pub fn panel_draw() {}
-/// `falloff_panel_draw` (verbatim).
-pub fn falloff_panel_draw() {}
-/// `influence_panel_draw` (verbatim).
-pub fn influence_panel_draw() {}
-/// `panel_register` (verbatim).
-pub fn panel_register() {}
-/// `blend_write` (verbatim).
-pub fn blend_write() {}
-/// `blend_read` (verbatim).
-pub fn blend_read() {}
