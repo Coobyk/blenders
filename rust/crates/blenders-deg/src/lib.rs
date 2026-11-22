@@ -29,3 +29,4 @@ pub mod eval_flush;
 pub mod depsgraph_tag;
 pub mod depsgraph_query;
 pub mod depsgraph_physics;
+pub mod depsgraph_query_foreach;
