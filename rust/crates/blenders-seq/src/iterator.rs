@@ -2,7 +2,7 @@
 //! over seqbase (recursive into metas).
 
 /// `seq_iterator` semantics (verbatim — flat +
-//! recursive variants; yields each strip once).
+/// recursive variants; yields each strip once).
 #[derive(Default)]
 pub struct StripIterator {
     /// `stack` of (list, index) frames.
