@@ -14,3 +14,4 @@ pub mod utils;
 pub mod strip_relations;
 pub mod strip_edit;
 pub mod compositor_bridge;
+pub mod strip_time;
