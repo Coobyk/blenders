@@ -251,7 +251,34 @@ pub fn node_identifier(t: NodeType, name: &str) -> String {
     format!("{} : {}", node_type_as_string(t), name)
 }
 
-/// `deg_register_base_depsnodes` — registers TIMESOURCE +
-/// ID_REF factories (verbatim registrations; the factories
-/// themselves are created by `node_factory`).
-pub fn deg_register_base_depsnodes() {}
+/// `Node::TypeInfo` (verbatim — `{type, type_name,
+/// id_recalc_tag}` as registered by `DEG_DEPSNODE_DEFINE`).
+pub struct NodeTypeInfo {
+    /// `type`.
+    pub r#type: NodeType,
+    /// `type_name`.
+    pub type_name: &'static str,
+    /// `id_recalc_tag`.
+    pub id_recalc_tag: i32,
+}
+
+/// `deg_register_base_depsnodes` (verbatim — registers the
+/// built-in TIMESOURCE + ID_REF type-info).
+pub fn deg_register_base_depsnodes() {
+    crate::node_factory::register_node_typeinfo(
+        NodeType::Timesource as usize,
+        Box::new(NodeTypeInfo {
+            r#type: NodeType::Timesource,
+            type_name: "Time Source",
+            id_recalc_tag: 0,
+        }),
+    );
+    crate::node_factory::register_node_typeinfo(
+        NodeType::IdRef as usize,
+        Box::new(NodeTypeInfo {
+            r#type: NodeType::IdRef,
+            type_name: "ID Node",
+            id_recalc_tag: 0,
+        }),
+    );
+}
