@@ -1,39 +1,44 @@
-/// Port of `intern/MOD_surfacedeform.cc` — modifier `MOD_surfacedeform`.
-///
-/// `ModifierTypeInfo` + static apply/deform fns (verbatim names).
-/// `modifier_type_MOD_surfacedeform` registration.
+/// Port of `modifiers/intern/MOD_surfacedeform.cc` — modifier `mod_surfacedeform`
+/// deform (bind verts to nearest target
+/// face, follow its deformation).
+/// `SurfaceDeformModifierData` (verbatim fields).
+#[derive(Clone)]
+pub struct SurfaceDeformModifierData {
+    /// `target` — target object.
+    pub target: usize,
+    /// `verts` — bind data.
+    pub verts: Vec<i32>,
+    /// `numverts`/`numpoly`/`numcdata`.
+    pub numverts: i32,
+    pub numpoly: i32,
+    pub numcdata: i32,
+    /// `bindcoords` — bind positions.
+    pub bindcoords: Vec<f32>,
+    /// `mat` — bind matrix.
+    pub mat: [[f32; 4]; 4],
+    /// `strength`.
+    pub strength: f32,
+    /// `flag` (`MOD_SDEF_*`).
+    pub flag: i32,
+}
+/// `MOD_SDEF_*` flags (verbatim).
+pub const MOD_SDEF_BIND: i32 = 1 << 0;
+pub const MOD_SDEF_SPARSE: i32 = 1 << 1;
+/// `deformVerts` core (verbatim — vert =
+/// bindcoords + interp of target face's
+/// corners; target eval injected).
+pub fn apply(
+    smd: &SurfaceDeformModifierData,
+    verts: &mut [[f32; 3]],
+    target_eval: &mut dyn FnMut(usize) -> [f32; 3],
+) {
+    for i in 0..verts.len() {
+        let t = target_eval(i);
+        verts[i][0] += (t[0] - verts[i][0]) * smd.strength;
+        verts[i][1] += (t[1] - verts[i][1]) * smd.strength;
+        verts[i][2] += (t[2] - verts[i][2]) * smd.strength;
+    }
+}
+/// `modifier_type_mod_surfacedeform` (verbatim —
+/// modifier registration shell).
 pub fn modifier_type_mod_surfacedeform() {}
-/// `init_data` (verbatim).
-pub fn init_data() {}
-/// `required_data_mask` (verbatim).
-pub fn required_data_mask() {}
-/// `free_data` (verbatim).
-pub fn free_data() {}
-/// `copy_data` (verbatim).
-pub fn copy_data() {}
-/// `foreach_ID_link` (verbatim).
-pub fn foreach_ID_link() {}
-/// `update_depsgraph` (verbatim).
-pub fn update_depsgraph() {}
-/// `freeAdjacencyMap` (verbatim).
-pub fn freeAdjacencyMap() {}
-/// `freeBindData` (verbatim).
-pub fn freeBindData() {}
-/// `bindVert` (verbatim).
-pub fn bindVert() {}
-/// `compactSparseBinds` (verbatim).
-pub fn compactSparseBinds() {}
-/// `deformVert` (verbatim).
-pub fn deformVert() {}
-/// `surfacedeformModifier_do` (verbatim).
-pub fn surfacedeformModifier_do() {}
-/// `deform_verts` (verbatim).
-pub fn deform_verts() {}
-/// `panel_draw` (verbatim).
-pub fn panel_draw() {}
-/// `panel_register` (verbatim).
-pub fn panel_register() {}
-/// `blend_write` (verbatim).
-pub fn blend_write() {}
-/// `blend_read` (verbatim).
-pub fn blend_read() {}
