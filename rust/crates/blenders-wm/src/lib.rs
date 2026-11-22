@@ -33,3 +33,4 @@ pub mod wm_files_link;
 pub mod wm_toolsystem;
 pub mod wm_gesture_ops;
 pub mod wm_draw;
+pub mod wm_window;
