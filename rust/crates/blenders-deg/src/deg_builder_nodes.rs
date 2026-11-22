@@ -1182,3 +1182,851 @@ pub enum RnaStructKindForIdProp {
     /// anything else.
     Other,
 }
+
+/* ---- parameters / world / rigidbody / particles / misc ids ---- */
+
+/// `build_parameters` (verbatim — PARAMETERS
+/// entry/eval/exit).
+pub fn build_parameters(
+    id: usize,
+    supports_params_without_cow: bool,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    add_id: &mut dyn FnMut(usize),
+) {
+    (add_id)(id);
+    let op = (add_op)(id, 0 /*PARAMETERS_ENTRY*/);
+    (set_as_entry)(op);
+    if supports_params_without_cow {
+        (add_op)(id, 1 /*PARAMETERS_EVAL w/ properties-copy cb*/);
+    } else {
+        (add_op)(id, 1 /*PARAMETERS_EVAL*/);
+    }
+    let op = (add_op)(id, 2 /*PARAMETERS_EXIT*/);
+    (set_as_exit)(op);
+}
+
+/// `build_dimensions` (verbatim).
+pub fn build_dimensions(object_id: usize, add_op: &mut dyn FnMut(usize, usize)) {
+    (add_op)(object_id, 8 /*DIMENSIONS*/);
+}
+
+/// `build_world` (verbatim — SHADING WORLD_UPDATE + props/
+/// anim/params + nodetree).
+pub fn build_world(
+    world_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_op: &mut dyn FnMut(usize, usize),
+    add_id: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    nodetree: usize,
+) {
+    if (check_is_built)(world_id) {
+        return;
+    }
+    (add_id)(world_id);
+    (add_op)(world_id, 0 /*WORLD_UPDATE*/);
+    (build_idproperties)(world_id);
+    (build_idproperties)(world_id);
+    (build_animdata)(world_id);
+    (build_parameters)(world_id);
+    (build_nodetree)(nodetree);
+}
+
+/// `RigidbodyWorldView` (verbatim fields used).
+pub struct RigidBodyWorldView {
+    /// `rbw->group` (0 = none).
+    pub group: usize,
+    /// `rbw->group` mesh objects with active
+    /// `rigidbody_object`.
+    pub group_active_mesh_objects: Vec<usize>,
+    /// `rbw->constraints` (0 = none).
+    pub constraints: usize,
+    /// constraint (object, ob1, ob2) tuples (nulls
+    /// pre-filtered).
+    pub constraint_tuples: Vec<(usize, usize, usize)>,
+}
+
+/// `build_rigidbody` (verbatim — REBUILD/SIM scene ops +
+/// per-participant TRANSFORM_COPY + constraint builds).
+#[allow(clippy::too_many_arguments)]
+pub fn build_rigidbody(
+    scene_id: usize,
+    rbw: &RigidBodyWorldView,
+    add_op: &mut dyn FnMut(usize, usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    set_entry_operation: &mut dyn FnMut(usize),
+    build_collection: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+) {
+    (add_op)(scene_id, 4 /*TRANSFORM*/, 10 /*RIGIDBODY_REBUILD*/);
+    let sim = (add_op)(scene_id, 4, 11 /*RIGIDBODY_SIM*/);
+    (set_as_entry)(sim);
+    (set_as_exit)(sim);
+    (set_entry_operation)(sim);
+    if rbw.group != 0 {
+        (build_collection)(rbw.group);
+        for ob in &rbw.group_active_mesh_objects {
+            (add_op)(*ob, 4 /*TRANSFORM*/, 12 /*RIGIDBODY_TRANSFORM_COPY*/);
+        }
+    }
+    if rbw.constraints != 0 {
+        for (object, ob1, ob2) in &rbw.constraint_tuples {
+            (build_object)(-1, *object, 1, false);
+            (build_object)(-1, *ob1, 1, false);
+            (build_object)(-1, *ob2, 1, false);
+        }
+    }
+}
+
+/// `build_particle_systems` (verbatim — PSYS comp + per-
+/// system eval + keyed targets + draw-ob/collection).
+#[allow(clippy::too_many_arguments)]
+pub fn build_particle_systems(
+    object_id: usize,
+    systems: &[ParticleSystemView],
+    is_object_visible: bool,
+    add_comp: &mut dyn FnMut(usize, usize) -> usize,
+    add_comp_op: &mut dyn FnMut(usize, usize, &str) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    build_particle_settings: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+    build_collection: &mut dyn FnMut(usize),
+) {
+    let psys_comp = (add_comp)(object_id, 6 /*PARTICLE_SYSTEM*/);
+    let op = (add_comp_op)(psys_comp, 0 /*PARTICLE_SYSTEM_INIT*/, "");
+    (set_as_entry)(op);
+    for psys in systems {
+        (build_particle_settings)(psys.part);
+        (add_comp_op)(psys_comp, 1 /*PARTICLE_SYSTEM_EVAL*/, &psys.name);
+        if psys.phystype == 5 /*KEYED*/ || psys.phystype == 8 /*BOIDS*/ {
+            for target_ob in &psys.target_objects {
+                (build_object)(-1, *target_ob, 1, is_object_visible);
+            }
+        }
+        match psys.ren_as {
+            1 /*PART_DRAW_OB*/ => {
+                if psys.instance_object != 0 {
+                    (build_object)(-1, psys.instance_object, 1, is_object_visible);
+                }
+            }
+            2 /*PART_DRAW_GR*/ => {
+                if psys.instance_collection != 0 {
+                    (build_collection)(psys.instance_collection);
+                }
+            }
+            _ => {}
+        }
+    }
+    let op = (add_comp_op)(psys_comp, 2 /*PARTICLE_SYSTEM_DONE*/, "");
+    (set_as_exit)(op);
+}
+
+/// `ParticleSystem` view (verbatim fields used).
+pub struct ParticleSystemView {
+    /// `psys.part`.
+    pub part: usize,
+    /// `psys.name`.
+    pub name: String,
+    /// `psys.part->phystype`.
+    pub phystype: i32,
+    /// `psys.targets` objects (self/none pre-filtered).
+    pub target_objects: Vec<usize>,
+    /// `psys.part->ren_as`.
+    pub ren_as: i32,
+    /// `psys.part->instance_object`.
+    pub instance_object: usize,
+    /// `psys.part->instance_collection`.
+    pub instance_collection: usize,
+}
+
+/// `build_particle_settings` (verbatim — INIT/RESET/EVAL +
+/// mtex textures).
+pub fn build_particle_settings(
+    part_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    mtex_textures: &[usize],
+    build_texture: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(part_id) {
+        return;
+    }
+    (add_id)(part_id);
+    (build_animdata)(part_id);
+    (build_parameters)(part_id);
+    let op = (add_op)(part_id, 0 /*PARTICLE_SETTINGS_INIT*/);
+    (set_as_entry)(op);
+    (add_op)(part_id, 1 /*PARTICLE_SETTINGS_RESET*/);
+    let op = (add_op)(part_id, 2 /*PARTICLE_SETTINGS_EVAL*/);
+    (set_as_exit)(op);
+    for tex in mtex_textures {
+        (build_texture)(*tex);
+    }
+}
+
+/// `build_shapekeys` (verbatim — GEOMETRY_SHAPEKEY + per-
+/// block PARAMETERS_EVAL).
+pub fn build_shapekeys(
+    key_id: usize,
+    key_block_names: &[String],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    add_op_named: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(key_id) {
+        return;
+    }
+    (build_idproperties)(key_id);
+    (build_idproperties)(key_id);
+    (build_animdata)(key_id);
+    (build_parameters)(key_id);
+    (add_op)(key_id, 3 /*GEOMETRY_SHAPEKEY*/);
+    for name in key_block_names {
+        (add_op_named)(key_id, 1 /*PARAMETERS_EVAL*/, name);
+    }
+}
+
+/// `build_empty_object` (verbatim — no-modifiers early
+/// exit + GEOMETRY init/eval ops).
+pub fn build_empty_object(
+    object_id: usize,
+    has_modifiers: bool,
+    cow_is_expanded: bool,
+    free_derived_caches: &mut dyn FnMut(usize),
+    object_cow: usize,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+) {
+    if !has_modifiers {
+        if cow_is_expanded {
+            (free_derived_caches)(object_cow);
+        }
+        return;
+    }
+    let op = (add_op)(object_id, 0 /*GEOMETRY_EVAL_INIT*/);
+    (set_as_entry)(op);
+    let op = (add_op)(object_id, 1 /*GEOMETRY_EVAL*/);
+    (set_as_exit)(op);
+}
+
+/// `build_object_data_geometry` (verbatim — GEOMETRY init/
+/// eval + materials + pointcache + datablock + dims +
+/// batch cache).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_data_geometry(
+    object_id: usize,
+    object_data: usize,
+    materials_array: usize,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    build_materials: &mut dyn FnMut(usize),
+    build_object_pointcache: &mut dyn FnMut(usize),
+    build_datablock: &mut dyn FnMut(usize),
+    build_dimensions: &mut dyn FnMut(usize),
+) {
+    let op = (add_op)(object_id, 0 /*GEOMETRY_EVAL_INIT*/);
+    (set_as_entry)(op);
+    let op = (add_op)(object_id, 1 /*GEOMETRY_EVAL*/);
+    (set_as_exit)(op);
+    (build_materials)(materials_array);
+    (build_object_pointcache)(object_id);
+    (build_datablock)(object_data);
+    (build_dimensions)(object_id);
+    (add_op)(object_id, 9 /*BATCH_CACHE GEOMETRY_SELECT_UPDATE*/);
+}
+
+/// `build_object_data_geometry_datablock` (verbatim —
+/// per-obdata-type GEOMETRY_EVAL + done + parameters +
+/// batch cache + shading noop).
+#[allow(clippy::too_many_arguments)]
+pub fn build_object_data_geometry_datablock(
+    obdata_id: usize,
+    id_type: u16,
+    extra_objects: &[usize],
+    key: Option<usize>,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_shapekeys: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+) {
+    if (check_is_built)(obdata_id) {
+        return;
+    }
+    (add_id)(obdata_id);
+    (build_idproperties)(obdata_id);
+    (build_idproperties)(obdata_id);
+    (build_animdata)(obdata_id);
+    if let Some(k) = key {
+        (build_shapekeys)(k);
+    }
+    let op = (add_op)(obdata_id, 1 /*GEOMETRY_EVAL*/);
+    (set_as_entry)(op);
+    for ob in extra_objects {
+        (build_object)(-1, *ob, 1, false);
+    }
+    let _ = id_type;
+    let op = (add_op)(obdata_id, 7 /*GEOMETRY_EVAL_DONE*/);
+    (set_as_exit)(op);
+    (build_parameters)(obdata_id);
+    (add_op)(obdata_id, 9 /*BATCH_CACHE GEOMETRY_SELECT_UPDATE*/);
+    (add_op)(obdata_id, 0 /*SHADING*/);
+}
+
+/// `build_armature` (verbatim — ARMATURE_EVAL + bones +
+/// collections props).
+pub fn build_armature(
+    armature_id: usize,
+    bone_props: &[usize],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+) {
+    if (check_is_built)(armature_id) {
+        return;
+    }
+    (build_idproperties)(armature_id);
+    (build_idproperties)(armature_id);
+    (build_animdata)(armature_id);
+    (build_parameters)(armature_id);
+    (add_op)(armature_id, 0 /*ARMATURE_EVAL*/);
+    for prop in bone_props {
+        (build_idproperties)(*prop);
+        (build_idproperties)(*prop);
+    }
+}
+
+/// `build_camera` (verbatim — dof focus object).
+pub fn build_camera(
+    camera_id: usize,
+    dof_focus_object: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+) {
+    if (check_is_built)(camera_id) {
+        return;
+    }
+    (build_idproperties)(camera_id);
+    (build_idproperties)(camera_id);
+    (build_animdata)(camera_id);
+    (build_parameters)(camera_id);
+    if dof_focus_object != 0 {
+        (build_object)(-1, dof_focus_object, 1, false);
+    }
+}
+
+/// `build_light` (verbatim — SHADING LIGHT_UPDATE +
+/// nodetree).
+pub fn build_light(
+    lamp_id: usize,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+) {
+    if (check_is_built)(lamp_id) {
+        return;
+    }
+    (build_idproperties)(lamp_id);
+    (build_idproperties)(lamp_id);
+    (build_animdata)(lamp_id);
+    (build_parameters)(lamp_id);
+    (build_nodetree)(nodetree);
+    (add_op)(lamp_id, 0 /*LIGHT_UPDATE*/);
+}
+
+/// `build_nodetree_socket` (verbatim — prop + per-
+/// socket-type `build_id` of default value).
+pub fn build_nodetree_socket(
+    socket_prop: usize,
+    socket_type: i32,
+    default_value_id: usize,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    (build_idproperties)(socket_prop);
+    const SOCK_OBJECT: i32 = 6;
+    const SOCK_IMAGE: i32 = 9;
+    const SOCK_COLLECTION: i32 = 10;
+    const SOCK_TEXTURE: i32 = 11;
+    const SOCK_MATERIAL: i32 = 12;
+    const SOCK_FONT: i32 = 13;
+    const SOCK_SCENE: i32 = 14;
+    const SOCK_TEXT_ID: i32 = 15;
+    const SOCK_MASK: i32 = 16;
+    const SOCK_SOUND: i32 = 17;
+    match socket_type {
+        SOCK_OBJECT | SOCK_IMAGE | SOCK_COLLECTION | SOCK_TEXTURE | SOCK_MATERIAL | SOCK_FONT
+        | SOCK_SCENE | SOCK_MASK | SOCK_SOUND => {
+            if default_value_id != 0 {
+                (build_id)(default_value_id, false);
+            }
+        }
+        SOCK_TEXT_ID => { /* Text data-blocks don't use the depsgraph. */ }
+        _ => {}
+    }
+}
+
+/// `NodetreeView` for `build_nodetree` (verbatim node
+/// walk).
+pub struct NodetreeView {
+    /// `ntree->type == NTREE_GEOMETRY`.
+    pub is_geometry: bool,
+    /// per-node (prop, socket props, linked id+type).
+    pub nodes: Vec<NodetreeNodeView>,
+    /// interface socket props.
+    pub interface_props: Vec<usize>,
+}
+
+/// `NodetreeNodeView` (verbatim fields used).
+pub struct NodetreeNodeView {
+    /// `bnode->prop`.
+    pub prop: usize,
+    /// socket (prop, type, default id) triples.
+    pub sockets: Vec<(usize, i32, usize)>,
+    /// `bnode->id`.
+    pub id: usize,
+    /// `bnode->id->type`.
+    pub id_type: u16,
+    /// `bnode->is_group()`.
+    pub is_group: bool,
+}
+
+/// `build_nodetree` (verbatim — NTREE_OUTPUT +
+/// preprocess + per-node socket/id dispatch + interface
+/// props).
+#[allow(clippy::too_many_arguments)]
+pub fn build_nodetree(
+    ntree_id: usize,
+    ntree: &NodetreeView,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    add_op_named: &mut dyn FnMut(usize, usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_nodetree_socket: &mut dyn FnMut(usize, i32, usize),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    if ntree_id == 0 || (check_is_built)(ntree_id) {
+        return;
+    }
+    (add_id)(ntree_id);
+    (build_parameters)(ntree_id);
+    (build_idproperties)(ntree_id);
+    (build_idproperties)(ntree_id);
+    (build_animdata)(ntree_id);
+    (add_op)(ntree_id, 0 /*NTREE_OUTPUT*/);
+    if ntree.is_geometry {
+        (add_op_named)(ntree_id, 1 /*NTREE_GEOMETRY_PREPROCESS*/);
+    }
+    for bnode in &ntree.nodes {
+        (build_idproperties)(bnode.prop);
+        for (sprop, stype, sdef_id) in &bnode.sockets {
+            (build_nodetree_socket)(*sprop, *stype, *sdef_id);
+        }
+        if bnode.id == 0 {
+            continue;
+        }
+        if bnode.is_group {
+            (build_id)(bnode.id, false);
+        } else {
+            (build_id)(bnode.id, false);
+        }
+    }
+    for prop in &ntree.interface_props {
+        (build_idproperties)(*prop);
+    }
+}
+
+/// `build_material` (verbatim — SHADING MATERIAL_UPDATE +
+/// nodetree).
+pub fn build_material(
+    material_id: usize,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(material_id) {
+        return;
+    }
+    (add_id)(material_id);
+    (add_op)(material_id, 0 /*MATERIAL_UPDATE*/);
+    (build_idproperties)(material_id);
+    (build_idproperties)(material_id);
+    (build_animdata)(material_id);
+    (build_parameters)(material_id);
+    (build_nodetree)(nodetree);
+}
+
+/// `build_materials` (verbatim).
+pub fn build_materials(materials: &[usize], build_material: &mut dyn FnMut(usize)) {
+    for mat in materials {
+        if *mat != 0 {
+            (build_material)(*mat);
+        }
+    }
+}
+
+/// `build_texture` (verbatim — GENERIC_DATABLOCK_UPDATE +
+/// nodetree + image).
+pub fn build_texture(
+    texture_id: usize,
+    nodetree: usize,
+    ima: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+    build_image: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(texture_id) {
+        return;
+    }
+    (add_id)(texture_id);
+    (build_idproperties)(texture_id);
+    (build_idproperties)(texture_id);
+    (build_animdata)(texture_id);
+    (build_parameters)(texture_id);
+    (build_nodetree)(nodetree);
+    if ima != 0 {
+        (build_image)(ima);
+    }
+    (add_op)(texture_id, 0 /*GENERIC_DATABLOCK_UPDATE*/);
+}
+
+/// `build_image` / `build_generic_id` / `build_lightprobe`
+/// / `build_freestyle_linestyle` (verbatim — shared
+/// parameters/props/anim pattern).
+pub fn build_simple_id(
+    id: usize,
+    op: Option<(usize, usize)>,
+    nodetree: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(id) {
+        return;
+    }
+    (add_id)(id);
+    if let Some((comp, opcode)) = op {
+        (add_op)(id, comp * 100 + opcode);
+    }
+    (build_idproperties)(id);
+    (build_idproperties)(id);
+    (build_animdata)(id);
+    (build_parameters)(id);
+    if nodetree != 0 {
+        (build_nodetree)(nodetree);
+    }
+}
+
+/// `build_idproperties` (verbatim — IDP_TYPE_FILTER_ID
+/// walk → `build_id`).
+pub fn build_idproperties(
+    id_pointer_props: &[usize],
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    for id_ptr in id_pointer_props {
+        (build_id)(*id_ptr, false);
+    }
+}
+
+/// `build_cachefile` (verbatim — CACHE FILE_CACHE_UPDATE).
+pub fn build_cachefile(
+    cache_file_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(cache_file_id) {
+        return;
+    }
+    (add_id)(cache_file_id);
+    (build_idproperties)(cache_file_id);
+    (build_idproperties)(cache_file_id);
+    (build_animdata)(cache_file_id);
+    (build_parameters)(cache_file_id);
+    (add_op)(cache_file_id, 0 /*FILE_CACHE_UPDATE*/);
+}
+
+/// `build_mask` (verbatim — MASK_ANIMATION + MASK_EVAL +
+/// parent ids).
+pub fn build_mask(
+    mask_id: usize,
+    parent_ids: &[usize],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    ensure_cow: &mut dyn FnMut(usize) -> usize,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    if (check_is_built)(mask_id) {
+        return;
+    }
+    let _ = (ensure_cow)(mask_id);
+    (build_idproperties)(mask_id);
+    (build_idproperties)(mask_id);
+    (build_animdata)(mask_id);
+    (build_parameters)(mask_id);
+    (add_op)(mask_id, 3 /*ANIMATION:MASK_ANIMATION*/);
+    (add_op)(mask_id, 2 /*PARAMETERS:MASK_EVAL*/);
+    for pid in parent_ids {
+        (build_id)(*pid, false);
+    }
+}
+
+/// `build_movieclip` (verbatim — MOVIECLIP_EVAL).
+pub fn build_movieclip(
+    clip_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    ensure_cow: &mut dyn FnMut(usize) -> usize,
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+) {
+    if (check_is_built)(clip_id) {
+        return;
+    }
+    let _ = (ensure_cow)(clip_id);
+    (build_idproperties)(clip_id);
+    (build_idproperties)(clip_id);
+    (build_animdata)(clip_id);
+    (build_parameters)(clip_id);
+    (add_op)(clip_id, 2 /*PARAMETERS:MOVIECLIP_EVAL*/);
+}
+
+/// `build_speaker` (verbatim — SPEAKER_EVAL + sound).
+pub fn build_speaker(
+    speaker_id: usize,
+    sound: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_sound: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(speaker_id) {
+        return;
+    }
+    (add_op)(speaker_id, 8 /*AUDIO:SPEAKER_EVAL*/);
+    (build_idproperties)(speaker_id);
+    (build_idproperties)(speaker_id);
+    (build_animdata)(speaker_id);
+    (build_parameters)(speaker_id);
+    if sound != 0 {
+        (build_sound)(sound);
+    }
+}
+
+/// `build_sound` (verbatim — AUDIO SOUND_EVAL).
+pub fn build_sound(
+    sound_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    add_id: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(sound_id) {
+        return;
+    }
+    (add_id)(sound_id);
+    (add_op)(sound_id, 8 /*AUDIO:SOUND_EVAL*/);
+    (build_idproperties)(sound_id);
+    (build_idproperties)(sound_id);
+    (build_animdata)(sound_id);
+    (build_parameters)(sound_id);
+}
+
+/// `build_vfont` (verbatim).
+pub fn build_vfont(
+    vfont_id: usize,
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    build_parameters: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+) {
+    if (check_is_built)(vfont_id) {
+        return;
+    }
+    (build_parameters)(vfont_id);
+    (build_idproperties)(vfont_id);
+    (build_idproperties)(vfont_id);
+}
+
+/// `build_scene_audio` (verbatim — AUDIO entry/exit +
+/// AUDIO_VOLUME).
+pub fn build_scene_audio(
+    scene_id: usize,
+    check_is_built_tag: &mut dyn FnMut(usize) -> bool,
+    build_scene_audio_cache: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    set_as_entry: &mut dyn FnMut(usize),
+    set_as_exit: &mut dyn FnMut(usize),
+) {
+    (build_scene_audio_cache)(scene_id);
+    if (check_is_built_tag)(scene_id) {
+        return;
+    }
+    let op = (add_op)(scene_id, 0 /*AUDIO_ENTRY*/);
+    (set_as_entry)(op);
+    let op = (add_op)(scene_id, 1 /*SOUND_EVAL*/);
+    (set_as_exit)(op);
+    (add_op)(scene_id, 2 /*AUDIO_VOLUME*/);
+}
+
+/// `build_scene_audio_cache` (verbatim — AUDIO_CACHE_
+/// INVALIDATE op + tag_update RELATIONS).
+pub fn build_scene_audio_cache(
+    scene_id: usize,
+    check_is_built_tag: &mut dyn FnMut(usize) -> bool,
+    add_op: &mut dyn FnMut(usize, usize) -> usize,
+    tag_update: &mut dyn FnMut(usize),
+) {
+    if (check_is_built_tag)(scene_id) {
+        return;
+    }
+    let op = (add_op)(scene_id, 4 /*CACHE:AUDIO_CACHE_INVALIDATE*/);
+    (tag_update)(op);
+}
+
+/// `build_scene_speakers` (verbatim — view-layer speaker
+/// bases).
+pub fn build_scene_speakers(
+    speaker_objects: &[usize],
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+) {
+    for ob in speaker_objects {
+        (build_object)(-1, *ob, 1, true);
+    }
+}
+
+/// `build_scene_sequencer` (verbatim — audio + SEQUENCES_
+/// EVAL + per-strip data).
+#[allow(clippy::too_many_arguments)]
+pub fn build_scene_sequencer(
+    scene_id: usize,
+    has_ed: bool,
+    check_is_built_tag: &mut dyn FnMut(usize) -> bool,
+    build_scene_audio: &mut dyn FnMut(usize),
+    add_op: &mut dyn FnMut(usize, usize),
+    foreach_strip: &mut dyn FnMut(&mut dyn FnMut(usize)),
+) {
+    if !has_ed || (check_is_built_tag)(scene_id) {
+        return;
+    }
+    (build_scene_audio)(scene_id);
+    (add_op)(scene_id, 5 /*SEQUENCER:SEQUENCES_EVAL*/);
+    (foreach_strip)(&mut |_strip| {});
+}
+
+/// `strip_node_build_cb` (verbatim — per-strip props/
+/// sound/scene/compositor nodetree).
+#[allow(clippy::too_many_arguments)]
+pub fn strip_node_build_cb(
+    strip_prop: usize,
+    strip_sound: usize,
+    strip_scene: Option<usize>,
+    is_scene_strip_with_scene_strips_and_ed: bool,
+    is_compositor_with_node_group: Option<usize>,
+    modifier_node_groups: &[usize],
+    build_idproperties: &mut dyn FnMut(usize),
+    build_sound: &mut dyn FnMut(usize),
+    build_scene_parameters: &mut dyn FnMut(usize),
+    build_animdata: &mut dyn FnMut(usize),
+    build_scene_sequencer: &mut dyn FnMut(usize),
+    build_scene_speakers: &mut dyn FnMut(usize),
+    build_nodetree: &mut dyn FnMut(usize),
+) {
+    (build_idproperties)(strip_prop);
+    (build_idproperties)(strip_prop);
+    if strip_sound != 0 {
+        (build_sound)(strip_sound);
+    }
+    if let Some(scene) = strip_scene {
+        (build_scene_parameters)(scene);
+    }
+    if is_scene_strip_with_scene_strips_and_ed {
+        if let Some(scene) = strip_scene {
+            (build_animdata)(scene);
+            (build_scene_sequencer)(scene);
+            (build_scene_speakers)(scene);
+        }
+    }
+    if let Some(ng) = is_compositor_with_node_group {
+        (build_nodetree)(ng);
+    }
+    for ng in modifier_node_groups {
+        (build_nodetree)(*ng);
+    }
+}
+
+/// `modifier_walk`/`constraint_walk` (verbatim — OB →
+/// build_object else build_id).
+pub fn walk_id(
+    id: usize,
+    id_type: u16,
+    build_object: &mut dyn FnMut(i32, usize, i32, bool),
+    build_id: &mut dyn FnMut(usize, bool),
+) {
+    if id == 0 {
+        return;
+    }
+    if id_type == gs(b"OB") {
+        (build_object)(-1, id, 1 /*DEG_ID_LINKED_INDIRECTLY*/, false);
+    } else {
+        (build_id)(id, false);
+    }
+}
