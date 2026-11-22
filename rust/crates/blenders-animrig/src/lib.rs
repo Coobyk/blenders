@@ -3,3 +3,6 @@
 pub mod bonecolor;
 pub mod action_selection;
 pub mod driver;
+pub mod armature;
+pub mod action_runtime;
+pub mod action_legacy;
