@@ -9,8 +9,9 @@
 use blenders_core::{Main, Object, ObjectType};
 use blenders_math::{Mat4, Vec3, Vec4};
 use gpui::{
-    App, Application, Bounds, Context, MouseButton, PathBuilder, Pixels, Point, SharedString,
-    Window, WindowBounds, WindowOptions, canvas, div, point, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, MouseButton, PathBuilder, Pixels, Point, ScrollDelta,
+    SharedString, Window, WindowBounds, WindowOptions, canvas, div, point, prelude::*, px, rgb,
+    size,
 };
 
 // Blender default theme colors (from `interface_theme` / `space_view3d`).
@@ -97,6 +98,8 @@ struct Blenders {
     cfra: i32,
     /// Active tool.
     tool: usize,
+    /// View3D orbit drag state (last mouse pos while Middle held).
+    orbit_last: Option<(f32, f32)>,
 }
 
 /// `RegionView3D` orbit state (`lens`/`dist`/`view_quat` equivalent).
@@ -193,6 +196,7 @@ impl Blenders {
             prop_tab: 5, // Object tab selected by default.
             cfra: 1,
             tool: 0,
+            orbit_last: None,
         }
     }
 }
@@ -309,7 +313,7 @@ fn toolbar(cx: &mut Context<BlendersView>, active: usize) -> impl IntoElement {
 }
 
 /// `SPACE_VIEW3D` — the viewport area: canvas + overlay header.
-fn viewport(view: &ViewPersp) -> impl IntoElement {
+fn viewport(view: &ViewPersp, cx: &mut Context<BlendersView>) -> impl IntoElement {
     let view_mat = view.view_matrix();
     let lens = view.lens;
     div()
@@ -317,6 +321,46 @@ fn viewport(view: &ViewPersp) -> impl IntoElement {
         .h_full()
         .relative()
         .bg(rgb(COLOR_VIEWPORT))
+        .id("viewport")
+        .on_scroll_wheel(cx.listener(|this: &mut BlendersView, event: &gpui::ScrollWheelEvent, _window, cx| {
+            let dy = match event.delta {
+                ScrollDelta::Lines(p) => f32::from(p.y) * 0.5,
+                ScrollDelta::Pixels(p) => f32::from(p.y) * 0.02,
+            };
+            let p = &mut this.app.view_persp;
+            p.dist *= (-dy).exp();
+            p.dist = p.dist.clamp(0.05, 1000.0);
+            cx.notify();
+        }))
+        .on_mouse_down(
+            MouseButton::Middle,
+            cx.listener(|this: &mut BlendersView, event: &gpui::MouseDownEvent, _window, cx| {
+                this.app.orbit_last =
+                    Some((f32::from(event.position.x), f32::from(event.position.y)));
+                cx.notify();
+            }),
+        )
+        .on_mouse_up(
+            MouseButton::Middle,
+            cx.listener(|this: &mut BlendersView, _event: &gpui::MouseUpEvent, _window, _cx| {
+                this.app.orbit_last = None;
+            }),
+        )
+        .on_mouse_move(cx.listener(|this: &mut BlendersView, event: &gpui::MouseMoveEvent, _window, cx| {
+            if let Some((lx, ly)) = this.app.orbit_last {
+                if event.pressed_button != Some(MouseButton::Middle) {
+                    this.app.orbit_last = None;
+                    return;
+                }
+                let x = f32::from(event.position.x);
+                let y = f32::from(event.position.y);
+                let p = &mut this.app.view_persp;
+                p.yaw -= (x - lx) * 0.008;
+                p.pitch = (p.pitch - (y - ly) * 0.008).clamp(-1.54, 1.54);
+                this.app.orbit_last = Some((x, y));
+                cx.notify();
+            }
+        }))
         .child(
             canvas(
                 move |bounds, _window, _cx| {
@@ -614,13 +658,13 @@ fn workspace_body(
     tool: usize,
     cx: &mut Context<BlendersView>,
 ) -> impl IntoElement {
-    let viewport_col = || {
+    let viewport_col = |cx: &mut Context<BlendersView>| {
         div()
             .flex()
             .flex_col()
             .flex_1()
             .h_full()
-            .child(viewport(view))
+            .child(viewport(view, cx))
     };
     match ws {
         // Layout: toolbar + viewport + outliner/properties.
@@ -630,7 +674,7 @@ fn workspace_body(
             .flex_1()
             .overflow_hidden()
             .child(toolbar(cx, tool))
-            .child(viewport_col())
+            .child(viewport_col(cx))
             .child(sidebar(bmain, prop_tab, cx)),
         // Modeling / Sculpting / Texture Paint: viewport + sidebar.
         1 | 2 | 4 => div()
@@ -639,7 +683,7 @@ fn workspace_body(
             .flex_1()
             .overflow_hidden()
             .child(toolbar(cx, tool))
-            .child(viewport_col())
+            .child(viewport_col(cx))
             .child(sidebar(bmain, prop_tab, cx)),
         // UV Editing: UV editor left, viewport right, outliner.
         3 => div()
@@ -649,7 +693,7 @@ fn workspace_body(
             .overflow_hidden()
             .child(toolbar(cx, tool))
             .child(area("UV Editor", None, None))
-            .child(viewport_col())
+            .child(viewport_col(cx))
             .child(sidebar(bmain, prop_tab, cx)),
         // Shading: viewport top, node editor bottom, properties right.
         5 | 9 => div()
@@ -664,7 +708,7 @@ fn workspace_body(
                     .flex_col()
                     .flex_1()
                     .h_full()
-                    .child(viewport(view))
+                    .child(viewport(view, cx))
                     .child(area(if ws == 5 { "Shader Editor" } else { "Geometry Node Editor" }, None, Some(280.0))),
             )
             .child(sidebar(bmain, prop_tab, cx)),
@@ -681,7 +725,7 @@ fn workspace_body(
                     .flex_1()
                     .h_full()
                     .child(area("Dope Sheet", None, Some(220.0)))
-                    .child(viewport(view)),
+                    .child(viewport(view, cx)),
             )
             .child(sidebar(bmain, prop_tab, cx)),
         // Rendering: image editor + viewport.
@@ -690,7 +734,7 @@ fn workspace_body(
             .flex_row()
             .flex_1()
             .overflow_hidden()
-            .child(viewport_col())
+            .child(viewport_col(cx))
             .child(area("Image Editor", Some(420.0), None)),
         // Compositing: node editor + image viewer.
         8 => div()
@@ -728,7 +772,7 @@ fn workspace_body(
             .flex_row()
             .flex_1()
             .overflow_hidden()
-            .child(viewport_col())
+            .child(viewport_col(cx))
             .child(sidebar(bmain, prop_tab, cx)),
     }
 }
