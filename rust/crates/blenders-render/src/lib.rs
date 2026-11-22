@@ -4,3 +4,4 @@ pub mod tile_highlight;
 pub mod initrender;
 pub mod render_types;
 pub mod zbuf;
+pub mod texture_margin;
