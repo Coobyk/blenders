@@ -2,10 +2,10 @@
 //! existence tracking per strip/scene.
 
 /// `media_presence_is_set`/`_reset`/`_set` verbatim —
-//! `SEQ_FLAG_MEDIA_PRESENT` bit.
+/// `SEQ_FLAG_MEDIA_PRESENT` bit.
 pub const SEQ_FLAG_MEDIA_PRESENT: i32 = 1 << 11;
 /// `check_media_missing` (verbatim — none data→false;
-//! strip type movie/image → file probe else false).
+/// strip type movie/image → file probe else false).
 pub fn check_media_missing(file_exists: bool, strip_has_data: bool) -> bool {
     if !strip_has_data {
         return false;
