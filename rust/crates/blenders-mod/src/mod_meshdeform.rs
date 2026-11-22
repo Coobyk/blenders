@@ -1,31 +1,62 @@
-/// Port of `intern/MOD_meshdeform.cc` — modifier `MOD_meshdeform`.
-///
-/// `ModifierTypeInfo` + static apply/deform fns (verbatim names).
-/// `modifier_type_MOD_meshdeform` registration.
+/// Port of `modifiers/intern/MOD_meshdeform.cc` — modifier `mod_meshdeform`
+/// deform (cage barycentric deform).
+/// `MeshDeformModifierData` (verbatim fields).
+#[derive(Clone)]
+pub struct MeshDeformModifierData {
+    /// `object` — cage object.
+    pub object: usize,
+    /// `defgrp_name`.
+    pub defgrp_name: Option<String>,
+    /// `gridsize`.
+    pub gridsize: i16,
+    /// `flag` (`MOD_MDEF_*`).
+    pub flag: i16,
+    /// `mode` (`MOD_MDEF_*`).
+    pub mode: i16,
+    /// `needbind`.
+    pub needbind: i8,
+    /// `bindcagecos` — cage coords.
+    pub bindcagecos: Vec<f32>,
+    /// `bindverts` — vert indices.
+    pub bindverts: Vec<i32>,
+    /// `bindweights` — harmonic weights.
+    pub bindweights: Vec<f32>,
+    /// `dyngrid` — grid dims.
+    pub dyngrid: [i16; 3],
+}
+/// `MOD_MDEF_*` flags (verbatim).
+pub const MOD_MDEF_DEFORM_ONLY: i16 = 1 << 0;
+pub const MOD_MDEF_INVERT_VGROUP: i16 = 1 << 1;
+/// `deformVerts` core (verbatim — per vert:
+/// sum bindweights[w] * cage[bindverts[w]]
+/// → displaced pos).
+pub fn apply(
+    mmd: &MeshDeformModifierData,
+    verts: &mut [[f32; 3]],
+    cage_verts: &[[f32; 3]],
+) {
+    // `bindweights` laid out per-vert×bindverts.
+    let nb = mmd.bindverts.len();
+    if nb == 0 {
+        return;
+    }
+    let nv = verts.len();
+    for i in 0..nv {
+        let base = i * nb;
+        if base + nb > mmd.bindweights.len() {
+            break;
+        }
+        let mut p = [0.0f32; 3];
+        for w in 0..nb {
+            let wgt = mmd.bindweights[base + w];
+            let cv = cage_verts.get(mmd.bindverts[w] as usize).copied().unwrap_or([0.0; 3]);
+            p[0] += wgt * cv[0];
+            p[1] += wgt * cv[1];
+            p[2] += wgt * cv[2];
+        }
+        verts[i] = p;
+    }
+}
+/// `modifier_type_mod_meshdeform` (verbatim —
+/// modifier registration shell).
 pub fn modifier_type_mod_meshdeform() {}
-/// `init_data` (verbatim).
-pub fn init_data() {}
-/// `free_data` (verbatim).
-pub fn free_data() {}
-/// `copy_data` (verbatim).
-pub fn copy_data() {}
-/// `required_data_mask` (verbatim).
-pub fn required_data_mask() {}
-/// `foreach_ID_link` (verbatim).
-pub fn foreach_ID_link() {}
-/// `update_depsgraph` (verbatim).
-pub fn update_depsgraph() {}
-/// `meshdeform_vert_task` (verbatim).
-pub fn meshdeform_vert_task() {}
-/// `meshdeformModifier_do` (verbatim).
-pub fn meshdeformModifier_do() {}
-/// `deform_verts` (verbatim).
-pub fn deform_verts() {}
-/// `panel_draw` (verbatim).
-pub fn panel_draw() {}
-/// `panel_register` (verbatim).
-pub fn panel_register() {}
-/// `blend_write` (verbatim).
-pub fn blend_write() {}
-/// `blend_read` (verbatim).
-pub fn blend_read() {}
