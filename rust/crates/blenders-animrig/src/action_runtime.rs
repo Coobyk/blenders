@@ -2,8 +2,8 @@
 //! rebuild.
 
 /// `rebuild_slot_user_cache` (verbatim — clear all slot
-//! users, visit animdata-capable IDs + embedded
-//! node trees).
+/// users, visit animdata-capable IDs + embedded
+/// node trees).
 pub fn rebuild_slot_user_cache(
     actions: &[usize],
     clear_slot_users: &mut dyn FnMut(usize),
