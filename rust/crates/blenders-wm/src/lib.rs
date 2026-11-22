@@ -18,3 +18,4 @@ pub mod wm_operator_utils;
 pub mod wm_stereo;
 pub mod wm_window_csd_draw;
 pub mod wm_keymap_utils;
+pub mod wm_dragdrop;
