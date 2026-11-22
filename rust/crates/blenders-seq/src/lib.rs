@@ -19,3 +19,4 @@ pub mod sound;
 pub mod strip_add;
 pub mod proxy;
 pub mod prefetch;
+pub mod strip_transform;
