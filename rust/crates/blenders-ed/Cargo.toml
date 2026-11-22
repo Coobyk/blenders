@@ -1,0 +1,33 @@
+[package]
+name = "blenders-ed"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+blenders-dna = { path = "../blenders-dna" }
+blenders-bli = { path = "../blenders-bli" }
+blenders-math = { path = "../blenders-math" }
+blenders-bke = { path = "../blenders-bke" }
+blenders-deg = { path = "../blenders-deg" }
+blenders-wm = { path = "../blenders-wm" }
+blenders-blf = { path = "../blenders-blf" }
+blenders-blt = { path = "../blenders-blt" }
+blenders-blo = { path = "../blenders-blo" }
+blenders-imbuf = { path = "../blenders-imbuf" }
+blenders-gpu = { path = "../blenders-gpu" }
+blenders-draw = { path = "../blenders-draw" }
+blenders-render = { path = "../blenders-render" }
+blenders-geo = { path = "../blenders-geo" }
+blenders-bmesh = { path = "../blenders-bmesh" }
+blenders-fn = { path = "../blenders-fn" }
+blenders-seq = { path = "../blenders-seq" }
+blenders-cmp = { path = "../blenders-cmp" }
+blenders-asset = { path = "../blenders-asset" }
+blenders-animrig = { path = "../blenders-animrig" }
+blenders-ik = { path = "../blenders-ik" }
+blenders-sim = { path = "../blenders-sim" }
+blenders-io = { path = "../blenders-io" }
+blenders-shaderfx = { path = "../blenders-shaderfx" }
+blenders-thumb = { path = "../blenders-thumb" }
+blenders-nodes = { path = "../blenders-nodes" }
+blenders-makesrna = { path = "../blenders-makesrna" }
