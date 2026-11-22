@@ -52,3 +52,4 @@ pub mod deg_builder_relations_drivers;
 pub mod deg_builder_relations_rig;
 pub mod deg_builder_rna;
 pub mod deg_builder_nodes;
+pub mod deg_builder_relations;
