@@ -67,7 +67,7 @@ pub fn imb_mask_clear(rect: &mut [u8], mask_channel: usize, val: u8, w: i32, h: 
     }
 }
 /// `IMB_mask_filter_extend`/`IMB_filter_extend` —
-//! neighbor-blur over mask=0 (verbatim intent).
+/// neighbor-blur over mask=0 (verbatim intent).
 pub fn imb_filter_extend_pass(rect: &mut [u8], mask: &[u8], w: i32, h: i32) {
     let w = w as usize;
     let h = h as usize;
