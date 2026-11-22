@@ -5,6 +5,7 @@
 pub const SEQ_DEINTERLACE: i32 = 1 << 8;
 pub const SEQ_MAKE_FLOAT: i32 = 1 << 9;
 pub const SEQ_MUTE: i32 = 1 << 2;
+use crate::strip_transform::{SEQ_FLIPX, SEQ_FLIPY};
 /// `STRIP_BLEND_REPLACE`/`STRIP_BLEND_SCREEN` etc.
 pub const STRIP_BLEND_REPLACE: i32 = 9;
 /// `SEQ_RENDER_SIZE_SCENE` verbatim.
