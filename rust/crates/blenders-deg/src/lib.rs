@@ -19,3 +19,4 @@ pub mod pipelines;
 pub mod builder_remove_noop;
 pub mod builder_transitive;
 pub mod node_id;
+pub mod node;
