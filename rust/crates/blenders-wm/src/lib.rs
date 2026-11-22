@@ -47,3 +47,4 @@ pub mod wm_gizmo_map;
 pub mod wm_xr;
 pub mod wm_xr_actionmap;
 pub mod wm_xr_action;
+pub mod wm_xr_draw;
