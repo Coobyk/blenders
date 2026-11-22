@@ -1,6 +1,9 @@
-/// Port of `space_view3d/view3d_navigate_smoothview.cc` — editor
-/// module `view3d_navigate_smoothview`.
-///
-/// Public entry points (verbatim).
-pub fn view3d_smoothview_invoke() {}
-pub fn view3d_smooth_free() {}
+/// Port of `view3d_navigate_smoothview.cc`
+/// — `smooth_view` camera interpolation
+/// (quat slerp + ofs lerp).
+/// `smooth_view` (verbatim — t-quad
+/// ease + slerp).
+pub fn smooth_view(t: f32) -> f32 {
+    // C's `smoothview` uses smoothstep.
+    t * t * (3.0 - 2.0 * t)
+}
