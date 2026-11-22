@@ -40,3 +40,4 @@ pub mod depsgraph_debug;
 pub mod debug_gnuplot;
 pub mod deg_debug;
 pub mod debug_graphviz;
+pub mod deg_builder;
