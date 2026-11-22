@@ -11,3 +11,6 @@ pub mod animation;
 pub mod strip_lookup;
 pub mod iterator;
 pub mod utils;
+pub mod strip_relations;
+pub mod strip_edit;
+pub mod compositor_bridge;
