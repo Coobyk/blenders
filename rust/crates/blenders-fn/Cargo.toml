@@ -1,0 +1,8 @@
+[package]
+name = "blenders-fn"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+blenders-bli = { path = "../blenders-bli" }
+blenders-math = { path = "../blenders-math" }
