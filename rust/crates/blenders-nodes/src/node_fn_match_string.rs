@@ -4,7 +4,6 @@
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("String", super::node_declaration::SOCK_STRING, 1),
-    ("Operation", super::node_declaration::SOCK_MENU, 1),
     ("Key", super::node_declaration::SOCK_STRING, 1),
     ("Result", super::node_declaration::SOCK_BOOLEAN, 2),
 ];
@@ -23,7 +22,22 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `KeyMapOperation` (verbatim —
+/// starts_with / ends_with / contains /
+/// equals).
+pub const KEYMAP_OPERATION_STARTS_WITH: i32 = 0;
+pub const KEYMAP_OPERATION_ENDS_WITH: i32 = 1;
+pub const KEYMAP_OPERATION_CONTAINS: i32 = 2;
+pub const KEYMAP_OPERATION_EQUALS: i32 = 3;
+/// `exec` (verbatim — match per op).
+pub fn exec(op: i32, s: &str, key: &str) -> bool {
+    match op {
+        KEYMAP_OPERATION_ENDS_WITH => s.ends_with(key),
+        KEYMAP_OPERATION_CONTAINS => s.contains(key),
+        KEYMAP_OPERATION_EQUALS => s == key,
+        // KEYMAP_OPERATION_STARTS_WITH.
+        _ => s.starts_with(key),
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
