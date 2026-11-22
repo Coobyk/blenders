@@ -416,3 +416,116 @@ pub fn get_references_coming_from_outside_zone(
     }
     found
 }
+
+/// `prepare_required_data_for_group_outputs` (verbatim).
+/// `group_output_input_sockets` = the group output node's input
+/// socket tree-indices (drop_back(1) applied by the caller).
+pub fn prepare_required_data_for_group_outputs(
+    reference_sets: &[ReferenceSetInfo],
+    group_output_set_sources: &[usize],
+    group_output_input_sockets: &[usize],
+    group_output_socket_types: &[i32],
+    potential_data_by_socket: &[Vec<bool>],
+    potential_reference_by_socket: &[Vec<bool>],
+    r_required_data_by_socket: &mut [Vec<bool>],
+) {
+    for &reference_set_i in group_output_set_sources {
+        let reference_set = &reference_sets[reference_set_i];
+        debug_assert!(reference_set.r#type == ReferenceSetType::GroupOutputData);
+        let index = group_output_input_sockets[reference_set.index];
+        r_required_data_by_socket[index][reference_set_i] = true;
+    }
+    let mut potential_output_references = vec![false; reference_sets.len()];
+    for &socket in group_output_input_sockets {
+        for (i, &b) in potential_reference_by_socket[socket].iter().enumerate() {
+            if b {
+                potential_output_references[i] = true;
+            }
+        }
+    }
+    for (i, &socket) in group_output_input_sockets.iter().enumerate() {
+        if !can_contain_referenced_data(group_output_socket_types[i]) {
+            continue;
+        }
+        for (s, &p) in potential_output_references.iter().enumerate() {
+            r_required_data_by_socket[socket][s] &= potential_data_by_socket[socket][s];
+            if p && potential_data_by_socket[socket][s] {
+                r_required_data_by_socket[socket][s] = true;
+            }
+        }
+    }
+}
+
+/// `prepare_required_data_for_closure_outputs` (verbatim).
+/// Each entry supplies the closure output node's inputs
+/// (tree-index, socket_type) and its `ClosureOutputData` set
+/// sources (socket tree-index, reference_set_i).
+pub fn prepare_required_data_for_closure_outputs(
+    reference_sets: &[ReferenceSetInfo],
+    closures: &[(usize, usize, Vec<(usize, i32)>, Vec<(usize, usize)>)],
+    potential_data_by_socket: &[Vec<bool>],
+    potential_reference_by_socket: &[Vec<bool>],
+    r_required_data_by_socket: &mut [Vec<bool>],
+) {
+    for (_in_node, _out_node, sockets, sources) in closures {
+        for &(socket, reference_set_i) in sources {
+            debug_assert!(reference_sets[reference_set_i].r#type
+                == ReferenceSetType::ClosureOutputData);
+            let _ = socket;
+            if let Some(rs_socket) = reference_sets[reference_set_i].socket {
+                r_required_data_by_socket[rs_socket][reference_set_i] = true;
+            }
+        }
+        let mut potential_output_references = vec![false; reference_sets.len()];
+        for &(socket, _ty) in sockets {
+            for (i, &b) in potential_reference_by_socket[socket].iter().enumerate() {
+                if b {
+                    potential_output_references[i] = true;
+                }
+            }
+        }
+        for &(socket, ty) in sockets {
+            if !can_contain_referenced_data(ty) {
+                continue;
+            }
+            for (s, &p) in potential_output_references.iter().enumerate() {
+                let required =
+                    p && potential_data_by_socket[socket][s];
+                r_required_data_by_socket[socket][s] =
+                    r_required_data_by_socket[socket][s] & potential_data_by_socket[socket][s]
+                        || required;
+            }
+        }
+    }
+}
+
+/// `prepare_required_data_for_outputs` — group-output pass plus
+/// all closure outputs (verbatim call order).
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_required_data_for_outputs(
+    reference_sets: &[ReferenceSetInfo],
+    group_output_set_sources: &[usize],
+    group_output_input_sockets: &[usize],
+    group_output_socket_types: &[i32],
+    closures: &[(usize, usize, Vec<(usize, i32)>, Vec<(usize, usize)>)],
+    potential_data_by_socket: &[Vec<bool>],
+    potential_reference_by_socket: &[Vec<bool>],
+    r_required_data_by_socket: &mut [Vec<bool>],
+) {
+    prepare_required_data_for_group_outputs(
+        reference_sets,
+        group_output_set_sources,
+        group_output_input_sockets,
+        group_output_socket_types,
+        potential_data_by_socket,
+        potential_reference_by_socket,
+        r_required_data_by_socket,
+    );
+    prepare_required_data_for_closure_outputs(
+        reference_sets,
+        closures,
+        potential_data_by_socket,
+        potential_reference_by_socket,
+        r_required_data_by_socket,
+    );
+}
