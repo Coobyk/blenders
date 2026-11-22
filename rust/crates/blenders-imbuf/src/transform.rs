@@ -13,7 +13,7 @@ pub struct ImbTransform {
     pub filter_nearest: bool,
 }
 /// `imb_transform_sample` (verbatim — inverse
-//! map then nearest/bilinear).
+/// map then nearest/bilinear).
 pub fn imb_transform_sample(
     src: &[f32],
     sw: i32,
