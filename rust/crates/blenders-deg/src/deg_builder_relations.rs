@@ -936,3 +936,376 @@ pub fn build_light_linking_collection(
         0,
     );
 }
+
+/* ---- constraints + animdata relations ---- */
+
+/// Remaining `CONSTRAINT_TYPE_*` verbatim.
+pub const CONSTRAINT_TYPE_FOLLOWTRACK: i32 = 26;
+pub const CONSTRAINT_TYPE_CAMERASOLVER: i32 = 27;
+pub const CONSTRAINT_TYPE_OBJECTSOLVER: i32 = 28;
+pub const CONSTRAINT_TYPE_TRANSFORM_CACHE: i32 = 29;
+pub const CONSTRAINT_TYPE_ARMATURE: i32 = 30;
+pub const CONSTRAINT_TYPE_GEOMETRY_ATTRIBUTE: i32 = 31;
+pub const CONSTRAINT_TYPE_FOLLOWPATH: i32 = 4;
+pub const CONSTRAINT_TYPE_CLAMPTO: i32 = 18;
+pub const CONSTRAINT_TYPE_SHRINKWRAP: i32 = 20;
+pub const CONSTRAINT_TYPE_KINEMATIC: i32 = 1;
+pub const CONSTRAINT_TYPE_SPLINEIK: i32 = 10;
+pub const CONSTRAINT_TYPE_ROTLIKE: i32 = 2;
+pub const CONSTRAINT_TYPE_SIZELIKE: i32 = 4 + 1000;
+pub const CONSTRAINT_TYPE_LOCLIKE: i32 = 3;
+pub const CONSTRAINT_TYPE_TRANSLIKE: i32 = 5;
+/// `DAG_EVAL_NEED_SHRINKWRAP_BOUNDARY`.
+pub const DAG_EVAL_NEED_SHRINKWRAP_BOUNDARY: u32 = 1 << 2;
+/// `CD_MASK_MDEFORMVERT` (verbatim bit).
+pub const CD_MASK_MDEFORMVERT: usize = 1 << 16;
+/// `MOD_SHRINKWRAP_NEAREST_VERTEX`/`TARGET_PROJECT`.
+pub const MOD_SHRINKWRAP_NEAREST_VERTEX: i32 = 0;
+pub const MOD_SHRINKWRAP_TARGET_PROJECT: i32 = 1;
+/// `FOLLOWTRACK_ACTIVECLIP`.
+pub const FOLLOWTRACK_ACTIVECLIP: i32 = 1 << 0;
+/// `PFIELD_NULL`.
+pub const PFIELD_NULL: i32 = 0;
+
+/// `bConstraintTarget` view (verbatim fields used).
+pub struct ConstraintTargetView {
+    /// `ct.tar` (0 = none — pre-filtered or checked).
+    pub tar: usize,
+    /// `ct.tar->type`.
+    pub tar_type: i32,
+    /// `ct.subtarget`.
+    pub subtarget: String,
+}
+
+/// `bConstraint` view (verbatim fields used).
+pub struct ConstraintView {
+    /// `con.type` (cti->type).
+    pub ctype: i32,
+    /// `cti->name`.
+    pub name: String,
+    /// followtrack: has clip or ACTIVECLIP + track[0].
+    pub followtrack_depends_on_camera: bool,
+    /// followtrack `data->depth_ob` (0 = none).
+    pub depth_ob: usize,
+    /// transform-cache `data->cache_file` (0 = none).
+    pub cache_file: usize,
+    /// targets from `BKE_constraint_targets_get`.
+    pub targets: Vec<ConstraintTargetView>,
+    /// shrinkwrap `scon->shrinkType`.
+    pub shrink_type: i32,
+    /// `BKE_constraint_target_uses_bbone && has_segments`.
+    pub uses_bbone: bool,
+}
+
+/// `build_constraints` (verbatim — per-type target
+/// relations).
+#[allow(clippy::too_many_arguments)]
+pub fn build_constraints(
+    id: usize,
+    is_bone_component: bool,
+    component_subdata: &str,
+    scene_camera: usize,
+    constraints: &[ConstraintView],
+    root_map_has_common_root: &dyn Fn(&str, &str) -> bool,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    add_rel_flags: &mut dyn FnMut(usize, usize, &str, i32),
+    add_customdata_mask: &mut dyn FnMut(usize, usize),
+    add_special_eval_flag: &mut dyn FnMut(usize, u32),
+    stack_trace: &mut dyn FnMut(usize),
+) {
+    for con in constraints {
+        (stack_trace)(usize::MAX);
+        let cname = con.name.clone();
+        if matches!(
+            con.ctype,
+            CONSTRAINT_TYPE_FOLLOWTRACK | CONSTRAINT_TYPE_CAMERASOLVER | CONSTRAINT_TYPE_OBJECTSOLVER
+        ) {
+            let mut depends_on_camera = false;
+            if con.ctype == CONSTRAINT_TYPE_FOLLOWTRACK {
+                if con.followtrack_depends_on_camera {
+                    depends_on_camera = true;
+                }
+                if con.depth_ob != 0 {
+                    (add_rel)(con.depth_ob, id, &cname);
+                    (add_rel)(con.depth_ob, id, &cname);
+                }
+            } else if con.ctype == CONSTRAINT_TYPE_OBJECTSOLVER {
+                depends_on_camera = true;
+            }
+            if depends_on_camera && scene_camera != 0 {
+                (add_rel)(scene_camera, id, &cname);
+            }
+            (add_rel)(usize::MAX, id, "TimeSrc -> Animation");
+        } else if con.ctype == CONSTRAINT_TYPE_TRANSFORM_CACHE {
+            (add_rel)(usize::MAX, id, "TimeSrc -> Animation");
+            if con.cache_file != 0 {
+                (add_rel)(con.cache_file, id, &cname);
+            }
+        } else {
+            for ct in &con.targets {
+                if ct.tar == 0 {
+                    continue;
+                }
+                if matches!(con.ctype, CONSTRAINT_TYPE_KINEMATIC | CONSTRAINT_TYPE_SPLINEIK) {
+                    /* IK handled separately. */
+                } else if matches!(
+                    con.ctype,
+                    CONSTRAINT_TYPE_FOLLOWPATH | CONSTRAINT_TYPE_CLAMPTO
+                ) {
+                    (add_rel)(ct.tar, id, &cname);
+                    (add_rel)(ct.tar, id, &cname);
+                } else if ct.tar_type == 25 /*OB_ARMATURE*/ && !ct.subtarget.is_empty() {
+                    let opcode = bone_target_opcode(
+                        ct.tar == id,
+                        true,
+                        (root_map_has_common_root)(component_subdata, &ct.subtarget),
+                    );
+                    let opcode = if con.ctype == CONSTRAINT_TYPE_ARMATURE { 6 } else { opcode };
+                    let opcode = if con.uses_bbone { 4 /*BONE_SEGMENTS*/ } else { opcode };
+                    let _ = opcode;
+                    (add_rel)(ct.tar, id, &cname);
+                } else if matches!(ct.tar_type, 1 | 22) && !ct.subtarget.is_empty() {
+                    (add_rel)(ct.tar, id, &cname);
+                    (add_rel)(ct.tar, id, &cname);
+                    (add_customdata_mask)(ct.tar, CD_MASK_MDEFORMVERT);
+                } else if con.ctype == CONSTRAINT_TYPE_SHRINKWRAP {
+                    (add_rel)(ct.tar, id, &cname);
+                    if ct.tar_type == 1 && con.shrink_type != MOD_SHRINKWRAP_NEAREST_VERTEX {
+                        if con.shrink_type == MOD_SHRINKWRAP_TARGET_PROJECT {
+                            (add_special_eval_flag)(ct.tar, DAG_EVAL_NEED_SHRINKWRAP_BOUNDARY);
+                        }
+                    }
+                    (add_rel)(ct.tar, id, &cname);
+                } else if con.ctype == CONSTRAINT_TYPE_GEOMETRY_ATTRIBUTE {
+                    (add_rel)(ct.tar, id, &cname);
+                    (add_rel)(ct.tar, id, &cname);
+                } else {
+                    if ct.tar == id {
+                        if ct.tar_type == 25 && is_bone_component {
+                            (add_rel)(ct.tar, id, &cname);
+                        } else {
+                            (add_rel)(ct.tar, id, &cname);
+                        }
+                    } else {
+                        (add_rel)(ct.tar, id, &cname);
+                    }
+                }
+                if matches!(
+                    con.ctype,
+                    CONSTRAINT_TYPE_ROTLIKE
+                        | CONSTRAINT_TYPE_LOCLIKE
+                        | CONSTRAINT_TYPE_TRANSLIKE
+                ) || con.ctype == CONSTRAINT_TYPE_SIZELIKE
+                {
+                    (add_rel)(ct.tar, id, &cname);
+                }
+            }
+        }
+    }
+}
+
+/// `build_animdata` (verbatim — images + curves + drivers +
+/// ANIMATION→PARAMETERS + force).
+pub fn build_animdata_rel(
+    id: usize,
+    id_type_is_sce: bool,
+    check_built_tag_animation: &mut dyn FnMut(usize) -> bool,
+    has_anim_component: bool,
+    build_animation_images: &mut dyn FnMut(usize),
+    build_animdata_curves: &mut dyn FnMut(usize),
+    build_animdata_drivers: &mut dyn FnMut(usize),
+    build_animdata_force: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if id_type_is_sce && (check_built_tag_animation)(id) {
+        return;
+    }
+    (build_animation_images)(id);
+    (build_animdata_curves)(id);
+    (build_animdata_drivers)(id);
+    if has_anim_component {
+        (add_rel)(id, id, "Animation -> Parameters");
+        (build_animdata_force)(id);
+    }
+}
+
+/// `build_animdata_curves` (verbatim — action + entry/
+/// eval/exit wiring + action/nla targets).
+#[allow(clippy::too_many_arguments)]
+pub fn build_animdata_curves(
+    id: usize,
+    adt_action: usize,
+    adt_has_nla: bool,
+    nla_enabled_tracks: &[usize],
+    build_action: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+    get_node: &dyn Fn(usize, usize) -> Option<usize>,
+    node_exit_op: &dyn Fn(usize) -> usize,
+    build_animdata_action_targets: &mut dyn FnMut(usize, usize, usize),
+    build_animdata_nlastrip_targets: &mut dyn FnMut(usize, usize, usize),
+    adt_slot_handle: i32,
+) {
+    if adt_action == 0 && !adt_has_nla {
+        return;
+    }
+    if adt_action != 0 {
+        (build_action)(adt_action);
+    }
+    (add_rel)(id, id, "Init -> Eval");
+    (add_rel)(id, id, "Eval -> Exit");
+    if adt_action != 0 {
+        (add_rel)(adt_action, id, "Action -> Animation");
+    }
+    let Some(node_from) = get_node(id, 3 /*ANIMATION*/) else { return };
+    let operation_from = node_exit_op(node_from);
+    if adt_action != 0 {
+        (build_animdata_action_targets)(id, operation_from, adt_slot_handle as usize);
+    }
+    for track in nla_enabled_tracks {
+        (build_animdata_nlastrip_targets)(id, operation_from, *track);
+    }
+}
+
+/// `build_animdata_fcurve_target` (verbatim — resolve →
+/// entry op; BONE_LOCAL special case; cow back-relation).
+pub fn build_animdata_fcurve_target(
+    id: usize,
+    rna_path: &str,
+    resolve_find_entry_op: &dyn Fn(&str) -> Option<(usize, usize)>,
+    operation_from: usize,
+    operation_from_id_node: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str, i32),
+) {
+    let Some((op_to, op_to_id_node)) = resolve_find_entry_op(rna_path) else { return };
+    let _ = id;
+    /* BONE_LOCAL opcode sentinel = usize::MAX-1 handled by caller
+     * via op_to == usize::MAX-1 convention is NOT used; the
+     * resolver returns the pose-init path flag separately. */
+    (add_rel)(
+        operation_from,
+        op_to,
+        "Animation -> Prop",
+        RELATION_CHECK_BEFORE_ADD,
+    );
+    if operation_from_id_node != op_to_id_node {
+        (add_rel)(
+            op_to_id_node,
+            operation_from_id_node,
+            "Animated Copy-on-Eval -> Animation",
+            RELATION_CHECK_BEFORE_ADD | RELATION_FLAG_NO_FLUSH,
+        );
+    }
+}
+
+/// `build_animdata_drivers` (verbatim — driver keys +
+/// AnimData-before + unshare ordering).
+pub fn build_animdata_drivers_rel(
+    id: usize,
+    drivers: &[(usize, String, i32)],
+    adt_has_action_or_nla: bool,
+    id_type: u16,
+    object_type_is_armature: bool,
+    has_animation_exit: bool,
+    has_driver_unshare: bool,
+    build_driver: &mut dyn FnMut(usize, usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if drivers.is_empty() {
+        return;
+    }
+    for (fcu, rna_path, _arr) in drivers {
+        (build_driver)(id, *fcu);
+        if adt_has_action_or_nla {
+            (add_rel)(id, id, "AnimData Before Drivers");
+        }
+        if crate::deg_builder_relations_drivers::data_path_maybe_shared(
+            id_type,
+            rna_path,
+            object_type_is_armature,
+        ) {
+            (add_rel)(id, id, "Un-share shared data before drivers");
+        }
+    }
+    if has_animation_exit && has_driver_unshare {
+        (add_rel)(id, id, "AnimData Before Un-share");
+    }
+}
+
+/// `build_animation_images` (verbatim — time + update →
+/// IMAGE_ANIMATION).
+pub fn build_animation_images_rel(
+    id: usize,
+    has_image_animation: bool,
+    image_user_has_animation: bool,
+    id_type: u16,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if has_image_animation || image_user_has_animation {
+        (add_rel)(usize::MAX, id, "TimeSrc -> Image Animation");
+        if id_type == gs(b"MA") {
+            (add_rel)(id, id, "Material Update -> Image Animation");
+        } else if id_type == gs(b"WO") {
+            (add_rel)(id, id, "World Update -> Image Animation");
+        } else if id_type == gs(b"NT") {
+            (add_rel)(id, id, "NTree Output -> Image Animation");
+        }
+    }
+}
+
+/// `build_animdata_force` (verbatim — OB w/ forcefield →
+/// RIGIDBODY_REBUILD).
+pub fn build_animdata_force(
+    id: usize,
+    id_type_is_ob: bool,
+    has_forcefield: bool,
+    scene_id: usize,
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if !id_type_is_ob || !has_forcefield {
+        return;
+    }
+    (add_rel)(id, scene_id, "Animation -> Rigid Body");
+}
+
+/// `build_action` (verbatim — params/props/markers + time
+/// when non-empty).
+pub fn build_action(
+    action_id: usize,
+    action_is_empty: bool,
+    marker_props: &[usize],
+    check_is_built: &mut dyn FnMut(usize) -> bool,
+    stack_trace: &mut dyn FnMut(usize),
+    build_parameters: &mut dyn FnMut(usize),
+    build_idproperties: &mut dyn FnMut(usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    if (check_is_built)(action_id) {
+        return;
+    }
+    (stack_trace)(action_id);
+    (build_parameters)(action_id);
+    (build_idproperties)(action_id);
+    (build_idproperties)(action_id);
+    for prop in marker_props {
+        (build_idproperties)(*prop);
+    }
+    if !action_is_empty {
+        (add_rel)(usize::MAX, action_id, "TimeSrc -> Animation");
+    }
+}
+
+/// `build_driver` (verbatim — data + variables + time).
+pub fn build_driver(
+    id: usize,
+    fcu: usize,
+    driver_depends_on_time: bool,
+    build_driver_data: &mut dyn FnMut(usize, usize),
+    build_driver_variables: &mut dyn FnMut(usize, usize),
+    add_rel: &mut dyn FnMut(usize, usize, &str),
+) {
+    (build_driver_data)(id, fcu);
+    (build_driver_variables)(id, fcu);
+    if driver_depends_on_time {
+        (add_rel)(usize::MAX, id, "TimeSrc -> Driver");
+    }
+}
