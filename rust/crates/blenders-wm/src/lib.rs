@@ -25,3 +25,4 @@ pub mod wm_operator_type;
 pub mod wm_event_query;
 pub mod wm_operator_props;
 pub mod wm_splash_screen;
+pub mod wm_jobs;
