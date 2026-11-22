@@ -5,9 +5,8 @@
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("String", super::node_declaration::SOCK_STRING, 1),
     ("Search", super::node_declaration::SOCK_STRING, 1),
-    ("Mode", super::node_declaration::SOCK_MENU, 1),
-    ("First Found", super::node_declaration::SOCK_INT, 2),
-    ("Count", super::node_declaration::SOCK_INT, 2),
+    ("Position", super::node_declaration::SOCK_INT, 2),
+    ("Exists", super::node_declaration::SOCK_BOOLEAN, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -24,7 +23,13 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — substring search;
+/// returns (pos, found)).
+pub fn exec(s: &str, search: &str) -> (i64, bool) {
+    match s.find(search) {
+        Some(i) => (i as i64, true),
+        None => (0, false),
+    }
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

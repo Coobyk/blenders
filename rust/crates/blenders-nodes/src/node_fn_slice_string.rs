@@ -4,9 +4,9 @@
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("String", super::node_declaration::SOCK_STRING, 1),
-    ("String", super::node_declaration::SOCK_STRING, 2),
     ("Position", super::node_declaration::SOCK_INT, 1),
     ("Length", super::node_declaration::SOCK_INT, 1),
+    ("String", super::node_declaration::SOCK_STRING, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -23,7 +23,14 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — slice s[pos..pos+len],
+/// clamped like C's `StringRef::substr`).
+pub fn exec(s: &str, pos: i64, len: i64) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len() as i64;
+    let start = pos.clamp(0, n);
+    let end = (pos + len.max(0)).clamp(start, n);
+    chars[start as usize..end as usize].iter().collect()
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}

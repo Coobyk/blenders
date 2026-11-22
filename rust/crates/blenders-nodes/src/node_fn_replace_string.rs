@@ -4,9 +4,9 @@
 /// input/output sockets).
 pub const SOCKS: &[(&str, i32, i32)] = &[
     ("String", super::node_declaration::SOCK_STRING, 1),
-    ("String", super::node_declaration::SOCK_STRING, 2),
     ("Find", super::node_declaration::SOCK_STRING, 1),
     ("Replace", super::node_declaration::SOCK_STRING, 1),
+    ("String", super::node_declaration::SOCK_STRING, 2),
 ];
 /// `declare` (verbatim — build NodeDeclaration from SOCKS).
 pub fn declare() -> super::node_declaration::NodeDeclaration {
@@ -23,7 +23,13 @@ pub fn declare() -> super::node_declaration::NodeDeclaration {
     }
     decl
 }
-/// `update` (verbatim — socket-level update hook; per-node body pending).
+/// `exec` (verbatim — replace all
+/// occurrences of `find` with `replace`).
+pub fn exec(s: &str, find: &str, replace: &str) -> String {
+    if find.is_empty() {
+        return s.to_string();
+    }
+    s.replace(find, replace)
+}
+/// `update` (verbatim — socket-level update hook).
 pub fn update() {}
-/// `exec` (verbatim — per-node geometry/shader exec; PORT_PENDING on engine).
-pub fn exec() {}
