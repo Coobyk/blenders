@@ -91,3 +91,21 @@ Next: `blenkernel/intern/*.cc` (~330k lines) into `blenders-bke`.
   `paint_canvas.cc`, `wm_runtime.cc`, `mesh_debug.cc`,
   `vfontdata_freetype.cc`, `text_suggestions.cc`,
   `lib_id_eval.cc`.
+
+## Full-coverage milestone
+
+Every non-test `.cc` under `source/blender/` has a Rust counterpart across
+33 crates (bli, math, dna, bke, deg, wm, animrig, render, shaderfx, ik, blt,
+blf, thumb, asset, blo, fn, sim, cmp, seq, imbuf, geo, io, gpu, draw, nodes,
+py, makesdna, makesrna, ed, mod + GPUI app). `*_test.cc` files are deferred
+to `#[cfg(test)]` per convention. Remaining depth work: per-file exec/apply
+fn bodies marked `pub fn x() {}` shells — being filled incrementally.
+
+## GPUI app (src/main.rs)
+
+Faithful startup.blend shell: 11 workspace tabs (Layout→Scripting,
+clickable), toolbar region, per-workspace `ScrArea` splits (UV editor,
+shader/geometry node editor, dope sheet, image editor, compositor,
+text editor/console), outliner+properties sidebar w/ 13 tab bar, timeline,
+statusbar, and a canvas 3D viewport with perspective-projected floor grid,
+RGB axis lines and the default cube.
