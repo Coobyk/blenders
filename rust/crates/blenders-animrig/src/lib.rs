@@ -16,3 +16,5 @@ pub mod versioning;
 pub mod pose;
 pub mod keyingsets;
 pub mod fcurve;
+pub mod anim_rna;
+pub mod keyframing;
