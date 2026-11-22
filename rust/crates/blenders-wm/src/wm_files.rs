@@ -95,9 +95,9 @@ pub fn wm_history_file_write(recent_files: &[String]) -> String {
 /// `limit` preserving aspect).
 pub fn blend_file_thumb_clamp_size(size: [i32; 2], limit: i32) -> [i32; 2] {
     if size[0] > size[1] {
-        [limit, (((size[1] as f32) / (size[0] as f32)) * limit as f32) as i32.max(1))]
+        [limit, ((((size[1] as f32) / (size[0] as f32)) * limit as f32) as i32).max(1)]
     } else {
-        [(((size[0] as f32) / (size[1] as f32)) * limit as f32).max(1.0) as i32, limit]
+        [((((size[0] as f32) / (size[1] as f32)) * limit as f32) as i32).max(1), limit]
     }
 }
 
