@@ -2,5 +2,5 @@
 //! preview thumbnail (render glyphs via BLF).
 
 /// `imb_font_thumb` params (verbatim — 128×128
-//! default preview).
+/// default preview).
 pub const FONT_THUMB_SIZE: i32 = 128;
