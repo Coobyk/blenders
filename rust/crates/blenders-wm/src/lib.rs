@@ -15,3 +15,4 @@ pub mod wm_uilist_type;
 pub mod wm_files_colorspace;
 pub mod wm_platform_support;
 pub mod wm_operator_utils;
+pub mod wm_stereo;
