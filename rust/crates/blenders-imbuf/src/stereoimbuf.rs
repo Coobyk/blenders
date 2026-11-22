@@ -16,7 +16,7 @@ pub const S3D_INTERLACE_ROW: i32 = 0;
 pub const S3D_INTERLACE_COLUMN: i32 = 1;
 pub const S3D_INTERLACE_CHECKERBOARD: i32 = 2;
 /// `IMB_stereo3d_write_dimensions` (verbatim —
-//! combined size).
+/// combined size).
 pub fn imb_stereo3d_write_dimensions(
     mode: i32,
     is_squeezed: bool,
@@ -30,7 +30,7 @@ pub fn imb_stereo3d_write_dimensions(
     }
 }
 /// `IMB_stereo3d_read_dimensions` (verbatim —
-//! per-eye size).
+/// per-eye size).
 pub fn imb_stereo3d_read_dimensions(
     mode: i32,
     is_squeezed: bool,
@@ -44,7 +44,7 @@ pub fn imb_stereo3d_read_dimensions(
     }
 }
 /// `imb_stereo3d_write_anaglyph` (verbatim —
-//! per-eye channel merge).
+/// per-eye channel merge).
 pub fn imb_stereo3d_write_anaglyph_f32(
     left: &[f32],
     right: &[f32],

@@ -1,5 +1,5 @@
 //! Port of `intern/partial_update.cc` — tiled
-//! dirty-region tracking for ImBuf.
+/// dirty-region tracking for ImBuf.
 
 /// `MAX_HISTORY_LEN` (verbatim).
 pub const MAX_HISTORY_LEN: usize = 4;

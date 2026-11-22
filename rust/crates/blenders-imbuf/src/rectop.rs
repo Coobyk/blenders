@@ -91,7 +91,7 @@ pub fn imb_blend_color_float(dst: &mut [f32; 4], src1: [f32; 4], src2: [f32; 4],
     }
 }
 /// `IMB_copy_rect` (verbatim — region copy
-//! within same buffer).
+/// within same buffer).
 #[allow(clippy::too_many_arguments)]
 pub fn imb_copy_rect_f32(
     dst: &mut [f32],

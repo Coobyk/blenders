@@ -1,5 +1,5 @@
 //! Port of `intern/cache.cc` — ImBufCache
-//! (GHash → HashMap + size accounting).
+/// (GHash → HashMap + size accounting).
 
 use std::collections::HashMap;
 /// `ImBufCache` (verbatim — keyed value store
