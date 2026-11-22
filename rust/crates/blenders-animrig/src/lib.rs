@@ -15,3 +15,4 @@ pub mod evaluation;
 pub mod versioning;
 pub mod pose;
 pub mod keyingsets;
+pub mod fcurve;
