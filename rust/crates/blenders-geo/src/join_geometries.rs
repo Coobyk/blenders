@@ -3,7 +3,7 @@
 //! attribute domains).
 
 /// `join_geometries` (verbatim — running
-//! offsets per component, concat).
+// offsets per component, concat).
 pub fn join_geometries_offsets(element_counts: &[i32]) -> Vec<i32> {
     let mut out = Vec::with_capacity(element_counts.len());
     let mut offset = 0i32;

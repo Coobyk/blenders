@@ -3,7 +3,7 @@
 //! selections, recomputing offsets.
 
 /// `remove_points_and_split` (verbatim —
-//! rebuild offsets around removed points).
+// rebuild offsets around removed points).
 pub fn curves_remove_and_split_offsets(
     points_by_curve: &[(i32, i32)],
     point_deleted: &[bool],

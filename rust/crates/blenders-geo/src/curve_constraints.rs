@@ -3,7 +3,7 @@
 //! curve points (Gauss-Seidel).
 
 /// `compute_segment_lengths` (verbatim —
-//! per-curve segment length array).
+// per-curve segment length array).
 pub fn compute_segment_lengths(
     positions: &[[f32; 3]],
     points_by_curve: &[(i32, i32)],
@@ -23,7 +23,7 @@ pub fn compute_segment_lengths(
     out
 }
 /// `solve_length_constraints` (verbatim — move
-//! both ends half the stretch).
+// both ends half the stretch).
 pub fn solve_length_constraints(
     positions: &mut [[f32; 3]],
     segment_lengths: &[Vec<f32>],

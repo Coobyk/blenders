@@ -2,7 +2,7 @@
 //! polylines to Bézier (least-squares handles).
 
 /// `fit_curve` (verbatim — chord-length
-//! parameterize then least-squares handle fit).
+// parameterize then least-squares handle fit).
 pub fn fit_curves_chord_params(positions: &[[f32; 3]]) -> Vec<f32> {
     let n = positions.len();
     let mut u = vec![0.0f32; n];

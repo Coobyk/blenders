@@ -2,7 +2,7 @@
 //! — UV grid primitive verts/quads.
 
 /// `create_grid_mesh` (verbatim — verts on
-//! plane then quads).
+// plane then quads).
 pub fn mesh_primitive_grid_positions(
     size_x: i32,
     size_y: i32,

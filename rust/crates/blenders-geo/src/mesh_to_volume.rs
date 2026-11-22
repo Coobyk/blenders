@@ -2,7 +2,7 @@
 //! → fog/SDF volume (OpenVDB adapter → injected).
 
 /// `volume_compute_voxel_size` (verbatim —
-//! density → voxel size from bounds+res).
+// density → voxel size from bounds+res).
 pub fn volume_compute_voxel_size(
     bounds_extent: [f32; 3],
     resolution_amount: f32,

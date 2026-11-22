@@ -3,7 +3,7 @@
 //! triangle lookup.
 
 /// `ReverseUVSampler` (verbatim — UV→3D
-//! barycentric sample).
+// barycentric sample).
 pub fn reverse_uv_sample(
     uv: [f32; 2],
     uvs: &[[f32; 2]],

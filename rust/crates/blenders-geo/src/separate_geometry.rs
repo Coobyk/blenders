@@ -2,7 +2,7 @@
 //! split selection into a new GeometrySet.
 
 /// `separate_geometry` (verbatim — per-domain
-//! partition by selection mask).
+// partition by selection mask).
 pub fn separate_geometry_indices(
     selection: &[bool],
 ) -> (Vec<i32>, Vec<i32>) {
