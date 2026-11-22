@@ -18,6 +18,8 @@ pub const OB_FONT: i16 = 4;
 pub const OB_MBALL: i16 = 5;
 /// `OB_MESH`.
 pub const OB_MESH: i16 = 1;
+/// `OB_CAMERA`.
+pub const OB_CAMERA: i16 = 11;
 /// `OB_LATTICE`.
 pub const OB_LATTICE: i16 = 22;
 /// `OB_ARMATURE`.
