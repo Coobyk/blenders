@@ -24,7 +24,7 @@ pub fn imb_flipy(ibuf: &mut crate::allocimbuf::ImBuf) {
     }
 }
 /// `IMB_rotate_float`/`IMB_rotate_byte` shells
-//! (nearest + bilinear in transform.rs).
+/// (nearest + bilinear in transform.rs).
 pub enum ImbInterp {
     Nearest,
     Bilinear,
