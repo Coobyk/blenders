@@ -17,7 +17,7 @@ pub struct SeqCacheKey {
     /// `display_channel`/`preprocess`.
     pub strip_uid: u64,
     pub cache_type: i32,
-    pub frame_index: f32,
+    pub frame_index: u32,
     pub view_id: i32,
     pub display_channel: i32,
 }
@@ -61,7 +61,7 @@ impl SeqCache {
         SeqCacheKey {
             strip_uid,
             cache_type: SEQ_CACHE_TYPE_RAW,
-            frame_index: frame as f32,
+            frame_index: frame as u32,
             view_id: 0,
             display_channel: 0,
         }
